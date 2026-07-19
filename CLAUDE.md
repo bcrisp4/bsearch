@@ -23,7 +23,7 @@ Cheap-to-swap choices don't need one.
 
 Invoke the `adr` skill to draft one (`Skill` tool, name `adr`). It writes
 `docs/adr/NNNN-*.md` as **Proposed**; only Ben flips a record to Accepted.
-If `docs/adr/` doesn't exist yet, the skill bootstraps it on first use.
+Follow `docs/adr/0000-template.md`.
 
 ## Quick facts
 
@@ -65,3 +65,17 @@ If `docs/adr/` doesn't exist yet, the skill bootstraps it on first use.
 - Keep write transactions short and batched (busy-timeout discipline).
 - Version pipeline stages (chunker, models) in catalog metadata so partial
   rebuilds work.
+- **Changelog:** every behaviour-changing PR adds an entry under `[Unreleased]`
+  in `CHANGELOG.md`, written from the user's point of view. Docs/CI/refactor-only
+  PRs skip it (`skip-changelog` label). Rules: `docs/changelog.md`.
+- **Before claiming done:** `make all` (lint + test + build) — the same checks
+  CI runs. cgo means native builds only; see `docs/ci.md`.
+- Work is tracked as GitHub issues under milestones M1–M7 (mirroring
+  DESIGN.md). Check `gh issue list` before starting; file a follow-up issue
+  rather than widening scope.
+- Workflows: SHA-pin every action with a trailing version comment — get the
+  SHA from `gh api repos/<owner>/<repo>/tags`, never from memory. Keep
+  `permissions: {}` at workflow level with per-job opt-in. See `docs/ci.md`.
+- Dev tools: `make tools` (= `mise install`) once per machine. Tools are
+  pinned in `mise.toml` and run via `mise exec` — never `go install` into
+  GOPATH/bin, which is shared across repos (ADR 0002).
