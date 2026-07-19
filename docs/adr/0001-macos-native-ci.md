@@ -1,6 +1,6 @@
 # 0001 — Run CI natively on macOS runners
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-19
 - **Confidence:** high
 

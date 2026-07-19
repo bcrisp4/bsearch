@@ -1,6 +1,6 @@
 # 0002 — Pin dev tools per project with mise
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-19
 - **Confidence:** medium
 
