@@ -36,11 +36,13 @@ If `docs/adr/` doesn't exist yet, the skill bootstraps it on first use.
   (statically compiled via cgo). Production pragmas (WAL, busy_timeout,
   foreign_keys ON, IMMEDIATE writers). The index is derived data: worst-case
   migration is drop-and-reindex.
-- **Search:** hybrid — brute-force KNN (sqlite-vec) + BM25 (FTS5) fused with
-  RRF. No ANN; quantize + rescore is the scaling lever.
-- **Doc conversion:** bscribe HTTP service (localhost:18000) for binary
-  formats; text/markdown parsed in-process. Handle bscribe-down gracefully
-  (queue + retry, never fail search).
+- **Search:** hybrid — brute-force KNN (sqlite-vec) + BM25 (FTS5), chunk-level,
+  fused with RRF. No ANN; binary quantize + rescore is the planned config at
+  full corpus scale. Per-model query/passage prefix templates applied
+  identically at index and query time.
+- **Doc conversion:** bscribe HTTP service (localhost:18000, bearer token) for
+  binary formats; text/markdown parsed in-process. Handle bscribe-down
+  gracefully (health gate, queue + retry, never fail search).
 - **Inference:** BYO OpenAI-compatible server (LM Studio locally). No models
   in-process, ever.
 - **Privacy:** everything local; never log query text or document content at
@@ -50,6 +52,8 @@ If `docs/adr/` doesn't exist yet, the skill bootstraps it on first use.
 
 - Runs on a battery-powered laptop: background work is batched and
   power-aware; near-zero CPU when idle.
+- macOS TCC: the daemon needs Full Disk Access; treat EPERM on crawl as
+  first-class state surfaced in `bsearch status`, never a silent skip.
 - Search latency SLO: p95 < 500 ms warm. Indexing is allowed to be slow;
   queries are not.
 - Single user, single machine. No auth on the unix socket in v1; any TCP
