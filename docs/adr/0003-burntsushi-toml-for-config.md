@@ -1,6 +1,6 @@
 # 0003 — Use BurntSushi/toml for config parsing
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-19
 - **Confidence:** high
 
