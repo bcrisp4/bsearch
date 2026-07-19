@@ -301,7 +301,11 @@ means re-embedding everything. The metadata buys:
   table fills in the background; atomic cutover when complete. No search
   downtime, no big-bang rebuild. (Different dimensions force a separate `vec0`
   table anyway — blue/green falls out naturally.) Note: migration transiently
-  doubles vector storage.
+  doubles vector storage. *Implementation status: M1 cuts over immediately on
+  model change (search serves the new, initially empty generation until
+  re-embedding fills it — acceptable while reindex is a manual one-shot);
+  the staged fill + deferred cutover lands with `bsearch reindex` (issue
+  #24).*
 - **Partial rebuilds:** chunker change → re-chunk + re-embed only affected
   docs; summarizer change → regenerate summaries only, vectors untouched.
 - **Auditability:** `bsearch status` reports exactly what's stale against

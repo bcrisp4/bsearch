@@ -13,6 +13,13 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- The index now lives in one SQLite database at
+  `~/Library/Application Support/bsearch/bsearch.db` (created 0600, directory
+  0700): document catalog, chunks, pyramid-summary slots, and semantic-search
+  vectors (sqlite-vec), with production pragmas (WAL, foreign keys, busy
+  timeout) applied on every connection. The schema is versioned, so future
+  upgrades migrate in place instead of forcing a re-index.
+
 - bsearch reads its configuration from `~/.config/bsearch/config.toml`
   (or `$XDG_CONFIG_HOME/bsearch/config.toml`): indexed paths, inference and
   converter endpoints, and power-aware indexing intervals, with sensible

@@ -10,6 +10,11 @@ LDFLAGS  := -s -w -X $(PKG)/internal/buildinfo.Version=$(VERSION)
 
 export CGO_ENABLED := 1
 
+# FTS5 is compiled into mattn/go-sqlite3 only under this tag. Set for every
+# go command so the driver is built once, with keyword search available
+# before the FTS5 schema lands (M4).
+export GOFLAGS := -tags=sqlite_fts5
+
 # Dev tools are pinned per project in mise.toml — `mise exec` runs the version
 # this repo asks for regardless of what's on PATH or in GOPATH/bin (both of
 # which are shared with every other Go repo on the machine). CI runs these same
