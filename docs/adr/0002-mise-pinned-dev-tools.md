@@ -76,6 +76,22 @@ decision exists to remove.
   langserver it finds on `PATH`. Without that, in-editor diagnostics would come
   from whatever `golangci-lint` a bare `PATH` resolved — the shared-`GOPATH/bin`
   problem re-entering through the editor. See `docs/ci.md`.
-- Confidence is medium, not high: the mechanism is sound but the ergonomics of
-  `mise exec` in every Makefile target are unproven over time. If it grates, the
-  `go run …@version` alternative above remains a small, local change.
+
+Confidence is medium, not high: the mechanism is sound, but most of it is
+untested by use. What would raise it:
+
+- [x] **The editor resolves to the pinned binary.** Verified 2026-07-19: a
+      `misspell` diagnostic in Zed, served by the mise-installed langserver.
+- [ ] **Green CI runs, including a cold cache.** `jdx/mise-action` installing
+      the `go:` backend on a macOS runner is unproven, as is what it costs.
+- [ ] **One bump cycle survived** — `mise outdated` → bump → green. The lost
+      Dependabot automation is this decision's biggest unmitigated regression;
+      the open question is whether manual bumps happen or quietly rot.
+- [ ] **Release tools added via mise** (syft, goreleaser at #25). "One line to
+      add another tool" is a main reason this beat `go run …@version`.
+- [ ] **A second repo adopts it.** Until bfeed and pi5_exporter stop sharing
+      `GOPATH/bin`, this is one repo opting out of a machine-wide problem, not
+      a fix for it.
+
+If the `mise exec` prefix on every tool target grates in practice, the
+`go run …@version` alternative above remains a small, local change.

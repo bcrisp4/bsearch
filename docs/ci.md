@@ -43,17 +43,46 @@ the project shell environment; otherwise it downloads its own copy and resolves
 `golangci-lint` against a bare `PATH`, which on a Dock-launched editor is
 whatever happens to be in `/usr/bin`.
 
-`.zed/settings.json` supplies the lint command. The langserver has no built-in
-default (it reads `initializationOptions.command` and indexes `command[0]`), so
-without that block Go buffers get no golangci-lint diagnostics at all. The flags
-are v2 syntax — v1's `--out-format json` is now `--output.json.path stdout`.
+`.zed/settings.json` carries the rest. Three things there are easy to get wrong,
+and each fails **silently** — no error, just no diagnostics:
 
-To check what the editor is really running, with a Go file open:
+- **The server id is `golangci-lint`**, from the extension's `extension.toml`.
+  `golangci-lint-langserver` is only the binary it wraps; settings under that
+  key are ignored without complaint.
+- **`languages.Go.language_servers` must list it.** Zed does not attach it
+  alongside gopls on its own, so the server never starts.
+- **`initialization_options.command` must be set.** The langserver has no
+  built-in default — it reads the command from there and indexes `command[0]`.
+  Flags are v2 syntax; v1's `--out-format json` is now `--output.json.path
+  stdout`, plus `--output.text.path=` to keep text off the stream it parses.
+
+### Checking it actually works
+
+gopls and golangci-lint both report into the same gutter, so a test case has to
+be something *only* golangci-lint flags — a compile error like an unused
+variable proves nothing, because gopls reports it first. Two reliable triggers
+for this repo's `.golangci.yml`:
+
+| Trigger | Expected diagnostic |
+|---|---|
+| `recieve` in a comment | `` `recieve` is a misspelling of `receive` (misspell)`` |
+| `errors.New("Something went wrong")` | `ST1005: error strings should not be capitalized (staticcheck)` |
+
+The linter name in parentheses is the proof it came from golangci-lint. Note
+`misspell` matches a fixed dictionary of real-world misspellings — an invented
+typo produces nothing and looks identical to a broken setup.
+
+To confirm *which* binary is serving them, with a Go file open:
 
 ```sh
 ps -Ao pid,ppid,command | grep -i golangci | grep -v grep
 lsof -p <pid> -Fn | grep -m3 golangci   # the real executable path
 ```
+
+Expect a path under `~/.local/share/mise/installs/`. The `golangci-lint` child
+process is spawned per-lint and exits in well under a second, so it is rarely
+visible — the langserver's own path is the meaningful evidence, since the
+binary it execs inherits that process's `PATH`.
 
 The rationale for both is recorded in
 [ADR 0001](adr/0001-macos-native-ci.md) and
