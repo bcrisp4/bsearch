@@ -10,3 +10,13 @@ every behaviour-changing PR adds an entry under `[Unreleased]`; at release time
 that section is renamed to the new version and becomes the GitHub Release notes.
 
 ## [Unreleased]
+
+### Added
+
+- bsearch reads its configuration from `~/.config/bsearch/config.toml`
+  (or `$XDG_CONFIG_HOME/bsearch/config.toml`): indexed paths, inference and
+  converter endpoints, and power-aware indexing intervals, with sensible
+  defaults when no file exists. Unknown or invalid keys fail loudly instead
+  of silently falling back to defaults. A built-in privacy deny-list
+  (`~/.ssh`, `~/Library`, VCS internals, key/secret file patterns, …) is
+  always active; `[paths].exclude` extends it.
