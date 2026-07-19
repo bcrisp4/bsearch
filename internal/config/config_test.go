@@ -199,6 +199,16 @@ func TestLoadErrors(t *testing.T) {
 			body:    "[paths]\ninclude = []\n",
 			wantSub: "include",
 		},
+		{
+			name:    "relative include",
+			body:    "[paths]\ninclude = [\"notes\"]\n",
+			wantSub: "notes",
+		},
+		{
+			name:    "relative exclude with separator",
+			body:    "[paths]\nexclude = [\"Archive/junk\"]\n",
+			wantSub: "Archive/junk",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -210,6 +220,16 @@ func TestLoadErrors(t *testing.T) {
 				t.Errorf("Load error %q does not mention %q", err, tt.wantSub)
 			}
 		})
+	}
+}
+
+func TestLoadEmptyPathErrors(t *testing.T) {
+	setHome(t)
+	// os.ReadFile("") reports ErrNotExist, which must not be mistaken for
+	// a missing config file: an empty path means the caller failed to
+	// resolve one (e.g. DefaultPath() with no home dir) — fail loudly.
+	if _, err := config.Load(""); err == nil {
+		t.Error("Load(\"\") = nil error, want error")
 	}
 }
 

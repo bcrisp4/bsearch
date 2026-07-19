@@ -140,6 +140,12 @@ func DefaultPath() string {
 // built-in defaults are returned (first-run experience). Unknown keys,
 // malformed TOML, and invalid values are errors.
 func Load(path string) (*Config, error) {
+	// os.ReadFile("") reports ErrNotExist, which would silently pass for
+	// first-run defaults; an empty path means the caller failed to resolve
+	// one (e.g. DefaultPath() with no home directory).
+	if path == "" {
+		return nil, errors.New("config path is empty")
+	}
 	cfg := Config{
 		Paths: Paths{Include: []string{"~"}},
 		Inference: Inference{
@@ -230,6 +236,18 @@ func (c *Config) expandPaths() error {
 func (c *Config) validate() error {
 	if len(c.Paths.Include) == 0 {
 		return errors.New("paths.include: must list at least one directory")
+	}
+	for _, p := range c.Paths.Include {
+		if !filepath.IsAbs(p) {
+			return fmt.Errorf("paths.include: %q is not an absolute path (start with ~/ or /)", p)
+		}
+	}
+	// Non-absolute exclude entries are basename globs; one with a path
+	// separator matches nothing, silently.
+	for _, e := range c.Paths.Exclude {
+		if !filepath.IsAbs(e) && strings.ContainsRune(e, '/') {
+			return fmt.Errorf("paths.exclude: %q is neither an absolute path nor a basename glob", e)
+		}
 	}
 	if err := validateEndpoint("inference.endpoint", c.Inference.Endpoint); err != nil {
 		return err

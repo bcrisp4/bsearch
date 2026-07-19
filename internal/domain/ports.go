@@ -7,9 +7,9 @@ import "context"
 // (embedder #5, storage #2). Converter, Watcher, and Summarizer ports
 // land with their own issues (#21, #13, #18).
 //
-// Naming: DESIGN.md's *Port suffix is conceptual; in code the package
-// path already says "port", so interfaces take plain Go names
-// (domain.Embedder, not domain.EmbedderPort).
+// Naming: DESIGN.md's *Port suffix is conceptual. In code the ports are
+// this file's interfaces, with plain Go names (domain.Embedder is
+// DESIGN.md's EmbedderPort).
 
 // Embedder turns text into vectors via an OpenAI-compatible endpoint.
 // Query/passage prefix templates (asymmetric models) are the adapter's
