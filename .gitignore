@@ -1,0 +1,11 @@
+# Build output
+/bsearch
+/dist/
+
+# Test output
+coverage.out
+
+# Local scratch
+*.db
+*.db-wal
+*.db-shm
