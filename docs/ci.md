@@ -24,8 +24,9 @@ Dev tools are pinned per project in [`mise.toml`](../mise.toml) and invoked via
 `mise exec` from the Makefile. A `go install`ed tool lands in `GOPATH/bin`,
 which every Go repo on the machine shares — the last install wins, and projects
 silently lint against each other's version. CI installs from the same
-`mise.toml` (`jdx/mise-action`) and then runs `golangci-lint run` directly, so
-there is no second version pin in the workflow to drift.
+`mise.toml` (`jdx/mise-action`) and then invokes the Makefile targets, so there
+is no second version pin in the workflow to drift and no second definition of
+what the checks run.
 
 Go itself is not pinned in `mise.toml`: the `toolchain` directive in `go.mod` is
 the anchor, and both the local `go` command and `setup-go` honour it.
