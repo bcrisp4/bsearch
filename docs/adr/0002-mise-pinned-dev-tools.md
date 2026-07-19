@@ -71,6 +71,11 @@ decision exists to remove.
   matcher committed at `.github/golangci-lint-matcher.json`.
 - Adding future tools (syft and goreleaser at release time) is now a one-line
   change in one file.
+- The editor is covered by the same pin: `golangci-lint-langserver` is pinned
+  too, because the Zed extension passes the project shell environment only to a
+  langserver it finds on `PATH`. Without that, in-editor diagnostics would come
+  from whatever `golangci-lint` a bare `PATH` resolved — the shared-`GOPATH/bin`
+  problem re-entering through the editor. See `docs/ci.md`.
 - Confidence is medium, not high: the mechanism is sound but the ergonomics of
   `mise exec` in every Makefile target are unproven over time. If it grates, the
   `go run …@version` alternative above remains a small, local change.

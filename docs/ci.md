@@ -34,6 +34,27 @@ Dependabot has no mise ecosystem, so tool bumps are manual: `mise outdated`,
 then edit `mise.toml`. `govulncheck` is pinned there too, via mise's `go:`
 backend — it has no registry entry.
 
+### Editor (Zed)
+
+`golangci-lint-langserver` is pinned in `mise.toml` as well, which is what keeps
+in-editor diagnostics in step with `make lint`. The Zed extension only uses a
+langserver found on `PATH` — and only on that branch does it pass the process
+the project shell environment; otherwise it downloads its own copy and resolves
+`golangci-lint` against a bare `PATH`, which on a Dock-launched editor is
+whatever happens to be in `/usr/bin`.
+
+`.zed/settings.json` supplies the lint command. The langserver has no built-in
+default (it reads `initializationOptions.command` and indexes `command[0]`), so
+without that block Go buffers get no golangci-lint diagnostics at all. The flags
+are v2 syntax — v1's `--out-format json` is now `--output.json.path stdout`.
+
+To check what the editor is really running, with a Go file open:
+
+```sh
+ps -Ao pid,ppid,command | grep -i golangci | grep -v grep
+lsof -p <pid> -Fn | grep -m3 golangci   # the real executable path
+```
+
 The rationale for both is recorded in
 [ADR 0001](adr/0001-macos-native-ci.md) and
 [ADR 0002](adr/0002-mise-pinned-dev-tools.md).
