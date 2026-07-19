@@ -1,0 +1,19 @@
+# Per-project dev tool versions (https://mise.jdx.dev).
+#
+# Pinned here rather than `go install`ed into GOPATH/bin: that location is
+# shared by every Go repo on the machine, so the last `go install` wins and
+# projects silently lint against each other's version. CI installs from this
+# same file, so local and CI run the identical linter.
+#
+#   mise install     # fetch the pinned versions
+#   mise exec -- golangci-lint run
+#
+# Go itself is deliberately not pinned here — the `toolchain` directive in
+# go.mod is the anchor, and the go command fetches it on demand.
+
+[tools]
+golangci-lint = "2.12.2"
+# govulncheck has no mise registry entry; the go backend builds it from source
+# and caches the binary, so it is pinned like everything else rather than
+# recompiled from @latest on every CI run.
+"go:golang.org/x/vuln/cmd/govulncheck" = "v1.6.0"

@@ -1,0 +1,52 @@
+# golangci-lint v2 configuration.
+# Run:  golangci-lint run        (lint + format check)
+# Fix:  golangci-lint fmt        (apply formatters)
+version: "2"
+
+linters:
+  # "standard" = errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - bodyclose      # HTTP/response bodies are closed (bscribe + inference clients)
+    - copyloopvar    # loop-variable copy bugs (Go 1.22+)
+    - errorlint      # correct errors.Is/As and %w wrapping
+    - gocheckcompilerdirectives # //go: directives are valid
+    - gosec          # common security issues
+    - misspell       # spelling in comments/strings
+    - nilerr         # don't return nil after a non-nil error
+    - revive         # broad golint replacement
+    - rowserrcheck   # sql.Rows.Err() is checked — the whole index is SQLite
+    - sqlclosecheck  # sql.Rows/Stmt are closed
+    - unconvert      # unnecessary type conversions
+    - usetesting     # prefer t.Context/t.Setenv in tests
+  settings:
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: error-strings
+        - name: unexported-return
+        - name: unreachable-code
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - std-error-handling
+    rules:
+      # Test helpers may ignore errors and use weaker constructs.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+
+formatters:
+  enable:
+    - gofumpt        # strict superset of gofmt
+    - goimports      # import grouping/ordering
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/bcrisp4/bsearch
