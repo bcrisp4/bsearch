@@ -167,3 +167,22 @@ func TestSidecarFilesNotWorldReadable(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenTightensPreexistingDirPermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "data")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(filepath.Join(dir, "bsearch.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	st, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := st.Mode().Perm(); perm != 0o700 {
+		t.Errorf("pre-existing db dir mode = %o after Open, want 700", perm)
+	}
+}

@@ -292,3 +292,26 @@ func TestDescriptorLayoutBackfill(t *testing.T) {
 		t.Errorf("vec_current = %q — legacy descriptor mismatched, new empty generation minted", current)
 	}
 }
+
+func TestEnsureVecTableRejectsInvalidInputs(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, "", 4); err == nil {
+		t.Error("empty model accepted, want error")
+	}
+	for _, dims := range []int{0, -1} {
+		if err := store.EnsureVecTable(ctx, "test-model", dims); err == nil {
+			t.Errorf("dims=%d accepted, want error", dims)
+		}
+	}
+	// Nothing half-created.
+	var n int
+	if err := db.Reader().QueryRow("SELECT count(*) FROM meta").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("meta has %d rows after rejected calls, want 0", n)
+	}
+}

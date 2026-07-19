@@ -88,6 +88,15 @@ func listVecTables(ctx context.Context, q queryer) (map[string]vecDescriptor, er
 // blue/green cutover (old table serves while the new one fills) is issue
 // #24; DESIGN.md (Pipeline metadata and model migration) records both.
 func (s *Store) EnsureVecTable(ctx context.Context, model string, dims int) error {
+	// Validate upfront: an empty model would poison descriptor identity in
+	// meta; bad dims would only surface as an opaque vec0 SQL error.
+	// 8192 is vec0's dimension ceiling.
+	if model == "" {
+		return errors.New("ensure vec table: model must not be empty")
+	}
+	if dims < 1 || dims > 8192 {
+		return fmt.Errorf("ensure vec table: dims %d out of range [1, 8192]", dims)
+	}
 	want := vecDescriptor{Model: model, Dims: dims, Layout: "float32"}
 
 	return s.withTx(ctx, func(tx *sql.Tx) error {

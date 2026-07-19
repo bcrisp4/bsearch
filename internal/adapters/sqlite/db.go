@@ -74,8 +74,13 @@ func escapeURIPath(p string) string {
 // tightened) before any connection opens, because SQLite creates the -wal
 // and -shm sidecars copying the main file's permissions.
 func Open(path string) (*DB, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
+	}
+	// MkdirAll is a no-op on an existing directory — tighten it explicitly.
+	if err := os.Chmod(dir, 0o700); err != nil { // #nosec G302 -- directory: owner needs the execute bit
+		return nil, fmt.Errorf("chmod db dir: %w", err)
 	}
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 -- caller-chosen db path
 	if err != nil {
