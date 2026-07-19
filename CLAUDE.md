@@ -9,6 +9,22 @@ decisions, their rationale, and the rejected alternatives (Closed issues).
 Don't re-litigate them; if a change contradicts the design doc, update the doc
 in the same PR.**
 
+## Architecture decisions (ADRs)
+
+`DESIGN.md` holds the pre-build decisions; ADRs in `docs/adr/` capture
+decisions made *during* development, one immutable record each. Consult
+existing ADRs before contradicting one; supersede with a new ADR rather than
+editing an accepted one.
+
+Write an ADR when the penalty for being wrong is high and the choice is
+expensive to reverse — schema changes, API/socket contracts, auth, new
+external dependencies, swapping a core library, or cross-cutting conventions.
+Cheap-to-swap choices don't need one.
+
+Invoke the `adr` skill to draft one (`Skill` tool, name `adr`). It writes
+`docs/adr/NNNN-*.md` as **Proposed**; only Ben flips a record to Accepted.
+If `docs/adr/` doesn't exist yet, the skill bootstraps it on first use.
+
 ## Quick facts
 
 - **Language:** Go. Single binary: daemon (`bsearch serve`, launchd) + CLI
