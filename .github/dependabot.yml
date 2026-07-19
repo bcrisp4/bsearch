@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Keep the SHA-pinned GitHub Actions current (Dependabot bumps both the SHA
+  # and the trailing version comment).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Keep Go module dependencies current, grouped into one PR per run.
+  # sqlite-vec is pre-1.0 with no stable on-disk format guarantee (DESIGN.md,
+  # "Acknowledged bet") — review its bumps by hand, never merge on green alone.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-modules:
+        patterns: ["*"]

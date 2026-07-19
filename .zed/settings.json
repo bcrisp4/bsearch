@@ -1,0 +1,41 @@
+// Zed project settings.
+//
+// The language server id is `golangci-lint` (declared in the extension's
+// extension.toml) — not `golangci-lint-langserver`, which is merely the binary
+// it wraps. Settings under the wrong key are silently ignored.
+//
+// Two things are required, and neither has a working default:
+//
+//  1. `languages.Go.language_servers` — Zed does not attach this server
+//     alongside gopls on its own.
+//  2. `initialization_options.command` — golangci-lint-langserver reads its
+//     lint command from there and indexes command[0], so with no command the
+//     server errors instead of linting.
+//
+// Flags are golangci-lint v2 syntax (v1's `--out-format json` is now
+// `--output.json.path`); `--output.text.path=` keeps text output off stdout,
+// which the langserver parses as JSON. `golangci-lint` is left unqualified on
+// purpose: the langserver is pinned in mise.toml, so the extension finds it on
+// PATH and hands it the project's mise environment — which is what makes this
+// resolve to the pinned 2.12.2 and stay in step with `make lint`.
+{
+  "lsp": {
+    "golangci-lint": {
+      "initialization_options": {
+        "command": [
+          "golangci-lint",
+          "run",
+          "--output.json.path",
+          "stdout",
+          "--show-stats=false",
+          "--output.text.path="
+        ]
+      }
+    }
+  },
+  "languages": {
+    "Go": {
+      "language_servers": ["gopls", "golangci-lint"]
+    }
+  }
+}

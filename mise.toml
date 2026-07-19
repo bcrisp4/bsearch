@@ -1,0 +1,24 @@
+# Per-project dev tool versions (https://mise.jdx.dev).
+#
+# Pinned here rather than `go install`ed into GOPATH/bin: that location is
+# shared by every Go repo on the machine, so the last `go install` wins and
+# projects silently lint against each other's version. CI installs from this
+# same file, so local and CI run the identical linter.
+#
+#   mise install     # fetch the pinned versions
+#   mise exec -- golangci-lint run
+#
+# Go itself is deliberately not pinned here — the `toolchain` directive in
+# go.mod is the anchor, and the go command fetches it on demand.
+
+[tools]
+golangci-lint = "2.12.2"
+# The Zed extension only uses a langserver it finds on PATH — and only then
+# does it hand the process the project shell environment. Pinning it here is
+# what makes the editor lint with the golangci-lint above rather than whatever
+# the extension would otherwise download and resolve against a bare PATH.
+golangci-lint-langserver = "0.0.12"
+# govulncheck has no mise registry entry; the go backend builds it from source
+# and caches the binary, so it is pinned like everything else rather than
+# recompiled from @latest on every CI run.
+"go:golang.org/x/vuln/cmd/govulncheck" = "v1.6.0"
