@@ -306,6 +306,33 @@ func TestRunPermanentEmbedErrorFailsDoc(t *testing.T) {
 	}
 }
 
+func TestRunPreservesForeignStageVersions(t *testing.T) {
+	store := openStore(t)
+	dir := t.TempDir()
+	doc := seedFile(t, store, dir, "a.md", "# Alpha\n\ntext\n")
+
+	// A stage key owned by another pipeline stage (converter, M6) must
+	// survive re-indexing — partial rebuilds depend on it.
+	doc.StageVersions = map[string]string{"converter": "bscribe-9"}
+	if _, err := store.UpsertDocument(context.Background(), doc, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := runAll(t, newIndexer(t, store, &fakeEmbedder{spec: testSpec("test-model")}, nil), store); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, ok, err := store.GetByPath(context.Background(), doc.Path)
+	if err != nil || !ok {
+		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
+	}
+	if got.StageVersions["converter"] != "bscribe-9" {
+		t.Errorf("converter stage version lost on re-index: %v", got.StageVersions)
+	}
+	if got.StageVersions[domain.StageChunker] == "" || got.StageVersions[domain.StageEmbedding] == "" {
+		t.Errorf("pipeline stage versions missing: %v", got.StageVersions)
+	}
+}
+
 func TestRunEmptyFile(t *testing.T) {
 	store := openStore(t)
 	dir := t.TempDir()

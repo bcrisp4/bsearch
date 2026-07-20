@@ -168,7 +168,17 @@ func (ix *Indexer) versionsCurrent(doc domain.Document) bool {
 // non-nil return aborts the whole run; per-document permanent failures are
 // recorded via fail and return nil.
 func (ix *Indexer) processDoc(ctx context.Context, doc domain.Document, sv map[string]string, sum *Summary) error {
-	doc.StageVersions = sv
+	// Merge, don't replace: stage keys owned by other stages (converter,
+	// summarizer — later milestones) must survive a re-index, or partial
+	// rebuild decisions lose their inputs.
+	merged := make(map[string]string, len(doc.StageVersions)+len(sv))
+	for k, v := range doc.StageVersions {
+		merged[k] = v
+	}
+	for k, v := range sv {
+		merged[k] = v
+	}
+	doc.StageVersions = merged
 
 	raw, err := os.ReadFile(doc.Path)
 	if err != nil {
@@ -226,7 +236,7 @@ func (ix *Indexer) processDoc(ctx context.Context, doc domain.Document, sv map[s
 	}
 
 	if err := ix.opts.Store.UpdateDocumentState(ctx, doc.ID, domain.DocStateIndexed); err != nil {
-		return err
+		return fmt.Errorf("finalize %s: %w", doc.Path, err)
 	}
 	sum.Indexed++
 	fmt.Fprintf(ix.opts.Progress, "indexed %s (%d chunks)\n", doc.Path, len(res.Chunks))
