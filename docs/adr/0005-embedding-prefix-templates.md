@@ -46,18 +46,32 @@ membership. The registry ships with one entry (embeddinggemma, from the
 2026-07-19 research doc); further entries land only when the M2 bake-off
 (#10) validates them.
 
-**Templates in vector identity.** The sqlite vec-table descriptor records
-templates and ceiling alongside model+dims, and they participate in
-generation matching: a template change mints a new vector generation, exactly
-like a model change, because differently-prefixed vectors are incompatible.
-Absent fields backfill to raw/unlimited, so pre-existing descriptors keep
-matching.
+**Templates in vector identity — ceiling recorded but excluded.** The sqlite
+vec-table descriptor records templates and ceiling alongside model+dims.
+Model, dims, and templates participate in generation matching: a template
+change mints a new vector generation, exactly like a model change, because
+differently-prefixed vectors are incompatible. The input ceiling is recorded
+for auditability only: it shapes chunk boundaries, not the vector a given
+text maps to, so a ceiling change is a chunker-level partial rebuild (stage
+versioning) — minting a generation for it would empty search until a full
+re-embed for no compatibility gain. Absent fields backfill to raw/unlimited,
+so pre-existing descriptors keep matching.
+
+**Template length is validated against the chunker's reserve.** The chunker
+reserves `domain.TemplateReserveBytes` (256) of ceiling headroom for the
+passage-template literal (breadcrumbs budgeted separately per section);
+`EmbeddingSpec.Validate` — enforced at config load and in `NewEmbedder` —
+rejects longer templates, otherwise full-size chunks would compose past the
+ceiling and fail documents that chunked fine. The chars/token heuristic is
+the shared `domain.BytesPerToken`, so chunker and embedder guard can never
+disagree.
 
 **HTTP error classification.** Adapters return typed errors; `Transient(err)`
-classifies: connection/timeout failures and HTTP 408/429/5xx → transient
-(retry territory), other 4xx and malformed responses → permanent, context
-cancellation → not transient. Adapters do not retry — backoff and health
-gates belong to the scheduler.
+classifies: connection failures, timeouts (including the adapter's own HTTP
+client deadline, which surfaces as `context.DeadlineExceeded`), and HTTP
+408/429/5xx → transient (retry territory); other 4xx and malformed responses
+→ permanent; `context.Canceled` → not transient (the caller chose to stop).
+Adapters do not retry — backoff and health gates belong to the scheduler.
 
 ## Alternatives considered
 

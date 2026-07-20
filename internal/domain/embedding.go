@@ -1,6 +1,9 @@
 package domain
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Placeholders in embedding prefix templates. Substitution is plain string
 // replacement — no escaping, no template engine (the strings come from a
@@ -13,6 +16,21 @@ const (
 	// PlaceholderTitle is replaced with the chunk's heading-path breadcrumb,
 	// for models with a dedicated title slot (EmbeddingGemma's "title:").
 	PlaceholderTitle = "{t}"
+)
+
+const (
+	// BytesPerToken is the heuristic byte-per-token estimate used wherever
+	// token budgets are enforced without a tokenizer (chunker ceilings, the
+	// embedder's input guard). One shared constant so the two sides of the
+	// budget can never disagree.
+	BytesPerToken = 4
+
+	// TemplateReserveBytes is the ceiling headroom the chunker reserves for
+	// the passage template literal. A PassageTemplate longer than this can
+	// compose over the model's input ceiling on a full-size chunk;
+	// EmbeddingSpec.Validate rejects it. The breadcrumb is budgeted
+	// separately (the chunker subtracts each section's heading-path length).
+	TemplateReserveBytes = 256
 )
 
 // EmbeddingSpec identifies how vectors are produced: the model plus the
@@ -34,6 +52,28 @@ type EmbeddingSpec struct {
 	// CeilingTokens is the model's input limit in tokens; 0 means unlimited.
 	// Token counts are heuristic (≈ chars/4) — no tokenizer in-process.
 	CeilingTokens int
+}
+
+// Validate reports whether the spec's templates are usable: placeholders
+// present where a template is set, passage template within the chunker's
+// reserve, ceiling non-negative. The single choke point for specs from any
+// source (registry, config override, or hand-built).
+func (s EmbeddingSpec) Validate() error {
+	if t := s.QueryTemplate; t != "" && !strings.Contains(t, PlaceholderQuery) {
+		return fmt.Errorf("query template %q does not contain %s", t, PlaceholderQuery)
+	}
+	if t := s.PassageTemplate; t != "" && !strings.Contains(t, PlaceholderPassage) {
+		return fmt.Errorf("passage template %q does not contain %s", t, PlaceholderPassage)
+	}
+	if n := len(s.PassageTemplate); n > TemplateReserveBytes {
+		return fmt.Errorf(
+			"passage template is %d bytes, over the %d-byte reserve the chunker budgets — composed text would exceed the input ceiling on full-size chunks",
+			n, TemplateReserveBytes)
+	}
+	if s.CeilingTokens < 0 {
+		return fmt.Errorf("input ceiling %d is negative", s.CeilingTokens)
+	}
+	return nil
 }
 
 // ComposeQuery applies the query template to a search query.
@@ -61,8 +101,12 @@ func (s EmbeddingSpec) ComposePassage(c Chunk) string {
 		if title == "" {
 			title = "none"
 		}
-		out := strings.ReplaceAll(s.PassageTemplate, PlaceholderTitle, title)
-		return strings.ReplaceAll(out, PlaceholderPassage, c.Text)
+		// Single pass: a heading path containing a literal placeholder
+		// (document text is untrusted) must not be re-substituted.
+		return strings.NewReplacer(
+			PlaceholderTitle, title,
+			PlaceholderPassage, c.Text,
+		).Replace(s.PassageTemplate)
 	}
 
 	text := c.Text

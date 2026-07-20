@@ -83,6 +83,24 @@ func TestResolveSpecOverridesForUnknownModel(t *testing.T) {
 	}
 }
 
+func TestLookupEqualLengthTieIsDeterministic(t *testing.T) {
+	// Two equal-length keys matching one model id must resolve the same
+	// way every run (lexically smaller wins) — map order is randomized.
+	registry["aa-tie"] = registryEntry{queryTemplate: "first: {q}"}
+	registry["bb-tie"] = registryEntry{queryTemplate: "second: {q}"}
+	t.Cleanup(func() {
+		delete(registry, "aa-tie")
+		delete(registry, "bb-tie")
+	})
+
+	for range 20 {
+		got := ResolveSpec("model-aa-tie-bb-tie", "", "", 0)
+		if want := "first: {q}"; got.QueryTemplate != want {
+			t.Fatalf("QueryTemplate = %q, want lexically-first %q", got.QueryTemplate, want)
+		}
+	}
+}
+
 func TestLookupLongestKeyWins(t *testing.T) {
 	// Guard the tie-break rule with temporary overlapping keys.
 	registry["gemma"] = registryEntry{queryTemplate: "short: {q}"}

@@ -354,6 +354,41 @@ func TestEnsureVecTableTemplateIdentity(t *testing.T) {
 	}
 }
 
+func TestEnsureVecTableCeilingChangeKeepsGeneration(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	spec := domain.EmbeddingSpec{Model: "test-model", QueryTemplate: "q: {q}", CeilingTokens: 2048}
+	if err := store.EnsureVecTable(ctx, spec, 3); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ceiling shapes chunk boundaries, not vectors: changing it must not
+	// mint a new generation (which would empty search until re-embed).
+	spec.CeilingTokens = 4096
+	if err := store.EnsureVecTable(ctx, spec, 3); err != nil {
+		t.Fatal(err)
+	}
+	var current string
+	if err := db.Reader().QueryRow("SELECT value FROM meta WHERE key = 'vec_current'").Scan(&current); err != nil {
+		t.Fatal(err)
+	}
+	if current != "vec_chunks_1" {
+		t.Errorf("vec_current = %q after ceiling-only change, want vec_chunks_1", current)
+	}
+
+	// The recorded descriptor tracks the new ceiling.
+	var descriptor string
+	if err := db.Reader().QueryRow(
+		"SELECT value FROM meta WHERE key = 'vec_table:vec_chunks_1'").Scan(&descriptor); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(descriptor, "4096") {
+		t.Errorf("descriptor %q not refreshed with new ceiling", descriptor)
+	}
+}
+
 func TestDescriptorTemplateBackfill(t *testing.T) {
 	db := openTestDB(t)
 	store := NewStore(db)

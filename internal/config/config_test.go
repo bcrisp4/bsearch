@@ -253,6 +253,11 @@ func TestLoadErrors(t *testing.T) {
 			body:    "[inference]\ninput_ceiling_tokens = -1\n",
 			wantSub: "input_ceiling_tokens",
 		},
+		{
+			name:    "passage template over chunker reserve",
+			body:    "[inference]\npassage_template = \"" + strings.Repeat("x", 300) + " {d}\"\n",
+			wantSub: "reserve",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -10,7 +10,6 @@
 package embedding
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/bcrisp4/bsearch/internal/domain"
@@ -39,20 +38,23 @@ var registry = map[string]registryEntry{
 }
 
 // lookup finds the registry entry whose key is the longest substring of
-// the lowercased model identifier.
+// the lowercased model identifier. Equal-length ties break lexically so
+// resolution is deterministic across restarts (map order is randomized).
 func lookup(model string) (registryEntry, bool) {
 	lower := strings.ToLower(model)
-	keys := make([]string, 0, len(registry))
+	best := ""
 	for key := range registry {
-		if strings.Contains(lower, key) {
-			keys = append(keys, key)
+		if !strings.Contains(lower, key) {
+			continue
+		}
+		if len(key) > len(best) || (len(key) == len(best) && key < best) {
+			best = key
 		}
 	}
-	if len(keys) == 0 {
+	if best == "" {
 		return registryEntry{}, false
 	}
-	sort.Slice(keys, func(i, j int) bool { return len(keys[i]) > len(keys[j]) })
-	return registry[keys[0]], true
+	return registry[best], true
 }
 
 // ResolveSpec builds the EmbeddingSpec for model, merging per field:

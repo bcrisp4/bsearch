@@ -59,6 +59,9 @@ func NewEmbedder(cfg EmbedderConfig) (*Embedder, error) {
 	if cfg.Spec.Model == "" {
 		return nil, errors.New("openai embedder: model must not be empty")
 	}
+	if err := cfg.Spec.Validate(); err != nil {
+		return nil, fmt.Errorf("openai embedder: %w", err)
+	}
 	if cfg.BatchSize < 0 {
 		return nil, fmt.Errorf("openai embedder: batch size %d is negative", cfg.BatchSize)
 	}
@@ -82,6 +85,10 @@ func NewEmbedder(cfg EmbedderConfig) (*Embedder, error) {
 func (e *Embedder) Spec() domain.EmbeddingSpec { return e.spec }
 
 // EmbedQuery embeds one search query with the model's query template.
+//
+// The shared HTTP client's timeout is sized for bulk passage batches
+// (60 s default); interactive callers own the search latency SLO and
+// should bound ctx with their own, much shorter deadline.
 func (e *Embedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
 	vecs, err := e.embed(ctx, []string{e.spec.ComposeQuery(query)})
 	if err != nil {
@@ -113,13 +120,12 @@ func (e *Embedder) embed(ctx context.Context, texts []string) ([][]float32, erro
 	// config/model mismatch — fail loudly, never truncate (DESIGN.md:
 	// Chunking, hard ceiling).
 	if ceil := e.spec.CeilingTokens; ceil > 0 {
+		limit := ceil * domain.BytesPerToken
 		for n, text := range texts {
-			// chars/4 token heuristic, same as the chunker — no
-			// tokenizer in-process.
-			if len(text)/4 > ceil {
+			if len(text) > limit {
 				return nil, fmt.Errorf(
 					"input %d exceeds embedding input ceiling (%d tokens ≈ %d bytes): %d bytes composed",
-					n, ceil, ceil*4, len(text))
+					n, ceil, limit, len(text))
 			}
 		}
 	}
@@ -128,9 +134,18 @@ func (e *Embedder) embed(ctx context.Context, texts []string) ([][]float32, erro
 	dims := 0
 	for start := 0; start < len(texts); start += e.batch {
 		batch := texts[start:min(start+e.batch, len(texts))]
-		got, err := e.embedBatch(ctx, batch, &dims)
+		got, err := e.embedBatch(ctx, batch)
 		if err != nil {
 			return nil, err
+		}
+		// A model cannot change dimensions mid-corpus: the first batch
+		// fixes dims for the whole call.
+		if dims == 0 {
+			dims = len(got[0])
+		}
+		if len(got[0]) != dims {
+			return nil, fmt.Errorf("embed batch: dimension mismatch across batches: got %d, want %d",
+				len(got[0]), dims)
 		}
 		vectors = append(vectors, got...)
 	}
@@ -149,10 +164,10 @@ type embeddingsResponse struct {
 	} `json:"data"`
 }
 
-// embedBatch is one POST /embeddings round trip. dims is fixed by the
-// first vector seen across the whole call; any later mismatch is an
-// error (a model can't change dimensions mid-corpus).
-func (e *Embedder) embedBatch(ctx context.Context, batch []string, dims *int) ([][]float32, error) {
+// embedBatch is one POST /embeddings round trip. All vectors in the
+// response must share one dimension; the caller checks consistency
+// across batches.
+func (e *Embedder) embedBatch(ctx context.Context, batch []string) ([][]float32, error) {
 	body, err := json.Marshal(embeddingsRequest{Model: e.spec.Model, Input: batch})
 	if err != nil {
 		return nil, err
@@ -186,6 +201,7 @@ func (e *Embedder) embedBatch(ctx context.Context, batch []string, dims *int) ([
 	// Place vectors by the response index field — OpenAI-compatible
 	// servers don't guarantee order.
 	vectors := make([][]float32, len(batch))
+	dims := 0
 	for _, item := range decoded.Data {
 		if item.Index < 0 || item.Index >= len(batch) {
 			return nil, fmt.Errorf("embed batch: embedding index %d out of range [0, %d)", item.Index, len(batch))
@@ -196,12 +212,12 @@ func (e *Embedder) embedBatch(ctx context.Context, batch []string, dims *int) ([
 		if len(item.Embedding) == 0 {
 			return nil, fmt.Errorf("embed batch: empty embedding at index %d", item.Index)
 		}
-		if *dims == 0 {
-			*dims = len(item.Embedding)
+		if dims == 0 {
+			dims = len(item.Embedding)
 		}
-		if len(item.Embedding) != *dims {
+		if len(item.Embedding) != dims {
 			return nil, fmt.Errorf("embed batch: dimension mismatch at index %d: got %d, want %d",
-				item.Index, len(item.Embedding), *dims)
+				item.Index, len(item.Embedding), dims)
 		}
 		vectors[item.Index] = item.Embedding
 	}

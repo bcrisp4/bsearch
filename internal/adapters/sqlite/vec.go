@@ -33,14 +33,24 @@ type vecDescriptor struct {
 	Model  string `json:"model"`
 	Dims   int    `json:"dims"`
 	Layout string `json:"layout"` // "float32" until quantization lands
-	// Prefix templates and input ceiling are part of the identity:
-	// vectors embedded with different prefixes are as incompatible as a
-	// different model's (DESIGN.md: Embeddings/LLM). Empty/zero = raw/
-	// unlimited — also the backfill default for descriptors stored before
-	// these fields existed.
+	// Prefix templates are part of the identity: vectors embedded with
+	// different prefixes are as incompatible as a different model's
+	// (DESIGN.md: Embeddings/LLM). The input ceiling is recorded for
+	// auditability but excluded from identity (see identity()): it shapes
+	// chunk boundaries, not the vector a given text maps to, so a ceiling
+	// change is a chunker-level partial rebuild, never a generation swap.
+	// Empty/zero = raw/unlimited — also the backfill default for
+	// descriptors stored before these fields existed.
 	QueryTemplate   string `json:"query_template,omitempty"`
 	PassageTemplate string `json:"passage_template,omitempty"`
 	CeilingTokens   int    `json:"ceiling_tokens,omitempty"`
+}
+
+// identity strips fields that don't affect vector-space compatibility;
+// two generations with equal identities hold interchangeable vectors.
+func (d vecDescriptor) identity() vecDescriptor {
+	d.CeilingTokens = 0
+	return d
 }
 
 // normalize fills defaults for fields added after a descriptor was stored.
@@ -89,9 +99,11 @@ func listVecTables(ctx context.Context, q queryer) (map[string]vecDescriptor, er
 }
 
 // EnsureVecTable makes a vector table for spec+dims the current one,
-// creating a new generation if none matches. The full spec participates
-// in identity: a template or ceiling change mints a new generation, same
-// as a model change.
+// creating a new generation if none matches. Model, dims, and templates
+// participate in identity — a template change mints a new generation,
+// same as a model change. The ceiling does not (recorded only): its
+// vectors stay valid, and re-chunking under a new ceiling is stage
+// versioning's partial rebuild, not a cutover that empties search.
 //
 // M1 semantics: the switch is immediate — a model change points search at
 // the (initially empty) new generation until re-embedding fills it. Staged
@@ -128,8 +140,19 @@ func (s *Store) EnsureVecTable(ctx context.Context, spec domain.EmbeddingSpec, d
 		for existing, desc := range tables {
 			gen, _ := strconv.Atoi(vecTableName.FindStringSubmatch(existing)[1])
 			maxGen = max(maxGen, gen)
-			if desc == want {
+			if desc.identity() == want.identity() {
 				name = existing
+				// Refresh non-identity fields (ceiling) so the recorded
+				// descriptor tracks current config.
+				if desc != want {
+					descJSON, err := json.Marshal(want)
+					if err != nil {
+						return err
+					}
+					if err := setMeta(ctx, tx, metaVecPrefix+name, string(descJSON)); err != nil {
+						return err
+					}
+				}
 			}
 		}
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bcrisp4/bsearch/internal/domain"
 )
@@ -47,6 +48,16 @@ func echoServer(t *testing.T, requests *atomic.Int64) *httptest.Server {
 	return srv
 }
 
+// fixedBodyServer answers every request with the given body.
+func fixedBodyServer(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 func newTestEmbedder(t *testing.T, cfg EmbedderConfig) *Embedder {
 	t.Helper()
 	e, err := NewEmbedder(cfg)
@@ -65,6 +76,13 @@ func TestNewEmbedderValidation(t *testing.T) {
 		{name: "empty model", cfg: EmbedderConfig{Endpoint: "http://localhost:1234/v1"}},
 		{name: "negative batch size", cfg: EmbedderConfig{
 			Endpoint: "http://localhost:1234/v1", Spec: testSpec, BatchSize: -1,
+		}},
+		{name: "invalid spec rejected at choke point", cfg: EmbedderConfig{
+			Endpoint: "http://localhost:1234/v1",
+			Spec: domain.EmbeddingSpec{
+				Model:           "m",
+				PassageTemplate: strings.Repeat("x", domain.TemplateReserveBytes+1) + "{d}",
+			},
 		}},
 	}
 	for _, tt := range tests {
@@ -170,14 +188,11 @@ func TestEmbedPassagesBatches(t *testing.T) {
 }
 
 func TestEmbedReordersByIndexField(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Shuffled response order; index field is authoritative.
-		fmt.Fprint(w, `{"data":[
-			{"index":2,"embedding":[2]},
-			{"index":0,"embedding":[0]},
-			{"index":1,"embedding":[1]}]}`)
-	}))
-	t.Cleanup(srv.Close)
+	// Shuffled response order; index field is authoritative.
+	srv := fixedBodyServer(t, `{"data":[
+		{"index":2,"embedding":[2]},
+		{"index":0,"embedding":[0]},
+		{"index":1,"embedding":[1]}]}`)
 
 	e := newTestEmbedder(t, EmbedderConfig{Endpoint: srv.URL, Spec: testSpec})
 	vecs, err := e.EmbedPassages(t.Context(), []domain.Chunk{{Text: "a"}, {Text: "b"}, {Text: "c"}})
@@ -230,10 +245,7 @@ func TestEmbedMalformedResponses(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				fmt.Fprint(w, tt.body)
-			}))
-			t.Cleanup(srv.Close)
+			srv := fixedBodyServer(t, tt.body)
 
 			e := newTestEmbedder(t, EmbedderConfig{Endpoint: srv.URL, Spec: testSpec})
 			_, err := e.EmbedPassages(t.Context(), []domain.Chunk{{Text: "a"}, {Text: "b"}})
@@ -296,6 +308,33 @@ func TestEmbedErrorClassification(t *testing.T) {
 				t.Errorf("error %q does not carry response body", err)
 			}
 		})
+	}
+}
+
+func TestEmbedClientTimeoutIsTransient(t *testing.T) {
+	// The adapter's own http.Client timeout surfaces as
+	// context.DeadlineExceeded; a slow-but-alive server is retry
+	// territory, never a permanent failure.
+	blocked := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-blocked
+	}))
+	t.Cleanup(func() {
+		close(blocked)
+		srv.Close()
+	})
+
+	e := newTestEmbedder(t, EmbedderConfig{
+		Endpoint:   srv.URL,
+		Spec:       testSpec,
+		HTTPClient: &http.Client{Timeout: 20 * time.Millisecond},
+	})
+	_, err := e.EmbedQuery(t.Context(), "q")
+	if err == nil {
+		t.Fatal("EmbedQuery = nil error, want timeout error")
+	}
+	if !Transient(err) {
+		t.Errorf("Transient(%v) = false, want true for client timeout", err)
 	}
 }
 

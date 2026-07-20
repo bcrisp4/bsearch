@@ -24,16 +24,21 @@ func (e *StatusError) Error() string {
 
 // Transient reports whether err is worth retrying: connection/timeout
 // failures and HTTP 408/429/5xx. Context cancellation is not transient —
-// the caller chose to stop. Permanent errors (4xx content errors,
-// malformed responses) burn the document's attempts; transient ones are
-// the scheduler's queue-and-retry territory (DESIGN.md: response
-// classification).
+// the caller chose to stop. Deadline expiry IS transient: it means the
+// service was slow (the adapter's own http.Client timeout surfaces as
+// context.DeadlineExceeded too), and a retry with a fresh deadline may
+// succeed. Permanent errors (4xx content errors, malformed responses)
+// burn the document's attempts; transient ones are the scheduler's
+// queue-and-retry territory (DESIGN.md: response classification).
 func Transient(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) {
 		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
 	}
 	var statusErr *StatusError
 	if errors.As(err, &statusErr) {
