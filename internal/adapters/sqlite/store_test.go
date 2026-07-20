@@ -212,6 +212,92 @@ func TestUpsertDocumentResetsRetryColumns(t *testing.T) {
 	}
 }
 
+func TestGetByContentHash(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	docA := testDoc("d_a", "/notes/a.md")
+	docB := testDoc("d_b", "/notes/b.md")
+	docB.ContentHash = docA.ContentHash // duplicate content
+	docC := testDoc("d_c", "/notes/c.md")
+	docC.ContentHash = "hash-other"
+	for _, doc := range []domain.Document{docA, docB, docC} {
+		if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
+			t.Fatalf("upsert %s: %v", doc.ID, err)
+		}
+	}
+
+	docs, err := store.GetByContentHash(ctx, docA.ContentHash)
+	if err != nil {
+		t.Fatalf("GetByContentHash: %v", err)
+	}
+	if len(docs) != 2 || docs[0].ID != "d_a" || docs[1].ID != "d_b" {
+		t.Fatalf("GetByContentHash = %+v, want d_a and d_b", docs)
+	}
+	// Hydration parity with GetByPath.
+	want, _, err := store.GetByPath(ctx, "/notes/a.md")
+	if err != nil {
+		t.Fatalf("GetByPath: %v", err)
+	}
+	if docs[0].Path != want.Path || docs[0].Size != want.Size ||
+		!docs[0].MTime.Equal(want.MTime) || docs[0].State != want.State {
+		t.Errorf("hydration mismatch: GetByContentHash %+v vs GetByPath %+v", docs[0], want)
+	}
+
+	none, err := store.GetByContentHash(ctx, "hash-none")
+	if err != nil {
+		t.Fatalf("GetByContentHash(miss): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("GetByContentHash(miss) = %+v, want empty", none)
+	}
+}
+
+func TestUpdateDocumentStat(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if _, err := db.Writer().Exec(
+		"UPDATE documents SET attempts = 5, next_retry_at = 123, last_error = 'boom' WHERE id = 'd_1'"); err != nil {
+		t.Fatal(err)
+	}
+
+	newMTime := time.Unix(1800000000, 987654321)
+	if err := store.UpdateDocumentStat(ctx, "d_1", 99, newMTime); err != nil {
+		t.Fatalf("UpdateDocumentStat: %v", err)
+	}
+
+	doc, ok, err := store.GetByPath(ctx, "/notes/a.md")
+	if err != nil || !ok {
+		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
+	}
+	if doc.Size != 99 || !doc.MTime.Equal(newMTime) {
+		t.Errorf("size/mtime = %d/%v, want 99/%v (ns round-trip)", doc.Size, doc.MTime, newMTime)
+	}
+	if doc.State != domain.DocStateChunked || doc.ContentHash != "hash-d_1" {
+		t.Errorf("state/hash touched: %+v", doc)
+	}
+	// Chunks and retry columns untouched.
+	var chunks, attempts int
+	if err := db.Reader().QueryRow(
+		"SELECT count(*), (SELECT attempts FROM documents WHERE id = 'd_1') FROM chunks WHERE doc_id = 'd_1'").
+		Scan(&chunks, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if chunks != 1 || attempts != 5 {
+		t.Errorf("chunks=%d attempts=%d, want 1/5 (untouched)", chunks, attempts)
+	}
+
+	if err := store.UpdateDocumentStat(ctx, "d_missing", 1, newMTime); err == nil {
+		t.Error("UpdateDocumentStat(unknown id) = nil, want error")
+	}
+}
+
 func TestStageVersionsRoundTrip(t *testing.T) {
 	db := openTestDB(t)
 	store := NewStore(db)

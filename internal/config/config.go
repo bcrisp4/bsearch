@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -121,6 +122,27 @@ type ExcludeSet struct {
 	// Patterns are basename globs (path.Match syntax) matched against
 	// every file and directory name anywhere in the tree.
 	Patterns []string
+}
+
+// Match reports whether p is excluded: equal to or under a deny prefix,
+// or any path component matches a deny pattern. p must be an absolute,
+// cleaned path, as produced by walking an absolute root.
+func (e ExcludeSet) Match(p string) bool {
+	for _, prefix := range e.Prefixes {
+		if p == prefix || strings.HasPrefix(p, prefix+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	for component := range strings.SplitSeq(strings.TrimPrefix(p, string(os.PathSeparator)), string(os.PathSeparator)) {
+		for _, pattern := range e.Patterns {
+			// Patterns are validated at Load; a bad built-in would be
+			// a programming error and path.Match then reports no match.
+			if ok, _ := path.Match(pattern, component); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // DefaultPath returns the config file location:
@@ -243,10 +265,17 @@ func (c *Config) validate() error {
 		}
 	}
 	// Non-absolute exclude entries are basename globs; one with a path
-	// separator matches nothing, silently.
+	// separator matches nothing, silently, and a malformed glob would
+	// silently never match — reject both at load.
 	for _, e := range c.Paths.Exclude {
-		if !filepath.IsAbs(e) && strings.ContainsRune(e, '/') {
+		if filepath.IsAbs(e) {
+			continue
+		}
+		if strings.ContainsRune(e, '/') {
 			return fmt.Errorf("paths.exclude: %q is neither an absolute path nor a basename glob", e)
+		}
+		if _, err := path.Match(e, "probe"); err != nil {
+			return fmt.Errorf("paths.exclude: %q is not a valid glob pattern", e)
 		}
 	}
 	if err := validateEndpoint("inference.endpoint", c.Inference.Endpoint); err != nil {

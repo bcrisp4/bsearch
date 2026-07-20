@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Ports for milestone M1. Signatures are deliberately minimal and
 // provisional: the issue that first implements each port refines it
@@ -27,6 +30,13 @@ type DocumentStore interface {
 	// GetByPath fetches the catalog row for a path; ok is false when the
 	// path has never been stored. Cheap change detection (hash/size/mtime).
 	GetByPath(ctx context.Context, path string) (doc Document, ok bool, err error)
+	// GetByContentHash returns every catalog row with this content hash,
+	// for discovery's rename detection (DESIGN.md: doc_id Closed issue).
+	GetByContentHash(ctx context.Context, hash string) ([]Document, error)
+	// UpdateDocumentStat refreshes size/mtime on an existing row without
+	// touching state, chunks, stage versions, or retry columns — for files
+	// touched on disk but content-identical.
+	UpdateDocumentStat(ctx context.Context, docID string, size int64, mtime time.Time) error
 	// DeleteDocument removes the document and everything derived from it
 	// (chunks, summaries, vectors).
 	DeleteDocument(ctx context.Context, docID string) error

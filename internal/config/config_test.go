@@ -209,6 +209,11 @@ func TestLoadErrors(t *testing.T) {
 			body:    "[paths]\nexclude = [\"Archive/junk\"]\n",
 			wantSub: "Archive/junk",
 		},
+		{
+			name:    "malformed exclude glob",
+			body:    "[paths]\nexclude = [\"[oops\"]\n",
+			wantSub: "[oops",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,6 +338,36 @@ exclude = ["~/Archive/old-junk", "/Volumes/scratch", "*.bak"]
 	// Built-ins survive user additions.
 	if !slices.Contains(rules.Patterns, ".git") {
 		t.Error("ExcludeRules().Patterns lost built-in .git")
+	}
+}
+
+func TestExcludeSetMatch(t *testing.T) {
+	rules := config.ExcludeSet{
+		Prefixes: []string{"/home/u/.ssh", "/foo"},
+		Patterns: []string{".git", "node_modules", ".env.*", "*.pem"},
+	}
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{path: "/home/u/.ssh", want: true},                // path equals prefix
+		{path: "/home/u/.ssh/id_rsa", want: true},         // under prefix
+		{path: "/home/u/.sshfs/x.md", want: false},        // prefix boundary
+		{path: "/foobar/x.md", want: false},               // prefix boundary
+		{path: "/foo/x.md", want: true},                   // under short prefix
+		{path: "/home/u/proj/.git/config", want: true},    // pattern dir component
+		{path: "/home/u/a/node_modules/b/c", want: true},  // pattern deep in tree
+		{path: "/home/u/proj/.env.local", want: true},     // glob pattern
+		{path: "/home/u/certs/server.pem", want: true},    // suffix glob
+		{path: "/home/u/notes/todo.md", want: false},      // no match
+		{path: "/home/u/gitstuff/readme.md", want: false}, // pattern must match whole component
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := rules.Match(tt.path); got != tt.want {
+				t.Errorf("Match(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
 	}
 }
 

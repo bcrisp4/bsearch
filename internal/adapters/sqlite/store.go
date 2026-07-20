@@ -148,6 +148,58 @@ func (s *Store) GetByPath(ctx context.Context, path string) (domain.Document, bo
 	return doc, true, nil
 }
 
+// GetByContentHash returns every catalog row with this content hash, in
+// stable id order — discovery's rename detection input.
+func (s *Store) GetByContentHash(ctx context.Context, hash string) ([]domain.Document, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		"SELECT "+strings.Join(docColumns, ", ")+" FROM documents WHERE content_hash = ? ORDER BY id", hash)
+	if err != nil {
+		return nil, fmt.Errorf("get by content hash: %w", err)
+	}
+	defer rows.Close()
+
+	var docs []domain.Document
+	for rows.Next() {
+		var (
+			doc domain.Document
+			raw docRow
+		)
+		if err := rows.Scan(raw.targets(&doc)...); err != nil {
+			return nil, fmt.Errorf("get by content hash: %w", err)
+		}
+		if err := raw.finish(&doc); err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get by content hash: %w", err)
+	}
+	return docs, nil
+}
+
+// UpdateDocumentStat refreshes size/mtime on an existing row, leaving
+// state, chunks, stage versions, and retry columns untouched. Unknown
+// docID is a loud error — the caller just read the row.
+func (s *Store) UpdateDocumentStat(ctx context.Context, docID string, size int64, mtime time.Time) error {
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			"UPDATE documents SET size = ?, mtime = ?, updated_at = ? WHERE id = ?",
+			size, mtime.UnixNano(), time.Now().Unix(), docID)
+		if err != nil {
+			return fmt.Errorf("update stat for %s: %w", docID, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("update stat for %s: no such document", docID)
+		}
+		return nil
+	})
+}
+
 // DeleteDocument removes the document and everything derived from it.
 func (s *Store) DeleteDocument(ctx context.Context, docID string) error {
 	return s.withTx(ctx, func(tx *sql.Tx) error {
