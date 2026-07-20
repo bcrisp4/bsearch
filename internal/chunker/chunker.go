@@ -23,8 +23,9 @@ const (
 	overlapBytes = 256  // ~12.5% of target, always block-aligned
 	// prefixReserve is ceiling headroom for the model's query/passage
 	// prefix template; the heading-path breadcrumb is accounted for
-	// per-section on top of this.
-	prefixReserve = 256
+	// per-section on top of this. EmbeddingSpec.Validate enforces the
+	// other side: no passage template may exceed this reserve.
+	prefixReserve = domain.TemplateReserveBytes
 )
 
 // Warning reports an atomic block (code fence, table, single paragraph)
@@ -58,7 +59,7 @@ func Chunk(docID, text string, inputCeilingTokens int) Result {
 	// breadcrumb is subtracted in chunkSection, where its length is known.
 	baseCeiling := 0 // 0 = unlimited
 	if inputCeilingTokens > 0 {
-		baseCeiling = inputCeilingTokens*4 - prefixReserve
+		baseCeiling = inputCeilingTokens*domain.BytesPerToken - prefixReserve
 	}
 
 	var cands []candidate

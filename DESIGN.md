@@ -464,6 +464,12 @@ exclude = ["~/Archive/old-junk"]
 endpoint        = "http://localhost:1234/v1"   # OpenAI-compatible (LM Studio)
 embedding_model = ""                           # decided by M2 bake-off
 summary_model   = ""                           # decided by M2 bake-off
+# Optional per-field overrides of the built-in per-model prefix registry —
+# for embedding models the registry doesn't know. {q}=query, {d}=passage,
+# {t}=heading-path breadcrumb (title slot).
+#query_template       = "query: {q}"
+#passage_template     = "title: {t} | text: {d}"
+#input_ceiling_tokens = 2048
 
 [converter]
 endpoint   = "http://localhost:18000"          # bscribe (host mapping of native 8000)

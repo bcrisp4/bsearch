@@ -13,6 +13,18 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- bsearch can now turn text into search vectors through any OpenAI-compatible
+  embeddings endpoint (LM Studio, Ollama, vLLM, …). Chunks are embedded many
+  per request, and the model-specific query/passage prefixes that asymmetric
+  embedding models need are applied automatically — identically at indexing
+  and at search time — from a built-in per-model registry
+  (EmbeddingGemma so far), overridable in config (`[inference]`
+  `query_template`, `passage_template`, `input_ceiling_tokens`) for models
+  bsearch doesn't know. Oversized inputs fail loudly rather than being
+  silently truncated, and switching models — or even just changing a prefix
+  template — starts a fresh vector generation so incompatible vectors are
+  never mixed.
+
 - bsearch can now discover the files to index: it walks the configured
   include paths (honouring the privacy deny-list — exclusions always win),
   picks up new and changed markdown/text files, and skips unchanged ones

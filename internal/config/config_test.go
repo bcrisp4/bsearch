@@ -90,6 +90,30 @@ include = ["~/Notes"]
 	}
 }
 
+func TestLoadEmbeddingOverrides(t *testing.T) {
+	setHome(t)
+	path := writeConfig(t, `
+[inference]
+query_template       = "query: {q}"
+passage_template     = "title: {t} | text: {d}"
+input_ceiling_tokens = 2048
+`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load = %v", err)
+	}
+	if want := "query: {q}"; cfg.Inference.QueryTemplate != want {
+		t.Errorf("Inference.QueryTemplate = %q, want %q", cfg.Inference.QueryTemplate, want)
+	}
+	if want := "title: {t} | text: {d}"; cfg.Inference.PassageTemplate != want {
+		t.Errorf("Inference.PassageTemplate = %q, want %q", cfg.Inference.PassageTemplate, want)
+	}
+	if want := 2048; cfg.Inference.InputCeilingTokens != want {
+		t.Errorf("Inference.InputCeilingTokens = %d, want %d", cfg.Inference.InputCeilingTokens, want)
+	}
+}
+
 // TestLoadSampleConfig parses the full sample config from DESIGN.md
 // field-for-field.
 func TestLoadSampleConfig(t *testing.T) {
@@ -213,6 +237,31 @@ func TestLoadErrors(t *testing.T) {
 			name:    "malformed exclude glob",
 			body:    "[paths]\nexclude = [\"[oops\"]\n",
 			wantSub: "[oops",
+		},
+		{
+			name:    "query template without {q}",
+			body:    "[inference]\nquery_template = \"query: \"\n",
+			wantSub: "{q}",
+		},
+		{
+			name:    "passage template without {d}",
+			body:    "[inference]\npassage_template = \"passage: {q}\"\n",
+			wantSub: "{d}",
+		},
+		{
+			name:    "negative input ceiling",
+			body:    "[inference]\ninput_ceiling_tokens = -1\n",
+			wantSub: "input_ceiling_tokens",
+		},
+		{
+			name:    "passage template over chunker reserve",
+			body:    "[inference]\npassage_template = \"" + strings.Repeat("x", 300) + " {d}\"\n",
+			wantSub: "reserve",
+		},
+		{
+			name:    "input ceiling below minimum",
+			body:    "[inference]\ninput_ceiling_tokens = 50\n",
+			wantSub: "minimum",
 		},
 	}
 	for _, tt := range tests {

@@ -33,6 +33,24 @@ type vecDescriptor struct {
 	Model  string `json:"model"`
 	Dims   int    `json:"dims"`
 	Layout string `json:"layout"` // "float32" until quantization lands
+	// Prefix templates are part of the identity: vectors embedded with
+	// different prefixes are as incompatible as a different model's
+	// (DESIGN.md: Embeddings/LLM). The input ceiling is recorded for
+	// auditability but excluded from identity (see identity()): it shapes
+	// chunk boundaries, not the vector a given text maps to, so a ceiling
+	// change is a chunker-level partial rebuild, never a generation swap.
+	// Empty/zero = raw/unlimited — also the backfill default for
+	// descriptors stored before these fields existed.
+	QueryTemplate   string `json:"query_template,omitempty"`
+	PassageTemplate string `json:"passage_template,omitempty"`
+	CeilingTokens   int    `json:"ceiling_tokens,omitempty"`
+}
+
+// identity strips fields that don't affect vector-space compatibility;
+// two generations with equal identities hold interchangeable vectors.
+func (d vecDescriptor) identity() vecDescriptor {
+	d.CeilingTokens = 0
+	return d
 }
 
 // normalize fills defaults for fields added after a descriptor was stored.
@@ -80,24 +98,35 @@ func listVecTables(ctx context.Context, q queryer) (map[string]vecDescriptor, er
 	return tables, rows.Err()
 }
 
-// EnsureVecTable makes a vector table for model+dims the current one,
-// creating a new generation if none matches.
+// EnsureVecTable makes a vector table for spec+dims the current one,
+// creating a new generation if none matches. Model, dims, and templates
+// participate in identity — a template change mints a new generation,
+// same as a model change. The ceiling does not (recorded only): its
+// vectors stay valid, and re-chunking under a new ceiling is stage
+// versioning's partial rebuild, not a cutover that empties search.
 //
 // M1 semantics: the switch is immediate — a model change points search at
 // the (initially empty) new generation until re-embedding fills it. Staged
 // blue/green cutover (old table serves while the new one fills) is issue
 // #24; DESIGN.md (Pipeline metadata and model migration) records both.
-func (s *Store) EnsureVecTable(ctx context.Context, model string, dims int) error {
+func (s *Store) EnsureVecTable(ctx context.Context, spec domain.EmbeddingSpec, dims int) error {
 	// Validate upfront: an empty model would poison descriptor identity in
 	// meta; bad dims would only surface as an opaque vec0 SQL error.
 	// 8192 is vec0's dimension ceiling.
-	if model == "" {
+	if spec.Model == "" {
 		return errors.New("ensure vec table: model must not be empty")
 	}
 	if dims < 1 || dims > 8192 {
 		return fmt.Errorf("ensure vec table: dims %d out of range [1, 8192]", dims)
 	}
-	want := vecDescriptor{Model: model, Dims: dims, Layout: "float32"}
+	want := vecDescriptor{
+		Model:           spec.Model,
+		Dims:            dims,
+		Layout:          "float32",
+		QueryTemplate:   spec.QueryTemplate,
+		PassageTemplate: spec.PassageTemplate,
+		CeilingTokens:   spec.CeilingTokens,
+	}
 
 	return s.withTx(ctx, func(tx *sql.Tx) error {
 		tables, err := listVecTables(ctx, tx)
@@ -111,8 +140,19 @@ func (s *Store) EnsureVecTable(ctx context.Context, model string, dims int) erro
 		for existing, desc := range tables {
 			gen, _ := strconv.Atoi(vecTableName.FindStringSubmatch(existing)[1])
 			maxGen = max(maxGen, gen)
-			if desc == want {
+			if desc.identity() == want.identity() {
 				name = existing
+				// Refresh non-identity fields (ceiling) so the recorded
+				// descriptor tracks current config.
+				if desc != want {
+					descJSON, err := json.Marshal(want)
+					if err != nil {
+						return err
+					}
+					if err := setMeta(ctx, tx, metaVecPrefix+name, string(descJSON)); err != nil {
+						return err
+					}
+				}
 			}
 		}
 
