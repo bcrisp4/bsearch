@@ -5,7 +5,7 @@
 | Author | Ben Crisp (ben@thecrisp.io) |
 | Status | Draft |
 | Created | 2026-07-19 |
-| Updated | 2026-07-19 (adversarial review folded — see Closed issues) |
+| Updated | 2026-07-19 (adversarial review folded — see Closed issues; "crawler" renamed to "discovery") |
 
 ## Objective
 
@@ -82,7 +82,7 @@ doc) so the mental model survives.
   ingestion pipeline must still be designed so a new media type slots in as
   another converter, not a rework.
 - **Email (Apple Mail).** Parsing the local Mail store. Consequence: v1 leaves
-  a major personal corpus unsearchable; the crawler design must not assume
+  a major personal corpus unsearchable; the discovery design must not assume
   "documents are files a user saved" (mail messages are many small files in a
   library directory — and one that requires Full Disk Access, see the TCC
   constraint).
@@ -134,7 +134,7 @@ granted Full Disk Access — see the TCC constraint below.)
   `~/Library` paths never prompt at all and need a manually-granted,
   non-scriptable **Full Disk Access** entry in System Settings. Design
   consequences: the daemon requires an FDA grant, documented in onboarding;
-  the crawler treats permission errors as first-class state, surfaced in
+  discovery treats permission errors as first-class state, surfaced in
   `bsearch status` ("no access to ~/Documents — grant Full Disk Access"),
   never a silent skip. One-shot CLI use (M1) inherits the terminal's grants
   and is unaffected.
@@ -189,7 +189,7 @@ storage and vector-search rows first.
 
 ### Indexing pipeline and queue
 
-Pipeline per document: **crawl → convert → chunk → (embed ∥ summarize) →
+Pipeline per document: **discover → convert → chunk → (embed ∥ summarize) →
 store.** Embedding and summarization are parallel branches after chunking: a
 document becomes searchable as soon as it is embedded; summaries are
 fill-later fields that enrich results when ready. A summarizer outage degrades
@@ -240,7 +240,7 @@ The queue is a SQLite-backed state machine — no external queue infrastructure.
   with aging so the initial bulk backlog and due retries can't be starved
   indefinitely).
 - **Observable:** `bsearch status` shows per-state counts, failure reasons,
-  last-crawl and last-progress timestamps, and the current gate reason
+  last-scan and last-progress timestamps, and the current gate reason
   ("deferred: on battery", "embedder unreachable", "no access to ~/Documents")
   — a stalled queue is always distinguishable from a deferred one.
 
@@ -330,7 +330,7 @@ flowchart LR
         API["HTTP API (unix socket, 0600)"]
         QRY["Query service<br/>(hybrid: KNN + BM25 + RRF)"]
         SCHED["Indexing scheduler<br/>(queue, backoff, health gates,<br/>power-aware)"]
-        CRAWL["Crawler<br/>(FSEvents + periodic scan)"]
+        DISC["Discovery<br/>(FSEvents watcher + periodic scan)"]
         PIPE["Pipeline workers<br/>convert → chunk → embed ∥ summarize"]
     end
 
@@ -347,8 +347,8 @@ flowchart LR
     API --> QRY
     QRY --> DB
     QRY -->|"embed query"| INF
-    CRAWL --> FS
-    CRAWL --> SCHED
+    DISC --> FS
+    DISC --> SCHED
     SCHED --> DB
     SCHED --> PIPE
     PIPE -->|"PDF/office"| BSC
@@ -419,7 +419,7 @@ Response:
   path no longer exists on disk**. A hash match whose old path still exists is
   a copy, not a rename → new id (no false merge of duplicate content — empty
   files, boilerplate, `cp`). Multiple candidate rows disqualify rename
-  detection → new id. Known limitation: rename + edit within one crawl window
+  detection → new id. Known limitation: rename + edit within one scan window
   looks like delete + create and mints a new id. A full drop-and-reindex
   re-mints all ids (see Data retention).
 
@@ -553,7 +553,7 @@ listener ships. Recorded so it isn't bolted on casually.
 - **Excluded by default — noise and volume:** `~/Library` (until Mail support
   deliberately carves in), caches, `node_modules`, `.git` and other VCS
   internals, package/bundle internals, and bsearch's own data directory. This
-  is a battery/idle-CPU measure as much as a privacy one — a `$HOME` crawl
+  is a battery/idle-CPU measure as much as a privacy one — a `$HOME` scan
   without it stat-churns millions of junk files every scan cycle.
 - Config extends the deny-list; exclusions win over includes. Indexing scope
   is opt-in-by-path (`$HOME` default with the excludes above).
@@ -600,7 +600,7 @@ Ordering philosophy: user-visible value first; scaffolding only when forced.
 M1 replaces lore's core function — already useful on day one.
 
 **M1 — Search my markdown.** One-shot `bsearch index` + `bsearch search` (no
-daemon). Crawls configured paths, text/markdown only; chunks, embeds via LM
+daemon). Scans configured paths, text/markdown only; chunks, embeds via LM
 Studio, stores in SQLite + sqlite-vec; semantic CLI search. Demo: semantic
 search over the Obsidian vault from the terminal. (No TCC issues: one-shot CLI
 inherits the terminal's grants.)
@@ -697,7 +697,7 @@ Missing features).
   the sole HIGH; queue-predicate and claim fixes; embed ∥ summarize decouple;
   inference health gates; query/passage prefix templates; quantization
   reframed as planned-at-scale; doc_id rename guards; dependency-accuracy
-  corrections; crawl deny-list; deletion/backup mechanics). Rejected from the
+  corrections; scan deny-list; deletion/backup mechanics). Rejected from the
   review: a persistent `processing` claim state (single-process in-memory
   claim + idempotent redo is simpler); a default relevance floor (distance
   scores uncalibrated — would silently cost recall); unifying config/data
