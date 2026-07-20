@@ -45,6 +45,19 @@ type DocumentStore interface {
 	// DeleteDocument removes the document and everything derived from it
 	// (chunks, summaries, vectors).
 	DeleteDocument(ctx context.Context, docID string) error
+	// ListIndexable returns every catalog row the pipeline may need to work
+	// on — state NOT IN (failed, deleted) — ordered by path. Metadata only
+	// (no chunk text). Indexed rows are included: staleness against current
+	// stage versions is the caller's call (DESIGN.md: Pipeline metadata).
+	ListIndexable(ctx context.Context) ([]Document, error)
+	// UpdateDocumentState flips state (and updated_at) only — never chunks,
+	// vectors, stage versions, or retry columns. UpsertDocument cannot serve
+	// this: it replaces chunks wholesale and deletes their vectors.
+	UpdateDocumentState(ctx context.Context, docID string, state DocState) error
+	// MarkFailed sets state=failed and records the reason in last_error.
+	// A subsequent file change resets it (UpsertDocument clears retry
+	// columns).
+	MarkFailed(ctx context.Context, docID, reason string) error
 }
 
 // Hit is one KNN result: the matching chunk, its document, and the raw

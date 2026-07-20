@@ -88,6 +88,18 @@ func (s EmbeddingSpec) Validate() error {
 	return nil
 }
 
+// Fingerprint canonically encodes every spec field for recording in
+// Document.StageVersions. The pipeline diffs it against the current config
+// to decide re-processing: all four fields invalidate derived data on
+// change (the ceiling shapes chunk boundaries; model and templates shape
+// vectors). Note the vector-table generation identity (VectorStore)
+// deliberately excludes the ceiling — this fingerprint is the stricter,
+// re-chunk-aware identity.
+func (s EmbeddingSpec) Fingerprint() string {
+	return fmt.Sprintf("model=%q q=%q d=%q ceil=%d",
+		s.Model, s.QueryTemplate, s.PassageTemplate, s.CeilingTokens)
+}
+
 // ComposeQuery applies the query template to a search query.
 func (s EmbeddingSpec) ComposeQuery(query string) string {
 	if s.QueryTemplate == "" {

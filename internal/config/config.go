@@ -179,6 +179,18 @@ func DefaultPath() string {
 	return filepath.Join(home, ".config", "bsearch", "config.toml")
 }
 
+// DefaultDBPath returns the index database location:
+// ~/Library/Application Support/bsearch/bsearch.db. Machine data lives under
+// ~/Library/Application Support; hand-edited config under ~/.config — the
+// split is deliberate (DESIGN.md: Config).
+func DefaultDBPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Library", "Application Support", "bsearch", "bsearch.db")
+}
+
 // Load reads the config file at path. A missing file is not an error:
 // built-in defaults are returned (first-run experience). Unknown keys,
 // malformed TOML, and invalid values are errors.

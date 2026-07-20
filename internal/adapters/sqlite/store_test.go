@@ -316,3 +316,133 @@ func TestStageVersionsRoundTrip(t *testing.T) {
 		t.Errorf("StageVersions = %v", got.StageVersions)
 	}
 }
+
+func TestListIndexable(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	seed := []struct {
+		id, path string
+		state    domain.DocState
+	}{
+		{"d_1", "/notes/b.md", domain.DocStateIndexed},
+		{"d_2", "/notes/a.md", domain.DocStateDiscovered},
+		{"d_3", "/notes/c.md", domain.DocStateFailed},
+		{"d_4", "/notes/d.md", domain.DocStateDeleted},
+		{"d_5", "/notes/e.md", domain.DocStateChunked},
+	}
+	for _, s := range seed {
+		doc := testDoc(s.id, s.path)
+		doc.State = s.state
+		if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
+			t.Fatalf("seed %s: %v", s.id, err)
+		}
+	}
+
+	docs, err := store.ListIndexable(ctx)
+	if err != nil {
+		t.Fatalf("ListIndexable: %v", err)
+	}
+	var got []string
+	for _, d := range docs {
+		got = append(got, d.ID)
+	}
+	// failed and deleted excluded; ordered by path (a, b, e).
+	want := []string{"d_2", "d_1", "d_5"}
+	if len(got) != len(want) {
+		t.Fatalf("ListIndexable ids = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ListIndexable ids = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestUpdateDocumentState(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	doc := testDoc("d_1", "/notes/a.md")
+	doc.StageVersions = map[string]string{"chunker": "1"}
+	ids, err := store.UpsertDocument(ctx, doc, testChunks("d_1", "alpha"))
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	spec := domain.EmbeddingSpec{Model: "test-model"}
+	if err := store.EnsureVecTable(ctx, spec, 3); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+	if err := store.UpsertVectors(ctx, ids, [][]float32{{1, 2, 3}}); err != nil {
+		t.Fatalf("UpsertVectors: %v", err)
+	}
+
+	if err := store.UpdateDocumentState(ctx, "d_1", domain.DocStateIndexed); err != nil {
+		t.Fatalf("UpdateDocumentState: %v", err)
+	}
+
+	got, ok, err := store.GetByPath(ctx, "/notes/a.md")
+	if err != nil || !ok {
+		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
+	}
+	if got.State != domain.DocStateIndexed {
+		t.Errorf("state = %q, want indexed", got.State)
+	}
+	if got.StageVersions["chunker"] != "1" {
+		t.Errorf("stage versions touched: %v", got.StageVersions)
+	}
+	// Chunks and vectors survive the state flip (the reason this method
+	// exists instead of a second UpsertDocument).
+	hits, err := store.SearchVectors(ctx, []float32{1, 2, 3}, 1)
+	if err != nil {
+		t.Fatalf("SearchVectors: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Chunk.Text != "alpha" {
+		t.Fatalf("vectors gone after state flip: %+v", hits)
+	}
+
+	if err := store.UpdateDocumentState(ctx, "d_missing", domain.DocStateIndexed); err == nil {
+		t.Error("UpdateDocumentState(unknown id) = nil, want error")
+	}
+}
+
+func TestMarkFailed(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := store.MarkFailed(ctx, "d_1", "undecodable: invalid UTF-8"); err != nil {
+		t.Fatalf("MarkFailed: %v", err)
+	}
+
+	var state, lastErr string
+	if err := db.Reader().QueryRow(
+		"SELECT state, last_error FROM documents WHERE id = 'd_1'").Scan(&state, &lastErr); err != nil {
+		t.Fatal(err)
+	}
+	if state != "failed" || lastErr != "undecodable: invalid UTF-8" {
+		t.Errorf("state=%q last_error=%q", state, lastErr)
+	}
+
+	// A file change (re-upsert) clears the failure.
+	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	var cleared sql.NullString
+	if err := db.Reader().QueryRow(
+		"SELECT last_error FROM documents WHERE id = 'd_1'").Scan(&cleared); err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Valid {
+		t.Errorf("last_error = %q after re-upsert, want NULL", cleared.String)
+	}
+
+	if err := store.MarkFailed(ctx, "d_missing", "x"); err == nil {
+		t.Error("MarkFailed(unknown id) = nil, want error")
+	}
+}

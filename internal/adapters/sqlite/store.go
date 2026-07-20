@@ -200,6 +200,79 @@ func (s *Store) UpdateDocumentStat(ctx context.Context, docID string, size int64
 	})
 }
 
+// ListIndexable returns every catalog row the pipeline may need to work on
+// — state NOT IN (failed, deleted) — ordered by path. Indexed rows are
+// included; staleness against current stage versions is the caller's call.
+func (s *Store) ListIndexable(ctx context.Context) ([]domain.Document, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		"SELECT "+strings.Join(docColumns, ", ")+
+			" FROM documents WHERE state NOT IN ('failed', 'deleted') ORDER BY path")
+	if err != nil {
+		return nil, fmt.Errorf("list indexable: %w", err)
+	}
+	defer rows.Close()
+
+	var docs []domain.Document
+	for rows.Next() {
+		var (
+			doc domain.Document
+			raw docRow
+		)
+		if err := rows.Scan(raw.targets(&doc)...); err != nil {
+			return nil, fmt.Errorf("list indexable: %w", err)
+		}
+		if err := raw.finish(&doc); err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list indexable: %w", err)
+	}
+	return docs, nil
+}
+
+// UpdateDocumentState flips state (and updated_at) only. Unknown docID is a
+// loud error — the caller just processed the row.
+func (s *Store) UpdateDocumentState(ctx context.Context, docID string, state domain.DocState) error {
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			"UPDATE documents SET state = ?, updated_at = ? WHERE id = ?",
+			string(state), time.Now().Unix(), docID)
+		if err != nil {
+			return fmt.Errorf("update state for %s: %w", docID, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("update state for %s: no such document", docID)
+		}
+		return nil
+	})
+}
+
+// MarkFailed sets state=failed and records the reason in last_error.
+func (s *Store) MarkFailed(ctx context.Context, docID, reason string) error {
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			"UPDATE documents SET state = 'failed', last_error = ?, updated_at = ? WHERE id = ?",
+			reason, time.Now().Unix(), docID)
+		if err != nil {
+			return fmt.Errorf("mark failed %s: %w", docID, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("mark failed %s: no such document", docID)
+		}
+		return nil
+	})
+}
+
 // DeleteDocument removes the document and everything derived from it.
 func (s *Store) DeleteDocument(ctx context.Context, docID string) error {
 	return s.withTx(ctx, func(tx *sql.Tx) error {
