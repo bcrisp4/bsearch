@@ -442,6 +442,14 @@ func TestDefaultPath(t *testing.T) {
 	})
 }
 
+func TestDefaultDBPath(t *testing.T) {
+	home := setHome(t)
+	want := filepath.Join(home, "Library", "Application Support", "bsearch", "bsearch.db")
+	if got := config.DefaultDBPath(); got != want {
+		t.Errorf("DefaultDBPath() = %q, want %q", got, want)
+	}
+}
+
 func TestLoadErrorsAreNotFsNotExist(t *testing.T) {
 	setHome(t)
 	// Guard the missing-file-is-fine contract: a *parse* failure must not

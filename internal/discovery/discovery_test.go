@@ -96,6 +96,20 @@ func (f *fakeStore) DeleteDocument(_ context.Context, docID string) error {
 	return nil
 }
 
+// Discovery never lists, flips state, or fails documents — pipeline-side
+// methods are stubs to satisfy the port.
+func (f *fakeStore) ListIndexable(context.Context) ([]domain.Document, error) {
+	return nil, errors.New("not used by discovery")
+}
+
+func (f *fakeStore) UpdateDocumentState(context.Context, string, domain.DocState) error {
+	return errors.New("not used by discovery")
+}
+
+func (f *fakeStore) MarkFailed(context.Context, string, string) error {
+	return errors.New("not used by discovery")
+}
+
 var _ domain.DocumentStore = (*fakeStore)(nil)
 
 // tmpDir is t.TempDir resolved to its canonical path: Scan canonicalizes

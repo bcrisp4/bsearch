@@ -151,10 +151,16 @@ func (s *Store) GetByPath(ctx context.Context, path string) (domain.Document, bo
 // GetByContentHash returns every catalog row with this content hash, in
 // stable id order — discovery's rename detection input.
 func (s *Store) GetByContentHash(ctx context.Context, hash string) ([]domain.Document, error) {
-	rows, err := s.db.Reader().QueryContext(ctx,
+	return s.queryDocs(ctx, "get by content hash",
 		"SELECT "+strings.Join(docColumns, ", ")+" FROM documents WHERE content_hash = ? ORDER BY id", hash)
+}
+
+// queryDocs runs a documents SELECT (projecting docColumns) and hydrates
+// every row. op prefixes errors.
+func (s *Store) queryDocs(ctx context.Context, op, query string, args ...any) ([]domain.Document, error) {
+	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("get by content hash: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer rows.Close()
 
@@ -165,7 +171,7 @@ func (s *Store) GetByContentHash(ctx context.Context, hash string) ([]domain.Doc
 			raw docRow
 		)
 		if err := rows.Scan(raw.targets(&doc)...); err != nil {
-			return nil, fmt.Errorf("get by content hash: %w", err)
+			return nil, fmt.Errorf("%s: %w", op, err)
 		}
 		if err := raw.finish(&doc); err != nil {
 			return nil, err
@@ -173,7 +179,7 @@ func (s *Store) GetByContentHash(ctx context.Context, hash string) ([]domain.Doc
 		docs = append(docs, doc)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("get by content hash: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	return docs, nil
 }
@@ -182,19 +188,50 @@ func (s *Store) GetByContentHash(ctx context.Context, hash string) ([]domain.Doc
 // state, chunks, stage versions, and retry columns untouched. Unknown
 // docID is a loud error — the caller just read the row.
 func (s *Store) UpdateDocumentStat(ctx context.Context, docID string, size int64, mtime time.Time) error {
+	return s.updateDoc(ctx, "update stat", docID,
+		"UPDATE documents SET size = ?, mtime = ?, updated_at = ? WHERE id = ?",
+		size, mtime.UnixNano(), time.Now().Unix(), docID)
+}
+
+// ListIndexable returns every catalog row the pipeline may need to work on
+// — every state except deleted — ordered by path. Indexed and failed rows
+// are included; whether a row is stale (or still failed) against current
+// stage versions is the caller's call.
+func (s *Store) ListIndexable(ctx context.Context) ([]domain.Document, error) {
+	return s.queryDocs(ctx, "list indexable",
+		"SELECT "+strings.Join(docColumns, ", ")+
+			" FROM documents WHERE state != 'deleted' ORDER BY path")
+}
+
+// UpdateDocumentState flips state (and updated_at) only. Unknown docID is a
+// loud error — the caller just processed the row.
+func (s *Store) UpdateDocumentState(ctx context.Context, docID string, state domain.DocState) error {
+	return s.updateDoc(ctx, "update state", docID,
+		"UPDATE documents SET state = ?, updated_at = ? WHERE id = ?",
+		string(state), time.Now().Unix(), docID)
+}
+
+// MarkFailed sets state=failed and records the reason in last_error.
+func (s *Store) MarkFailed(ctx context.Context, docID, reason string) error {
+	return s.updateDoc(ctx, "mark failed", docID,
+		"UPDATE documents SET state = 'failed', last_error = ?, updated_at = ? WHERE id = ?",
+		reason, time.Now().Unix(), docID)
+}
+
+// updateDoc runs one UPDATE on a single documents row inside a writer
+// transaction, erroring loudly when the row doesn't exist.
+func (s *Store) updateDoc(ctx context.Context, op, docID, query string, args ...any) error {
 	return s.withTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx,
-			"UPDATE documents SET size = ?, mtime = ?, updated_at = ? WHERE id = ?",
-			size, mtime.UnixNano(), time.Now().Unix(), docID)
+		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
-			return fmt.Errorf("update stat for %s: %w", docID, err)
+			return fmt.Errorf("%s for %s: %w", op, docID, err)
 		}
 		n, err := res.RowsAffected()
 		if err != nil {
 			return err
 		}
 		if n == 0 {
-			return fmt.Errorf("update stat for %s: no such document", docID)
+			return fmt.Errorf("%s for %s: no such document", op, docID)
 		}
 		return nil
 	})

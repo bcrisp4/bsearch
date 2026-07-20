@@ -41,6 +41,30 @@ func TestComposeQuery(t *testing.T) {
 	}
 }
 
+func TestFingerprint(t *testing.T) {
+	base := EmbeddingSpec{
+		Model:           "embeddinggemma",
+		QueryTemplate:   "query: {q}",
+		PassageTemplate: "title: {t} | text: {d}",
+		CeilingTokens:   2048,
+	}
+	first, second := base.Fingerprint(), base.Fingerprint()
+	if first != second {
+		t.Fatalf("Fingerprint() not stable across calls: %q vs %q", first, second)
+	}
+	variants := []EmbeddingSpec{
+		{Model: "other", QueryTemplate: base.QueryTemplate, PassageTemplate: base.PassageTemplate, CeilingTokens: base.CeilingTokens},
+		{Model: base.Model, QueryTemplate: "q: {q}", PassageTemplate: base.PassageTemplate, CeilingTokens: base.CeilingTokens},
+		{Model: base.Model, QueryTemplate: base.QueryTemplate, PassageTemplate: "text: {d}", CeilingTokens: base.CeilingTokens},
+		{Model: base.Model, QueryTemplate: base.QueryTemplate, PassageTemplate: base.PassageTemplate, CeilingTokens: 1024},
+	}
+	for i, v := range variants {
+		if v.Fingerprint() == base.Fingerprint() {
+			t.Errorf("variant %d: Fingerprint() collides with base: %q", i, v.Fingerprint())
+		}
+	}
+}
+
 func TestEmbeddingSpecValidate(t *testing.T) {
 	long := EmbeddingSpec{PassageTemplate: "prefix: " + strings.Repeat("x", TemplateReserveBytes) + " {d}"}
 	tests := []struct {

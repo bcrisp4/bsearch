@@ -13,6 +13,23 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- New `bsearch index` command: one-shot indexing of the folders in your
+  config. It scans for new and changed markdown/text files, chunks them,
+  embeds them through your inference server, and stores everything in the
+  local index — with per-file progress output and a final summary. Re-runs
+  are fast and idempotent: unchanged files are skipped without touching the
+  network, an interrupted run resumes where it left off, and changing the
+  embedding model, its prefix templates, or even just the dimensions the
+  server returns re-embeds automatically. If the inference server is down —
+  including dying mid-response — the run stops cleanly and nothing is marked
+  failed; genuinely broken files (e.g. undecodable encodings) are recorded
+  with a reason, reported, and retried automatically after a config change.
+  Files that can't be read right now (vanished, permissions) are skipped and
+  retried next run, never written off. The command exits non-zero when any
+  document failed or when no configured folder could be read at all (e.g.
+  missing Full Disk Access), so scheduled runs can't fail silently. Requires
+  `inference.embedding_model` to be set in config.
+
 - bsearch can now turn text into search vectors through any OpenAI-compatible
   embeddings endpoint (LM Studio, Ollama, vLLM, …). Chunks are embedded many
   per request, and the model-specific query/passage prefixes that asymmetric

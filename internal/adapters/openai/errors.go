@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 )
 
@@ -44,6 +45,13 @@ func Transient(err error) bool {
 	if errors.As(err, &statusErr) {
 		code := statusErr.StatusCode
 		return code == 408 || code == 429 || code >= 500
+	}
+	// A 2xx whose body was cut short (server killed mid-response): the
+	// clean-close path surfaces as io.ErrUnexpectedEOF / io.EOF from the
+	// JSON decode, with no net.Error in the chain. An outage symptom, not a
+	// content error — retryable.
+	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
+		return true
 	}
 	// No status: the request never got an HTTP response — refused
 	// connection, reset, DNS failure, client timeout. All retryable.
