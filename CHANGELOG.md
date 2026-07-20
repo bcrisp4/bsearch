@@ -19,11 +19,16 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   local index — with per-file progress output and a final summary. Re-runs
   are fast and idempotent: unchanged files are skipped without touching the
   network, an interrupted run resumes where it left off, and changing the
-  embedding model (or its prefix templates) re-embeds automatically. If the
-  inference server is down, the run stops cleanly and nothing is marked
+  embedding model, its prefix templates, or even just the dimensions the
+  server returns re-embeds automatically. If the inference server is down —
+  including dying mid-response — the run stops cleanly and nothing is marked
   failed; genuinely broken files (e.g. undecodable encodings) are recorded
-  with a reason and reported. Requires `inference.embedding_model` to be set
-  in config.
+  with a reason, reported, and retried automatically after a config change.
+  Files that can't be read right now (vanished, permissions) are skipped and
+  retried next run, never written off. The command exits non-zero when any
+  document failed or when no configured folder could be read at all (e.g.
+  missing Full Disk Access), so scheduled runs can't fail silently. Requires
+  `inference.embedding_model` to be set in config.
 
 - bsearch can now turn text into search vectors through any OpenAI-compatible
   embeddings endpoint (LM Studio, Ollama, vLLM, …). Chunks are embedded many

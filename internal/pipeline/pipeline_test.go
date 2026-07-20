@@ -14,10 +14,12 @@ import (
 )
 
 // fakeEmbedder is a deterministic domain.Embedder: every vector is
-// [len(text), 1, 2, 3], so dims are stable and tests stay cgo-free on the
-// inference side while the store side runs real SQLite.
+// [len(text), 1, 2, ...] padded to dims (default 4), so dims are stable and
+// tests stay cgo-free on the inference side while the store side runs real
+// SQLite.
 type fakeEmbedder struct {
 	spec         domain.EmbeddingSpec
+	dims         int // 0 = 4
 	queryCalls   int
 	passageCalls int
 	queryErr     error
@@ -27,12 +29,25 @@ type fakeEmbedder struct {
 	passageErr   error
 }
 
+func (f *fakeEmbedder) vector(lead float32) []float32 {
+	dims := f.dims
+	if dims == 0 {
+		dims = 4
+	}
+	v := make([]float32, dims)
+	v[0] = lead
+	for i := 1; i < dims; i++ {
+		v[i] = float32(i)
+	}
+	return v
+}
+
 func (f *fakeEmbedder) EmbedQuery(_ context.Context, query string) ([]float32, error) {
 	f.queryCalls++
 	if f.queryErr != nil {
 		return nil, f.queryErr
 	}
-	return []float32{float32(len(query)), 1, 2, 3}, nil
+	return f.vector(float32(len(query))), nil
 }
 
 func (f *fakeEmbedder) EmbedPassages(_ context.Context, chunks []domain.Chunk) ([][]float32, error) {
@@ -42,7 +57,7 @@ func (f *fakeEmbedder) EmbedPassages(_ context.Context, chunks []domain.Chunk) (
 	}
 	out := make([][]float32, len(chunks))
 	for i, c := range chunks {
-		out[i] = []float32{float32(len(c.Text)), 1, 2, 3}
+		out[i] = f.vector(float32(len(c.Text)))
 	}
 	return out, nil
 }
@@ -312,7 +327,7 @@ func TestRunEmptyFile(t *testing.T) {
 	}
 }
 
-func TestRunVanishedFileFails(t *testing.T) {
+func TestRunVanishedFileSkippedNotBurned(t *testing.T) {
 	store := openStore(t)
 	dir := t.TempDir()
 	doc := seedFile(t, store, dir, "gone.md", "# Gone\n\ntext\n")
@@ -324,7 +339,97 @@ func TestRunVanishedFileFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if sum.Failed != 1 {
-		t.Errorf("Summary = %+v, want 1 failed", sum)
+	if sum.Skipped != 1 || sum.Failed != 0 {
+		t.Errorf("Summary = %+v, want 1 skipped, 0 failed", sum)
+	}
+	// The read failure is environmental — the doc must NOT be marked
+	// failed, or restoring the file with identical size/mtime could never
+	// reset it (discovery's cheap check skips unchanged files).
+	if st := docState(t, store, doc.Path); st != domain.DocStateDiscovered {
+		t.Errorf("state = %q, want discovered (untouched)", st)
+	}
+}
+
+func TestRunFailedDocSkippedUnderSameConfig(t *testing.T) {
+	store := openStore(t)
+	dir := t.TempDir()
+	bad := seedFile(t, store, dir, "bad.md", "placeholder")
+	if err := os.WriteFile(bad.Path, []byte{0x68, 0x69, 0xC0, 0x80, 0xFF}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	emb := &fakeEmbedder{spec: testSpec("test-model")}
+
+	if _, err := runAll(t, newIndexer(t, store, emb, nil), store); err != nil {
+		t.Fatalf("first Run: %v", err)
+	}
+	sum, err := runAll(t, newIndexer(t, store, emb, nil), store)
+	if err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	// Same config → the failure is not retried and not re-counted.
+	if sum.Failed != 0 || sum.Indexed != 0 {
+		t.Errorf("Summary = %+v, want all-zero re-run (failure already recorded)", sum)
+	}
+}
+
+func TestRunFailedDocRetriedOnConfigChange(t *testing.T) {
+	store := openStore(t)
+	dir := t.TempDir()
+	a := seedFile(t, store, dir, "a.md", "# Alpha\n\nalpha text\n")
+
+	// Poison under spec A: permanent embed error marks the doc failed.
+	embA := &fakeEmbedder{
+		spec:         testSpec("model-a"),
+		passageErrOn: "alpha",
+		passageErr:   errors.New("HTTP 400: bad input"),
+	}
+	if _, err := runAll(t, newIndexer(t, store, embA, func(error) bool { return false }), store); err != nil {
+		t.Fatalf("Run under model-a: %v", err)
+	}
+	if st := docState(t, store, a.Path); st != domain.DocStateFailed {
+		t.Fatalf("state = %q, want failed", st)
+	}
+
+	// Config change (different model) → fresh attempt cures it without
+	// touching the file.
+	embB := &fakeEmbedder{spec: testSpec("model-b")}
+	sum, err := runAll(t, newIndexer(t, store, embB, func(error) bool { return false }), store)
+	if err != nil {
+		t.Fatalf("Run under model-b: %v", err)
+	}
+	if sum.Indexed != 1 {
+		t.Errorf("Summary = %+v, want 1 indexed after config change", sum)
+	}
+	if st := docState(t, store, a.Path); st != domain.DocStateIndexed {
+		t.Errorf("state = %q, want indexed", st)
+	}
+}
+
+func TestRunReembedsOnDimsChange(t *testing.T) {
+	store := openStore(t)
+	dir := t.TempDir()
+	seedFile(t, store, dir, "a.md", "# Alpha\n\nalpha text\n")
+
+	if _, err := runAll(t, newIndexer(t, store, &fakeEmbedder{spec: testSpec("test-model")}, nil), store); err != nil {
+		t.Fatalf("Run at dims=4: %v", err)
+	}
+
+	// Server now returns 6-dim vectors under the same model name and a new
+	// file appears: the whole corpus must re-embed into the new generation,
+	// not just the new file.
+	seedFile(t, store, dir, "b.md", "# Beta\n\nbeta text\n")
+	sum, err := runAll(t, newIndexer(t, store, &fakeEmbedder{spec: testSpec("test-model"), dims: 6}, nil), store)
+	if err != nil {
+		t.Fatalf("Run at dims=6: %v", err)
+	}
+	if sum.Indexed != 2 || sum.UpToDate != 0 {
+		t.Errorf("Summary = %+v, want both docs re-embedded after dims change", sum)
+	}
+	hits, err := store.SearchVectors(context.Background(), []float32{10, 1, 2, 3, 4, 5}, 2)
+	if err != nil {
+		t.Fatalf("SearchVectors: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("SearchVectors returned %d hits, want 2 (both docs in new generation)", len(hits))
 	}
 }

@@ -17,6 +17,23 @@ const (
 	DocStateDeleted    DocState = "deleted"
 )
 
+// StageVersions keys. These are persisted schema (the stage_versions
+// column): every reader and writer must use the constants, never literals —
+// a typo'd key compiles, reads as "", and makes every document look stale.
+const (
+	// StageChunker records chunker.Version.
+	StageChunker = "chunker"
+	// StageEmbedding records EmbeddingSpec.Fingerprint().
+	StageEmbedding = "embedding"
+	// StageEmbeddingDims records the embedding dimension count, discovered
+	// at run time from the endpoint. Tracked separately from the fingerprint
+	// because a server can change dims under an unchanged model name, and
+	// the vector-table generation identity includes dims — without this key
+	// such a change would strand up-to-date documents outside the new
+	// generation.
+	StageEmbeddingDims = "embedding_dims"
+)
+
 // Document is one indexed file. ID is the opaque surrogate doc_id from
 // DESIGN.md: minted at first discovery, stable across content edits and
 // renames (subject to the rename-detection rules in the design doc).

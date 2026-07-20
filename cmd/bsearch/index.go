@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -32,6 +32,9 @@ func runIndex(args []string, out io.Writer) error {
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() > 0 {
@@ -63,9 +66,6 @@ func runIndex(args []string, out io.Writer) error {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(*dbPath), 0o700); err != nil {
-		return err
-	}
 	db, err := sqlite.Open(*dbPath)
 	if err != nil {
 		return err
@@ -92,6 +92,13 @@ func runIndex(args []string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d renamed, %d skipped (iCloud placeholder)\n",
 		scanRes.Discovered, scanRes.Unchanged, scanRes.Renamed, scanRes.Dataless)
+	// Every root errored and nothing was reachable: that is a permissions
+	// problem (likely missing Full Disk Access), not a successful index of
+	// an empty corpus — fail loudly (DESIGN.md: TCC is first-class state).
+	if len(scanRes.PathErrors) > 0 &&
+		scanRes.Discovered+scanRes.Unchanged+scanRes.Renamed+scanRes.Dataless == 0 {
+		return errors.New("scan reached no files — check the warnings above (missing Full Disk Access?)")
+	}
 
 	ix, err := pipeline.New(pipeline.Options{
 		Store:     store,
@@ -110,9 +117,21 @@ func runIndex(args []string, out io.Writer) error {
 	sum, runErr := ix.Run(ctx, docs)
 
 	line := fmt.Sprintf("done: %d indexed, %d up to date, %d failed", sum.Indexed, sum.UpToDate, sum.Failed)
+	if sum.Skipped > 0 {
+		line += fmt.Sprintf(", %d skipped", sum.Skipped)
+	}
 	if sum.Warnings > 0 {
 		line += fmt.Sprintf(", %d warnings", sum.Warnings)
 	}
 	fmt.Fprintf(out, "%s (%.1fs)\n", line, time.Since(start).Seconds())
-	return runErr
+	if runErr != nil {
+		return runErr
+	}
+	// Per-document failures must be machine-visible: an unattended run
+	// (cron, launchd) that silently drops documents from the index while
+	// exiting 0 is indistinguishable from a clean run.
+	if sum.Failed > 0 {
+		return fmt.Errorf("%d document(s) failed to index — see output above", sum.Failed)
+	}
+	return nil
 }

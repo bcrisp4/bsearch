@@ -28,6 +28,9 @@ func run(args []string, out io.Writer) error {
 	}
 	switch args[0] {
 	case "version", "--version":
+		if len(args) != 1 {
+			return fmt.Errorf("version takes no arguments (got %q)", args[1])
+		}
 		_, err := fmt.Fprintf(out, "bsearch %s\n", buildinfo.Version)
 		return err
 	case "index":

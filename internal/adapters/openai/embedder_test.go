@@ -311,6 +311,30 @@ func TestEmbedErrorClassification(t *testing.T) {
 	}
 }
 
+func TestEmbedTruncatedResponseIsTransient(t *testing.T) {
+	// Server dies mid-response (clean close, body cut short): the decode
+	// error is io.ErrUnexpectedEOF with no net.Error in the chain. An
+	// outage symptom — must be retryable, never a permanent doc failure.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write([]byte(`{"data":[{"index":0,`))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		panic(http.ErrAbortHandler) // close the connection mid-body
+	}))
+	t.Cleanup(srv.Close)
+
+	e := newTestEmbedder(t, EmbedderConfig{Endpoint: srv.URL, Spec: testSpec})
+	_, err := e.EmbedQuery(t.Context(), "q")
+	if err == nil {
+		t.Fatal("EmbedQuery = nil error, want truncated-response error")
+	}
+	if !Transient(err) {
+		t.Errorf("Transient(%v) = false, want true for truncated response", err)
+	}
+}
+
 func TestEmbedClientTimeoutIsTransient(t *testing.T) {
 	// The adapter's own http.Client timeout surfaces as
 	// context.DeadlineExceeded; a slow-but-alive server is retry

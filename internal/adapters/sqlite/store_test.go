@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"testing"
 	"time"
 
@@ -348,15 +349,11 @@ func TestListIndexable(t *testing.T) {
 	for _, d := range docs {
 		got = append(got, d.ID)
 	}
-	// failed and deleted excluded; ordered by path (a, b, e).
-	want := []string{"d_2", "d_1", "d_5"}
-	if len(got) != len(want) {
+	// deleted excluded, failed included (config changes give failed docs a
+	// fresh attempt); ordered by path (a, b, c, e).
+	want := []string{"d_2", "d_1", "d_3", "d_5"}
+	if !slices.Equal(got, want) {
 		t.Fatalf("ListIndexable ids = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("ListIndexable ids = %v, want %v", got, want)
-		}
 	}
 }
 

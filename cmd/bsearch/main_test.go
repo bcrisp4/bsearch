@@ -19,6 +19,13 @@ func TestRunVersion(t *testing.T) {
 	}
 }
 
+func TestRunVersionRejectsTrailingArgs(t *testing.T) {
+	var out strings.Builder
+	if err := run([]string{"version", "index"}, &out); err == nil {
+		t.Fatal("run(version index) = nil, want error for trailing args")
+	}
+}
+
 func TestRunUnknownCommand(t *testing.T) {
 	var out strings.Builder
 	if err := run([]string{"search", "heat pump"}, &out); err == nil {

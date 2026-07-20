@@ -26,6 +26,16 @@ func TestRunIndexBadFlag(t *testing.T) {
 	}
 }
 
+func TestRunIndexHelp(t *testing.T) {
+	var out strings.Builder
+	if err := run([]string{"index", "-h"}, &out); err != nil {
+		t.Fatalf("run(index -h) = %v, want nil (help is not a failure)", err)
+	}
+	if !strings.Contains(out.String(), "usage: bsearch index") {
+		t.Errorf("run(index -h) printed %q, want usage text", out.String())
+	}
+}
+
 func TestRunIndexRequiresEmbeddingModel(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")

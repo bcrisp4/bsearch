@@ -46,9 +46,11 @@ type DocumentStore interface {
 	// (chunks, summaries, vectors).
 	DeleteDocument(ctx context.Context, docID string) error
 	// ListIndexable returns every catalog row the pipeline may need to work
-	// on — state NOT IN (failed, deleted) — ordered by path. Metadata only
-	// (no chunk text). Indexed rows are included: staleness against current
-	// stage versions is the caller's call (DESIGN.md: Pipeline metadata).
+	// on — every state except deleted — ordered by path. Metadata only
+	// (no chunk text). Indexed and failed rows are included: whether a row
+	// is stale, or failed under stage versions that have since changed and
+	// deserves a fresh attempt, is the caller's call (DESIGN.md: Pipeline
+	// metadata).
 	ListIndexable(ctx context.Context) ([]Document, error)
 	// UpdateDocumentState flips state (and updated_at) only — never chunks,
 	// vectors, stage versions, or retry columns. UpsertDocument cannot serve
