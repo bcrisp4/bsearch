@@ -56,6 +56,8 @@ func TestEmbeddingSpecValidate(t *testing.T) {
 		{name: "passage template missing {d}", spec: EmbeddingSpec{PassageTemplate: "p: {q}"}, wantErr: true},
 		{name: "passage template over reserve", spec: long, wantErr: true},
 		{name: "negative ceiling", spec: EmbeddingSpec{CeilingTokens: -1}, wantErr: true},
+		{name: "ceiling below minimum", spec: EmbeddingSpec{CeilingTokens: MinCeilingTokens - 1}, wantErr: true},
+		{name: "ceiling at minimum", spec: EmbeddingSpec{CeilingTokens: MinCeilingTokens}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

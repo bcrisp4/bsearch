@@ -384,10 +384,10 @@ func TestEmbedCeilingGuardBeforeHTTP(t *testing.T) {
 	srv := echoServer(t, &requests)
 
 	spec := testSpec
-	spec.CeilingTokens = 10 // ≈ 40 bytes
+	spec.CeilingTokens = domain.MinCeilingTokens // ≈ 320 bytes
 	e := newTestEmbedder(t, EmbedderConfig{Endpoint: srv.URL, Spec: spec})
 	_, err := e.EmbedPassages(t.Context(), []domain.Chunk{
-		{Text: strings.Repeat("x", 100)},
+		{Text: strings.Repeat("x", domain.MinCeilingTokens*domain.BytesPerToken+1)},
 	})
 	if err == nil || !strings.Contains(err.Error(), "ceiling") {
 		t.Fatalf("EmbedPassages = %v, want ceiling error", err)

@@ -258,6 +258,11 @@ func TestLoadErrors(t *testing.T) {
 			body:    "[inference]\npassage_template = \"" + strings.Repeat("x", 300) + " {d}\"\n",
 			wantSub: "reserve",
 		},
+		{
+			name:    "input ceiling below minimum",
+			body:    "[inference]\ninput_ceiling_tokens = 50\n",
+			wantSub: "minimum",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

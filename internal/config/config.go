@@ -322,6 +322,10 @@ func (c *Config) validate() error {
 	if n := c.Inference.InputCeilingTokens; n < 0 {
 		return fmt.Errorf("inference.input_ceiling_tokens: %d is negative", n)
 	}
+	if n := c.Inference.InputCeilingTokens; n > 0 && n < domain.MinCeilingTokens {
+		return fmt.Errorf("inference.input_ceiling_tokens: %d is below the %d-token minimum (template reserve + minimum chunk budget)",
+			n, domain.MinCeilingTokens)
+	}
 	return validateEndpoint("converter.endpoint", c.Converter.Endpoint)
 }
 

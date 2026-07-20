@@ -31,6 +31,14 @@ const (
 	// EmbeddingSpec.Validate rejects it. The breadcrumb is budgeted
 	// separately (the chunker subtracts each section's heading-path length).
 	TemplateReserveBytes = 256
+
+	// MinCeilingTokens is the smallest usable input ceiling: the template
+	// reserve plus the chunker's 64-byte minimum chunk budget, in tokens.
+	// Below this the chunker's byte budget zeroes out (its documented
+	// out-of-contract range) while the embedder guard still enforces the
+	// ceiling — every document would fail. No real embedding model is
+	// remotely this small; Validate rejects such ceilings up front.
+	MinCeilingTokens = (TemplateReserveBytes + 64) / BytesPerToken
 )
 
 // EmbeddingSpec identifies how vectors are produced: the model plus the
@@ -72,6 +80,10 @@ func (s EmbeddingSpec) Validate() error {
 	}
 	if s.CeilingTokens < 0 {
 		return fmt.Errorf("input ceiling %d is negative", s.CeilingTokens)
+	}
+	if s.CeilingTokens > 0 && s.CeilingTokens < MinCeilingTokens {
+		return fmt.Errorf("input ceiling %d is below the %d-token minimum (template reserve + minimum chunk budget)",
+			s.CeilingTokens, MinCeilingTokens)
 	}
 	return nil
 }
