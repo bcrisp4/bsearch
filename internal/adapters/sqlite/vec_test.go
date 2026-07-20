@@ -4,14 +4,21 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/bcrisp4/bsearch/internal/domain"
 )
+
+// vecSpec is a raw-template spec for tests that only care about model+dims.
+func vecSpec(model string) domain.EmbeddingSpec {
+	return domain.EmbeddingSpec{Model: model}
+}
 
 func TestEnsureVecTableCreatesGenerationAndMeta(t *testing.T) {
 	db := openTestDB(t)
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if err := store.EnsureVecTable(ctx, "test-model", 4); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 4); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
 
@@ -43,7 +50,7 @@ func TestEnsureVecTableCreatesGenerationAndMeta(t *testing.T) {
 	}
 
 	// Same model+dims again: no new generation.
-	if err := store.EnsureVecTable(ctx, "test-model", 4); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 4); err != nil {
 		t.Fatalf("EnsureVecTable (repeat): %v", err)
 	}
 	// NOT GLOB excludes vec0's shadow tables (vec_chunks_1_rowids, ...).
@@ -58,7 +65,7 @@ func TestEnsureVecTableCreatesGenerationAndMeta(t *testing.T) {
 	}
 
 	// New model: new generation becomes current.
-	if err := store.EnsureVecTable(ctx, "other-model", 8); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("other-model"), 8); err != nil {
 		t.Fatalf("EnsureVecTable (new model): %v", err)
 	}
 	if err := db.Reader().QueryRow(
@@ -75,7 +82,7 @@ func TestUpsertVectorsAndSearch(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if err := store.EnsureVecTable(ctx, "test-model", 3); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
 	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"),
@@ -122,7 +129,7 @@ func TestUpsertVectorsDimsMismatch(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if err := store.EnsureVecTable(ctx, "test-model", 3); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
 	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
@@ -154,7 +161,7 @@ func TestDeleteAndReplaceRemoveVectors(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if err := store.EnsureVecTable(ctx, "test-model", 3); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
 
@@ -203,7 +210,7 @@ func TestUpsertVectorsRejectsStaleChunkIDs(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if err := store.EnsureVecTable(ctx, "test-model", 3); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
 	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
@@ -235,7 +242,7 @@ func TestDeleteCleansAllVecGenerations(t *testing.T) {
 	ctx := context.Background()
 
 	// Embed under model A (generation 1).
-	if err := store.EnsureVecTable(ctx, "model-a", 3); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("model-a"), 3); err != nil {
 		t.Fatal(err)
 	}
 	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
@@ -247,7 +254,7 @@ func TestDeleteCleansAllVecGenerations(t *testing.T) {
 	}
 
 	// Switch current to model B (generation 2), then delete the doc.
-	if err := store.EnsureVecTable(ctx, "model-b", 3); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("model-b"), 3); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.DeleteDocument(ctx, "d_1"); err != nil {
@@ -270,7 +277,7 @@ func TestDescriptorLayoutBackfill(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if err := store.EnsureVecTable(ctx, "test-model", 3); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate a descriptor stored before the Layout field existed.
@@ -281,7 +288,7 @@ func TestDescriptorLayoutBackfill(t *testing.T) {
 
 	// Re-ensure must match the old descriptor (normalized), not mint a
 	// fresh empty generation.
-	if err := store.EnsureVecTable(ctx, "test-model", 3); err != nil {
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatal(err)
 	}
 	var current string
@@ -293,16 +300,99 @@ func TestDescriptorLayoutBackfill(t *testing.T) {
 	}
 }
 
+func TestEnsureVecTableTemplateIdentity(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	spec := domain.EmbeddingSpec{
+		Model:           "test-model",
+		QueryTemplate:   "query: {q}",
+		PassageTemplate: "title: {t} | text: {d}",
+		CeilingTokens:   2048,
+	}
+	if err := store.EnsureVecTable(ctx, spec, 3); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+
+	// Descriptor round-trips the full spec.
+	var descriptor string
+	if err := db.Reader().QueryRow(
+		"SELECT value FROM meta WHERE key = 'vec_table:vec_chunks_1'").Scan(&descriptor); err != nil {
+		t.Fatalf("meta descriptor: %v", err)
+	}
+	for _, want := range []string{"query: {q}", "title: {t} | text: {d}", "2048"} {
+		if !strings.Contains(descriptor, want) {
+			t.Errorf("descriptor %q missing %q", descriptor, want)
+		}
+	}
+
+	// Same spec again: same generation.
+	if err := store.EnsureVecTable(ctx, spec, 3); err != nil {
+		t.Fatal(err)
+	}
+	var current string
+	if err := db.Reader().QueryRow("SELECT value FROM meta WHERE key = 'vec_current'").Scan(&current); err != nil {
+		t.Fatal(err)
+	}
+	if current != "vec_chunks_1" {
+		t.Errorf("vec_current = %q after identical spec, want vec_chunks_1", current)
+	}
+
+	// Template change: new generation — differently-prefixed vectors are
+	// incompatible even under the same model.
+	changed := spec
+	changed.QueryTemplate = "search_query: {q}"
+	if err := store.EnsureVecTable(ctx, changed, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Reader().QueryRow("SELECT value FROM meta WHERE key = 'vec_current'").Scan(&current); err != nil {
+		t.Fatal(err)
+	}
+	if current != "vec_chunks_2" {
+		t.Errorf("vec_current = %q after template change, want vec_chunks_2", current)
+	}
+}
+
+func TestDescriptorTemplateBackfill(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a descriptor stored before the template fields existed.
+	if _, err := db.Writer().Exec(
+		`UPDATE meta SET value = '{"model":"test-model","dims":3,"layout":"float32"}'
+		 WHERE key = 'vec_table:vec_chunks_1'`); err != nil {
+		t.Fatal(err)
+	}
+
+	// A raw spec (no templates, no ceiling) must still match — not mint a
+	// fresh empty generation.
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
+		t.Fatal(err)
+	}
+	var current string
+	if err := db.Reader().QueryRow("SELECT value FROM meta WHERE key = 'vec_current'").Scan(&current); err != nil {
+		t.Fatal(err)
+	}
+	if current != "vec_chunks_1" {
+		t.Errorf("vec_current = %q — legacy descriptor mismatched raw spec, new generation minted", current)
+	}
+}
+
 func TestEnsureVecTableRejectsInvalidInputs(t *testing.T) {
 	db := openTestDB(t)
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if err := store.EnsureVecTable(ctx, "", 4); err == nil {
+	if err := store.EnsureVecTable(ctx, vecSpec(""), 4); err == nil {
 		t.Error("empty model accepted, want error")
 	}
 	for _, dims := range []int{0, -1} {
-		if err := store.EnsureVecTable(ctx, "test-model", dims); err == nil {
+		if err := store.EnsureVecTable(ctx, vecSpec("test-model"), dims); err == nil {
 			t.Errorf("dims=%d accepted, want error", dims)
 		}
 	}

@@ -79,10 +79,24 @@ type Paths struct {
 
 // Inference configures the OpenAI-compatible inference endpoint. Model
 // names default to empty until the M2 bake-off records defaults.
+//
+// The template/ceiling fields are per-field overrides of the built-in
+// per-model registry (internal/embedding); empty/zero means "use the
+// registry default for the configured model". They exist for models the
+// registry doesn't know — BYO inference must never require registry
+// membership.
 type Inference struct {
 	Endpoint       string `toml:"endpoint"`
 	EmbeddingModel string `toml:"embedding_model"`
 	SummaryModel   string `toml:"summary_model"`
+	// QueryTemplate must contain {q} when set.
+	QueryTemplate string `toml:"query_template"`
+	// PassageTemplate must contain {d} when set; {t} optionally marks a
+	// title slot filled by the chunk's heading-path breadcrumb.
+	PassageTemplate string `toml:"passage_template"`
+	// InputCeilingTokens is the embedding model's input limit; 0 defers
+	// to the registry (unlimited for unknown models).
+	InputCeilingTokens int `toml:"input_ceiling_tokens"`
 }
 
 // Converter configures the bscribe document-conversion service.
@@ -289,6 +303,17 @@ func (c *Config) validate() error {
 	}
 	if err := validateEndpoint("inference.endpoint", c.Inference.Endpoint); err != nil {
 		return err
+	}
+	// A template without its placeholder would embed the same constant
+	// string for every input — silent, total recall loss. Reject at load.
+	if t := c.Inference.QueryTemplate; t != "" && !strings.Contains(t, "{q}") {
+		return fmt.Errorf("inference.query_template: %q does not contain {q}", t)
+	}
+	if t := c.Inference.PassageTemplate; t != "" && !strings.Contains(t, "{d}") {
+		return fmt.Errorf("inference.passage_template: %q does not contain {d}", t)
+	}
+	if n := c.Inference.InputCeilingTokens; n < 0 {
+		return fmt.Errorf("inference.input_ceiling_tokens: %d is negative", n)
 	}
 	return validateEndpoint("converter.endpoint", c.Converter.Endpoint)
 }
