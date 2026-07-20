@@ -13,6 +13,16 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- bsearch can now discover the files to index: it walks the configured
+  include paths (honouring the privacy deny-list — exclusions always win),
+  picks up new and changed markdown/text files, and skips unchanged ones
+  cheaply so repeat scans are fast. Renamed or moved files keep their
+  document identity. Include roots that are symlinks are followed. iCloud
+  "Optimize Storage" placeholders are never downloaded, and unreadable
+  paths (e.g. missing Full Disk Access) — as well as an include root
+  swallowed by the exclude rules — are reported per path instead of being
+  silently skipped.
+
 - The index now lives in one SQLite database at
   `~/Library/Application Support/bsearch/bsearch.db` (created 0600, directory
   0700): document catalog, chunks, pyramid-summary slots, and semantic-search
