@@ -227,7 +227,9 @@ func writeSearchHuman(out io.Writer, docs []domain.Hit) {
 		if i > 0 {
 			fmt.Fprintln(out)
 		}
-		fmt.Fprintf(out, "%s  (distance %.3f)\n", tildePath(home, h.Doc.Path), h.Distance)
+		// Paths are untrusted display text too: macOS filenames may
+		// contain any byte but NUL and '/', including ESC and newlines.
+		fmt.Fprintf(out, "%s  (distance %.3f)\n", stripControl(tildePath(home, h.Doc.Path)), h.Distance)
 		// Heading paths come from indexed documents — untrusted, like
 		// chunk text; preview() sanitizes both.
 		if hp := preview(h.Chunk.HeadingPath, previewRunes); hp != "" {
@@ -250,6 +252,25 @@ func tildePath(home, path string) string {
 		return "~" + string(filepath.Separator) + rest
 	}
 	return path
+}
+
+// stripControl drops control runes (ESC, newlines, tabs, …) so untrusted
+// display text can't drive the terminal or break the one-line-per-field
+// output format. Unlike preview it neither collapses spaces nor truncates —
+// paths need to stay verbatim and complete.
+func stripControl(s string) string {
+	// Fast path: control characters are rare in real paths.
+	if !strings.ContainsFunc(s, unicode.IsControl) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if !unicode.IsControl(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // preview renders untrusted document text for one line of output: whitespace

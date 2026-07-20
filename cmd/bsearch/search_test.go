@@ -332,6 +332,24 @@ func TestPreview(t *testing.T) {
 	}
 }
 
+func TestStripControl(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"clean passthrough", "~/notes/a b.md", "~/notes/a b.md"},
+		{"esc stripped", "~/notes/\x1b]0;owned\x07.md", "~/notes/]0;owned.md"},
+		{"newline and tab stripped", "~/no\ntes/a\t.md", "~/notes/a.md"},
+		{"spaces preserved", "a  b", "a  b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripControl(tt.in); got != tt.want {
+				t.Errorf("stripControl(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTildePath(t *testing.T) {
 	home := "/Users/testuser"
 	tests := []struct {
