@@ -24,7 +24,7 @@ func main() {
 // (ADR 0006); dispatch itself stays a plain switch.
 func run(args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: bsearch <index|version>")
+		return errors.New("usage: bsearch <index|search|version>")
 	}
 	switch args[0] {
 	case "version", "--version":
@@ -35,7 +35,9 @@ func run(args []string, out io.Writer) error {
 		return err
 	case "index":
 		return runIndex(args[1:], out)
+	case "search":
+		return runSearch(args[1:], out)
 	default:
-		return fmt.Errorf("unknown command %q (usage: bsearch <index|version>)", args[0])
+		return fmt.Errorf("unknown command %q (usage: bsearch <index|search|version>)", args[0])
 	}
 }

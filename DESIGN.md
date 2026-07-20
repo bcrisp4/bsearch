@@ -409,6 +409,10 @@ Response:
 }
 ```
 
+- `score` — fused (RRF) relevance, higher = better. *Implementation status:
+  the M1 CLI's `--json` output predates fusion and instead emits `distance`
+  (raw KNN distance, lower = better, uncalibrated); `score` is deliberately
+  reserved until RRF lands (M4) so the name never carries two meanings.*
 - `summary` — whole-document pyramid summary at the requested level (may be
   absent if not yet generated — summaries are fill-later, never a gate).
 - `chunk_preview` — ~150-char excerpt of the best-matching chunk: why this hit

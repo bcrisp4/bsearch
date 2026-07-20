@@ -13,6 +13,19 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- New `bsearch search` command: semantic search over your indexed files from
+  the terminal — `bsearch search "heat pump quote"`. The query is embedded
+  with the same model-specific prefix used at indexing time, matched against
+  every chunk, and results collapse to the best chunk per document: file
+  path, distance (lower = better; raw model distance, uncalibrated — judge
+  relevance by the preview, not the number), the matching section's heading
+  path, and a short excerpt showing why it matched. `--limit` caps the
+  number of documents (default 10); `--json` emits a machine-readable
+  response including `took_ms`. Searching before anything is indexed, or
+  after changing the embedding model or its prefix templates without
+  re-indexing, fails with a clear message instead of returning empty or
+  wrong-model results — and never creates or modifies the database.
+
 - New `bsearch index` command: one-shot indexing of the folders in your
   config. It scans for new and changed markdown/text files, chunks them,
   embeds them through your inference server, and stores everything in the

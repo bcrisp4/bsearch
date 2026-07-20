@@ -204,6 +204,24 @@ func currentVecTable(ctx context.Context, q queryer) (string, vecDescriptor, err
 	return name, desc.normalize(), nil
 }
 
+// CurrentVecSpec reports the embedding identity (model + prefix templates)
+// and dims of the current vector table, for search-time compatibility checks:
+// dims alone can't catch a model swapped to another of equal dimensions, which
+// would silently search the wrong vector space. The ceiling is excluded — it
+// is not part of vector-space identity (see vecDescriptor). Returns
+// ErrNoVecTable when nothing has been embedded.
+func (s *Store) CurrentVecSpec(ctx context.Context) (domain.EmbeddingSpec, int, error) {
+	_, desc, err := currentVecTable(ctx, s.db.Reader())
+	if err != nil {
+		return domain.EmbeddingSpec{}, 0, err
+	}
+	return domain.EmbeddingSpec{
+		Model:           desc.Model,
+		QueryTemplate:   desc.QueryTemplate,
+		PassageTemplate: desc.PassageTemplate,
+	}, desc.Dims, nil
+}
+
 // UpsertVectors stores one vector per chunk storage ID, replacing existing
 // rows. Callers batch: one call per embedding batch, one short transaction.
 //

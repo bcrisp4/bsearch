@@ -28,10 +28,14 @@ func TestRunVersionRejectsTrailingArgs(t *testing.T) {
 
 func TestRunUnknownCommand(t *testing.T) {
 	var out strings.Builder
-	if err := run([]string{"search", "heat pump"}, &out); err == nil {
-		t.Fatal("run(search) = nil, want an error while subcommands are unimplemented")
+	err := run([]string{"frobnicate"}, &out)
+	if err == nil {
+		t.Fatal("run(frobnicate) = nil, want unknown-command error")
+	}
+	if !strings.Contains(err.Error(), "unknown command") {
+		t.Errorf("run(frobnicate) = %v, want unknown-command error", err)
 	}
 	if out.Len() != 0 {
-		t.Errorf("run(search) wrote %q to stdout, want nothing", out.String())
+		t.Errorf("run(frobnicate) wrote %q to stdout, want nothing", out.String())
 	}
 }
