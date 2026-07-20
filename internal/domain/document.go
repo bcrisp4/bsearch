@@ -36,8 +36,10 @@ type Document struct {
 }
 
 // Chunk is one embeddable unit of a document's converted markdown
-// (DESIGN.md: Chunking). Byte offsets index into the converted markdown,
-// letting retrieval return chunk-in-context.
+// (DESIGN.md: Chunking). Byte offsets index into the normalized markdown
+// (the UTF-8 output of chunker.Normalize — BOM stripped, UTF-16
+// transcoded), not the raw file bytes; retrieval must slice that same
+// normalized text to return chunk-in-context.
 type Chunk struct {
 	DocID       string
 	Ordinal     int

@@ -113,3 +113,16 @@ func TestNormalizeErrorMentionsReason(t *testing.T) {
 		t.Fatalf("error should name the encoding problem: %v", err)
 	}
 }
+
+func TestNormalizeUTF32Rejected(t *testing.T) {
+	// UTF-32LE BOM = FF FE 00 00 — must not be misread as UTF-16LE and
+	// silently decoded to NUL-interleaved garbage.
+	utf32le := []byte{0xFF, 0xFE, 0x00, 0x00, 'A', 0x00, 0x00, 0x00}
+	if _, err := Normalize(utf32le); err == nil {
+		t.Fatal("want error for UTF-32LE")
+	}
+	utf32be := []byte{0x00, 0x00, 0xFE, 0xFF, 0x00, 0x00, 0x00, 'A'}
+	if _, err := Normalize(utf32be); err == nil {
+		t.Fatal("want error for UTF-32BE")
+	}
+}

@@ -320,7 +320,7 @@ func TestChunkCeilingSplitsAtomicBlockWithWarning(t *testing.T) {
 	if len(res.Warnings) != len(res.Chunks) {
 		t.Fatalf("want one warning per piece: %d warnings, %d chunks", len(res.Warnings), len(res.Chunks))
 	}
-	eff := 300*4 - breadcrumbReserve
+	eff := 300*4 - prefixReserve
 	total := 0
 	for i, c := range res.Chunks {
 		if len(c.Text) > eff {
@@ -353,6 +353,40 @@ func TestChunkCeilingSplitNeverMidRune(t *testing.T) {
 		for _, r := range c.Text {
 			if r == '�' {
 				t.Fatalf("chunk %d contains replacement rune — split mid-rune", i)
+			}
+		}
+	}
+}
+
+func TestChunkHeadingTextEndingInHash(t *testing.T) {
+	// CommonMark: a trailing #-run is a closing sequence only when preceded
+	// by a space. "## C#" must keep its hash.
+	src := "## C#\n\nsharp language notes\n\n## Sub sec ##\n\nclosed heading body\n"
+	res := chunkAll(t, src)
+	paths := map[string]bool{}
+	for _, c := range res.Chunks {
+		paths[c.HeadingPath] = true
+	}
+	if !paths["C#"] {
+		t.Fatalf("heading 'C#' truncated: %v", paths)
+	}
+	if !paths["Sub sec"] {
+		t.Fatalf("closing-sequence stripping broken: %v", paths)
+	}
+}
+
+func TestChunkNoSubsetChunks(t *testing.T) {
+	// Overlap seeding must never emit a chunk whose span is contained in
+	// another chunk's span: small first block, large second, oversized
+	// section. Preamble (unmergeable) so the tiny-merge pass cannot mask a
+	// subset chunk produced by packing.
+	src := para(200) + "\n" + para(1900) + "\n" + para(1900) + "\n" + para(1900)
+	res := chunkAll(t, src)
+	for i, a := range res.Chunks {
+		for j, b := range res.Chunks {
+			if i != j && a.ByteStart >= b.ByteStart && a.ByteEnd <= b.ByteEnd {
+				t.Fatalf("chunk %d [%d,%d) is a subset of chunk %d [%d,%d)",
+					i, a.ByteStart, a.ByteEnd, j, b.ByteStart, b.ByteEnd)
 			}
 		}
 	}

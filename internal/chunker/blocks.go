@@ -28,7 +28,7 @@ type line struct {
 }
 
 func splitLines(text string) []line {
-	var out []line
+	out := make([]line, 0, strings.Count(text, "\n")+1)
 	start := 0
 	for i := 0; i < len(text); i++ {
 		if text[i] == '\n' {
@@ -146,8 +146,10 @@ func skipFrontmatter(text string, lines []line) int {
 	return 0
 }
 
-// parseATXHeading recognizes "#"–"######" followed by a space, returning the
-// level and the heading text with optional trailing closing #s stripped.
+// parseATXHeading recognizes "#"–"######" followed by a space, returning
+// the level and the heading text. A trailing #-run is stripped only when
+// it is a CommonMark closing sequence — preceded by a space (or the whole
+// text) — so headings like "## C#" keep their hash.
 func parseATXHeading(s string) (level int, text string, ok bool) {
 	n := 0
 	for n < len(s) && s[n] == '#' {
@@ -157,8 +159,10 @@ func parseATXHeading(s string) (level int, text string, ok bool) {
 		return 0, "", false
 	}
 	t := strings.TrimSpace(s[n+1:])
-	t = strings.TrimRight(t, "#")
-	return n, strings.TrimSpace(t), true
+	if stripped := strings.TrimRight(t, "#"); stripped == "" || strings.HasSuffix(stripped, " ") {
+		t = strings.TrimSpace(stripped)
+	}
+	return n, t, true
 }
 
 // fenceOpen reports whether the line opens a code fence, returning the
