@@ -98,6 +98,18 @@ func (f *fakeStore) DeleteDocument(_ context.Context, docID string) error {
 
 var _ domain.DocumentStore = (*fakeStore)(nil)
 
+// tmpDir is t.TempDir resolved to its canonical path: Scan canonicalizes
+// include roots (macOS temp dirs live behind the /var → /private/var
+// alias), so tests comparing walked paths need the resolved form.
+func tmpDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func write(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -120,7 +132,7 @@ func scan(t *testing.T, store *fakeStore, opts Options) Result {
 var docIDRe = regexp.MustCompile(`^d_[0-9a-f]{16}$`)
 
 func TestScanNewFile(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "a.md"), "hello")
 	store := newFakeStore()
 
@@ -148,7 +160,7 @@ func TestScanNewFile(t *testing.T) {
 }
 
 func TestScanUnchangedNoWrites(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "a.md"), "hello")
 	store := newFakeStore()
 	opts := Options{Include: []string{dir}}
@@ -166,7 +178,7 @@ func TestScanUnchangedNoWrites(t *testing.T) {
 }
 
 func TestScanTouchedSameContent(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	path := filepath.Join(dir, "a.md")
 	write(t, path, "hello")
 	store := newFakeStore()
@@ -191,7 +203,7 @@ func TestScanTouchedSameContent(t *testing.T) {
 }
 
 func TestScanEditedKeepsID(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	path := filepath.Join(dir, "a.md")
 	write(t, path, "hello")
 	store := newFakeStore()
@@ -221,7 +233,7 @@ func TestScanEditedKeepsID(t *testing.T) {
 }
 
 func TestScanExcludedDirPruned(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "keep.md"), "keep")
 	write(t, filepath.Join(dir, "node_modules", "junk.md"), "junk")
 	store := newFakeStore()
@@ -241,7 +253,7 @@ func TestScanExcludedDirPruned(t *testing.T) {
 }
 
 func TestScanExcludedRootRecordedNotScanned(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "a.md"), "hello")
 	store := newFakeStore()
 
@@ -261,7 +273,7 @@ func TestScanExcludedRootRecordedNotScanned(t *testing.T) {
 }
 
 func TestScanSymlinkRootFollowed(t *testing.T) {
-	target := t.TempDir()
+	target := tmpDir(t)
 	write(t, filepath.Join(target, "a.md"), "hello")
 	link := filepath.Join(t.TempDir(), "notes")
 	if err := os.Symlink(target, link); err != nil {
@@ -284,11 +296,29 @@ func TestScanSymlinkRootFollowed(t *testing.T) {
 	}
 }
 
+func TestScanSymlinkRootResolvingToIncludedRootVisitsOnce(t *testing.T) {
+	target := tmpDir(t)
+	write(t, filepath.Join(target, "a.md"), "hello")
+	link := filepath.Join(t.TempDir(), "notes")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	store := newFakeStore()
+
+	// Symlink and its target both included: dedup must happen after
+	// resolution, or the target is walked twice.
+	res := scan(t, store, Options{Include: []string{link, target}})
+
+	if res.Discovered != 1 || res.Unchanged != 0 || len(store.upserts) != 1 {
+		t.Errorf("Result = %+v with %d upserts, want file visited once", res, len(store.upserts))
+	}
+}
+
 func TestScanRenameStatFailureRecorded(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: permission bits do not apply")
 	}
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	locked := filepath.Join(dir, "locked")
 	write(t, filepath.Join(locked, "old.md"), "stable content")
 	store := newFakeStore()
@@ -325,7 +355,7 @@ func TestScanRenameStatFailureRecorded(t *testing.T) {
 }
 
 func TestScanExcludedFile(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "server.pem.md"), "not really a cert but excluded")
 	write(t, filepath.Join(dir, "keep.md"), "keep")
 	store := newFakeStore()
@@ -339,7 +369,7 @@ func TestScanExcludedFile(t *testing.T) {
 }
 
 func TestScanSkipsNonTextAndSymlinks(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "a.md"), "hello")
 	write(t, filepath.Join(dir, "b.pdf"), "%PDF")
 	write(t, filepath.Join(dir, "noext"), "text")
@@ -363,7 +393,7 @@ func TestScanSkipsNonTextAndSymlinks(t *testing.T) {
 }
 
 func TestScanTextExtensions(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	for _, name := range []string{"a.md", "b.markdown", "c.txt", "D.MD"} {
 		write(t, filepath.Join(dir, name), "content of "+name)
 	}
@@ -380,7 +410,7 @@ func TestScanPermissionError(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: permission bits do not apply")
 	}
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	locked := filepath.Join(dir, "locked")
 	write(t, filepath.Join(locked, "secret.md"), "cannot read")
 	write(t, filepath.Join(dir, "open.md"), "readable")
@@ -401,7 +431,7 @@ func TestScanPermissionError(t *testing.T) {
 }
 
 func TestScanMissingRoot(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "a.md"), "hello")
 	// Sibling of dir, not nested under it — a nested missing root would be
 	// deduped away by root normalization before it could error.
@@ -419,7 +449,7 @@ func TestScanMissingRoot(t *testing.T) {
 }
 
 func TestScanOverlappingRootsVisitOnce(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "sub", "a.md"), "hello")
 	store := newFakeStore()
 
@@ -431,7 +461,7 @@ func TestScanOverlappingRootsVisitOnce(t *testing.T) {
 }
 
 func TestScanRenameKeepsID(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	old := filepath.Join(dir, "old.md")
 	write(t, old, "stable content")
 	store := newFakeStore()
@@ -457,7 +487,7 @@ func TestScanRenameKeepsID(t *testing.T) {
 }
 
 func TestScanCopyMintsNewID(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "a.md"), "same content")
 	store := newFakeStore()
 	opts := Options{Include: []string{dir}}
@@ -480,7 +510,7 @@ func TestScanCopyMintsNewID(t *testing.T) {
 }
 
 func TestScanAmbiguousRenameMintsNewID(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	store := newFakeStore()
 	opts := Options{Include: []string{dir}}
 
@@ -511,7 +541,7 @@ func TestScanAmbiguousRenameMintsNewID(t *testing.T) {
 }
 
 func TestScanDatalessSkipped(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "cloud.md"), "placeholder")
 	write(t, filepath.Join(dir, "local.md"), "on disk")
 	store := newFakeStore()
@@ -535,7 +565,7 @@ func TestScanDatalessSkipped(t *testing.T) {
 }
 
 func TestScanStoreFailureIsFatal(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "a.md"), "hello")
 	store := newFakeStore()
 	store.failWith = errors.New("disk full")
@@ -547,7 +577,7 @@ func TestScanStoreFailureIsFatal(t *testing.T) {
 }
 
 func TestScanContextCancelled(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "a.md"), "hello")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

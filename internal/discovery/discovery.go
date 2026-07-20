@@ -95,11 +95,18 @@ func (s *Scanner) Scan(ctx context.Context) (Result, error) {
 		excluded = func(string) bool { return false }
 	}
 
+	// Canonicalize roots first, then normalize again: a resolved root
+	// may land on or under another include root (symlinked root, or an
+	// aliased ancestor like macOS /var → /private/var), and only the
+	// second pass can see that overlap.
+	resolved := make([]string, 0, len(s.opts.Include))
 	for _, root := range normalizeRoots(s.opts.Include) {
-		root, ok := resolveRoot(root, &res)
-		if !ok {
-			continue
+		if root, ok := canonicalRoot(root, &res); ok {
+			resolved = append(resolved, root)
 		}
+	}
+
+	for _, root := range normalizeRoots(resolved) {
 		if excluded(root) {
 			res.PathErrors = append(res.PathErrors, PathError{Path: root, Err: ErrRootExcluded})
 			continue
@@ -293,20 +300,22 @@ func normalizeRoots(include []string) []string {
 	return out
 }
 
-// resolveRoot follows an include root that is itself a symlink: an
-// explicitly configured root is user intent (~/notes → ~/Dropbox/notes
-// is a common setup), unlike symlinks met during the walk, which are
-// never followed. Without this, WalkDir lstats the root, the symlink
-// guard drops it, and the whole corpus silently scans to zero. A root
-// that fails to resolve is recorded and skipped; a missing root passes
-// through so WalkDir reports it like any other unreadable root.
-func resolveRoot(root string, res *Result) (string, bool) {
-	fi, err := os.Lstat(root)
-	if err != nil || fi.Mode()&fs.ModeSymlink == 0 {
-		return root, true
-	}
+// canonicalRoot resolves an include root to its canonical on-disk path,
+// following symlinks in the root and its ancestors. An explicitly
+// configured symlinked root is user intent (~/notes → ~/Dropbox/notes is
+// a common setup), unlike symlinks met during the walk, which are never
+// followed — without this, WalkDir lstats the root, the symlink guard
+// drops it, and the whole corpus silently scans to zero. Canonical
+// ancestors matter too: aliases like macOS /var → /private/var would
+// otherwise defeat duplicate-root detection. A root that fails to
+// resolve is recorded and skipped; a missing root passes through so
+// WalkDir reports it like any other unreadable root.
+func canonicalRoot(root string, res *Result) (string, bool) {
 	resolved, err := filepath.EvalSymlinks(root)
-	if err != nil {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return root, true
+	case err != nil:
 		res.PathErrors = append(res.PathErrors, PathError{Path: root, Err: err})
 		return "", false
 	}
