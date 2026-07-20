@@ -240,7 +240,7 @@ func TestScanExcludedDirPruned(t *testing.T) {
 	}
 }
 
-func TestScanExcludedRootScansNothing(t *testing.T) {
+func TestScanExcludedRootRecordedNotScanned(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "a.md"), "hello")
 	store := newFakeStore()
@@ -252,6 +252,75 @@ func TestScanExcludedRootScansNothing(t *testing.T) {
 
 	if res.Discovered != 0 || len(store.pathLookups) != 0 {
 		t.Errorf("excluded root scanned: %+v, lookups %v", res, store.pathLookups)
+	}
+	// Exclusions win, but an explicitly configured root that scans to
+	// nothing must leave a trace.
+	if len(res.PathErrors) != 1 || !errors.Is(res.PathErrors[0].Err, ErrRootExcluded) {
+		t.Errorf("PathErrors = %+v, want one ErrRootExcluded for the root", res.PathErrors)
+	}
+}
+
+func TestScanSymlinkRootFollowed(t *testing.T) {
+	target := t.TempDir()
+	write(t, filepath.Join(target, "a.md"), "hello")
+	link := filepath.Join(t.TempDir(), "notes")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	store := newFakeStore()
+
+	res := scan(t, store, Options{Include: []string{link}})
+
+	if res.Discovered != 1 || len(res.PathErrors) != 0 {
+		t.Fatalf("Result = %+v, want symlinked root followed", res)
+	}
+	// The upserted path carries the fully resolved location.
+	resolved, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(resolved, "a.md"); store.upserts[0].Path != want {
+		t.Errorf("Path = %q, want %q", store.upserts[0].Path, want)
+	}
+}
+
+func TestScanRenameStatFailureRecorded(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not apply")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	write(t, filepath.Join(locked, "old.md"), "stable content")
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scan(t, store, opts)
+	oldID := store.upserts[0].ID
+	// Make the old path unverifiable (EPERM on Lstat), then present the
+	// same content at a new path: rename detection must mint a fresh id
+	// (can't confirm the old path is gone) but record why.
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	write(t, filepath.Join(dir, "new.md"), "stable content")
+	res := scan(t, store, opts)
+
+	if res.Renamed != 0 {
+		t.Errorf("unverifiable old path resolved as rename: %+v", res)
+	}
+	final := store.upserts[len(store.upserts)-1]
+	if final.ID == oldID {
+		t.Errorf("id %q reused despite unverifiable old path", final.ID)
+	}
+	found := false
+	for _, pe := range res.PathErrors {
+		if pe.Path == filepath.Join(locked, "old.md") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("PathErrors = %+v, want stat failure on old path recorded", res.PathErrors)
 	}
 }
 

@@ -22,11 +22,18 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/bcrisp4/bsearch/internal/domain"
+	"github.com/bcrisp4/bsearch/internal/pathutil"
 )
+
+// ErrRootExcluded marks an include root skipped because it matches the
+// exclude rules. Exclusions win over includes by design, but silently
+// swallowing an explicitly configured root would make "why is nothing
+// indexed" undiagnosable — so the skip is recorded as a PathError.
+var ErrRootExcluded = errors.New("include root matches the exclude rules")
 
 // Options configures a Scanner.
 type Options struct {
@@ -89,7 +96,12 @@ func (s *Scanner) Scan(ctx context.Context) (Result, error) {
 	}
 
 	for _, root := range normalizeRoots(s.opts.Include) {
+		root, ok := resolveRoot(root, &res)
+		if !ok {
+			continue
+		}
 		if excluded(root) {
+			res.PathErrors = append(res.PathErrors, PathError{Path: root, Err: ErrRootExcluded})
 			continue
 		}
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
@@ -109,7 +121,7 @@ func (s *Scanner) Scan(ctx context.Context) (Result, error) {
 				return nil
 			}
 			if d.IsDir() {
-				if path != root && excluded(path) {
+				if excluded(path) {
 					return fs.SkipDir // prune: nothing under it is statted
 				}
 				return nil
@@ -171,7 +183,7 @@ func (s *Scanner) processFile(ctx context.Context, path string, info fs.FileInfo
 
 	id, renamed := existing.ID, false
 	if !known {
-		if id, renamed, err = s.resolveID(ctx, hash); err != nil {
+		if id, renamed, err = s.resolveID(ctx, hash, res); err != nil {
 			return err
 		}
 	}
@@ -200,15 +212,23 @@ func (s *Scanner) processFile(ctx context.Context, path string, info fs.FileInfo
 // reuse its ID. Anything ambiguous (old path still exists = copy; several
 // candidate rows; stat failure on the old path) mints a fresh ID: prefer
 // id churn over a false merge.
-func (s *Scanner) resolveID(ctx context.Context, hash string) (id string, renamed bool, err error) {
+func (s *Scanner) resolveID(ctx context.Context, hash string, res *Result) (id string, renamed bool, err error) {
 	candidates, err := s.store.GetByContentHash(ctx, hash)
 	if err != nil {
 		return "", false, err
 	}
 	var gone []domain.Document
 	for _, c := range candidates {
-		if _, err := os.Lstat(c.Path); errors.Is(err, fs.ErrNotExist) {
+		switch _, statErr := os.Lstat(c.Path); {
+		case statErr == nil:
+			// Old path still exists: a copy, not a rename.
+		case errors.Is(statErr, fs.ErrNotExist):
 			gone = append(gone, c)
+		default:
+			// Can't verify the old path is gone (e.g. TCC EPERM):
+			// counted as still existing — prefer id churn over a false
+			// merge — but recorded, or the churn is undiagnosable.
+			res.PathErrors = append(res.PathErrors, PathError{Path: c.Path, Err: statErr})
 		}
 	}
 	if len(gone) == 1 {
@@ -260,19 +280,35 @@ func normalizeRoots(include []string) []string {
 	for i, r := range include {
 		roots[i] = filepath.Clean(r)
 	}
-	sort.Strings(roots)
+	slices.Sort(roots)
 	var out []string
 	for _, r := range roots {
-		nested := false
-		for _, kept := range out {
-			if r == kept || strings.HasPrefix(r, kept+string(os.PathSeparator)) {
-				nested = true
-				break
-			}
-		}
+		nested := slices.ContainsFunc(out, func(kept string) bool {
+			return pathutil.Within(r, kept)
+		})
 		if !nested {
 			out = append(out, r)
 		}
 	}
 	return out
+}
+
+// resolveRoot follows an include root that is itself a symlink: an
+// explicitly configured root is user intent (~/notes → ~/Dropbox/notes
+// is a common setup), unlike symlinks met during the walk, which are
+// never followed. Without this, WalkDir lstats the root, the symlink
+// guard drops it, and the whole corpus silently scans to zero. A root
+// that fails to resolve is recorded and skipped; a missing root passes
+// through so WalkDir reports it like any other unreadable root.
+func resolveRoot(root string, res *Result) (string, bool) {
+	fi, err := os.Lstat(root)
+	if err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		return root, true
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		res.PathErrors = append(res.PathErrors, PathError{Path: root, Err: err})
+		return "", false
+	}
+	return resolved, true
 }

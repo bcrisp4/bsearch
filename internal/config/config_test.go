@@ -317,7 +317,7 @@ func TestExcludeRulesUserEntries(t *testing.T) {
 	home := setHome(t)
 	path := writeConfig(t, `
 [paths]
-exclude = ["~/Archive/old-junk", "/Volumes/scratch", "*.bak"]
+exclude = ["~/Archive/old-junk", "/Volumes/scratch/", "*.bak"]
 `)
 
 	cfg, err := config.Load(path)
@@ -331,6 +331,11 @@ exclude = ["~/Archive/old-junk", "/Volumes/scratch", "*.bak"]
 		if !slices.Contains(rules.Prefixes, want) {
 			t.Errorf("ExcludeRules().Prefixes missing user entry %q", want)
 		}
+	}
+	// A trailing slash must not produce a dead prefix that never matches
+	// cleaned walk paths.
+	if !rules.Match("/Volumes/scratch/secret.md") {
+		t.Error("Match missed a path under a user exclude prefix")
 	}
 	if !slices.Contains(rules.Patterns, "*.bak") {
 		t.Errorf("ExcludeRules().Patterns missing user entry %q", "*.bak")

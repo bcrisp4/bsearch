@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/bcrisp4/bsearch/internal/pathutil"
 )
 
 // Built-in deny-list (DESIGN.md Privacy). User [paths].exclude entries
@@ -126,10 +128,14 @@ type ExcludeSet struct {
 
 // Match reports whether p is excluded: equal to or under a deny prefix,
 // or any path component matches a deny pattern. p must be an absolute,
-// cleaned path, as produced by walking an absolute root.
+// cleaned path, as produced by walking an absolute root. Matching is
+// case-sensitive: on a case-insensitive filesystem (default APFS) a
+// differently-cased spelling of a denied directory is not matched, so
+// include roots should be written in on-disk casing (tilde-expanded
+// paths always are).
 func (e ExcludeSet) Match(p string) bool {
 	for _, prefix := range e.Prefixes {
-		if p == prefix || strings.HasPrefix(p, prefix+string(os.PathSeparator)) {
+		if pathutil.Within(p, prefix) {
 			return true
 		}
 	}
@@ -214,13 +220,16 @@ func Load(path string) (*Config, error) {
 
 // ExcludeRules returns the merged deny-list. User exclude entries that
 // are absolute (or were tilde-expanded to absolute) become prefixes;
-// bare names become basename patterns.
+// bare names become basename patterns. Absolute entries are cleaned
+// here: a raw entry with a trailing slash or dot segment would
+// otherwise never prefix-match a cleaned walk path — a silently dead
+// deny rule.
 func (c *Config) ExcludeRules() ExcludeSet {
 	prefixes := slices.Clone(c.excludePrefixes)
 	patterns := slices.Clone(denyPatterns)
 	for _, entry := range c.Paths.Exclude {
 		if strings.HasPrefix(entry, "/") {
-			prefixes = append(prefixes, entry)
+			prefixes = append(prefixes, filepath.Clean(entry))
 		} else {
 			patterns = append(patterns, entry)
 		}
