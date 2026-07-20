@@ -7,11 +7,11 @@ package domain
 // output preserves that order, so a document's first hit is its best.
 // limit <= 0 returns nil.
 func CollapseBestPerDoc(hits []Hit, limit int) []Hit {
-	if limit <= 0 {
+	if limit <= 0 || len(hits) == 0 {
 		return nil
 	}
-	var out []Hit
-	seen := make(map[string]struct{})
+	out := make([]Hit, 0, min(limit, len(hits)))
+	seen := make(map[string]struct{}, min(limit, len(hits)))
 	for _, h := range hits {
 		if _, dup := seen[h.Doc.ID]; dup {
 			continue

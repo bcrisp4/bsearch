@@ -1,10 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,46 +48,16 @@ func TestRunIndexRequiresEmbeddingModel(t *testing.T) {
 // TestRunIndexEndToEnd is the M1 demo in test form: a temp corpus, a fake
 // OpenAI-compatible embeddings server, two runs — the second fully skips.
 func TestRunIndexEndToEnd(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Input []string `json:"input"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("decode request: %v", err)
-		}
-		type datum struct {
-			Index     int       `json:"index"`
-			Embedding []float32 `json:"embedding"`
-		}
-		var resp struct {
-			Data []datum `json:"data"`
-		}
-		for n := range req.Input {
-			resp.Data = append(resp.Data, datum{Index: n, Embedding: []float32{float32(n), 1, 2}})
-		}
-		if err := json.NewEncoder(w).Encode(&resp); err != nil {
-			t.Errorf("encode response: %v", err)
-		}
-	}))
-	t.Cleanup(srv.Close)
+	srv := fakeEmbeddingsServer(t, func(n int, _ string) []float32 {
+		return []float32{float32(n), 1, 2}
+	})
 
 	dir := t.TempDir()
-	corpus := filepath.Join(dir, "notes")
-	if err := os.MkdirAll(corpus, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(corpus, "a.md"), []byte("# Alpha\n\nalpha text\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(corpus, "b.md"), []byte("# Beta\n\nbeta text\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfgPath := filepath.Join(dir, "config.toml")
-	cfg := fmt.Sprintf("[paths]\ninclude = [%q]\n\n[inference]\nendpoint = %q\nembedding_model = \"test-model\"\n", corpus, srv.URL)
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	corpus := writeTestCorpus(t, dir, map[string]string{
+		"a.md": "# Alpha\n\nalpha text\n",
+		"b.md": "# Beta\n\nbeta text\n",
+	})
+	cfgPath := writeTestConfig(t, dir, corpus, srv.URL)
 	dbPath := filepath.Join(dir, "data", "bsearch.db")
 	args := []string{"index", "--config", cfgPath, "--db", dbPath}
 

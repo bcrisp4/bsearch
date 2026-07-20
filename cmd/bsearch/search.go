@@ -13,12 +13,11 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
-	"github.com/bcrisp4/bsearch/internal/adapters/openai"
 	"github.com/bcrisp4/bsearch/internal/adapters/sqlite"
 	"github.com/bcrisp4/bsearch/internal/config"
 	"github.com/bcrisp4/bsearch/internal/domain"
-	"github.com/bcrisp4/bsearch/internal/embedding"
 )
 
 const (
@@ -35,7 +34,14 @@ const (
 	// regardless of k, so a larger k is nearly free.
 	overFetchFactor = 8
 
-	// maxLimit bounds --limit so k = limit × overFetchFactor stays sane.
+	// maxKNNK is sqlite-vec's KNN k ceiling (SQLITE_VEC_VEC0_K_MAX) —
+	// a k above it fails the query outright, so over-fetch clamps here.
+	// Above maxKNNK/overFetchFactor documents the over-fetch factor
+	// degrades gracefully instead of erroring.
+	maxKNNK = 4096
+
+	// maxLimit bounds --limit; must not exceed maxKNNK or the clamped k
+	// could return fewer chunks than documents requested.
 	maxLimit = 1000
 
 	// previewRunes is the chunk-preview length (DESIGN.md: ~150 chars).
@@ -66,7 +72,10 @@ func runSearch(args []string, out io.Writer) error {
 		return errors.New(`search requires a query, e.g. bsearch search "heat pump quote"`)
 	}
 	if fs.NArg() > 1 {
-		return fmt.Errorf("search takes one query argument (got %d) — quote multi-word queries", fs.NArg())
+		// Also hit by flags placed after the query: stdlib flag stops
+		// parsing at the first positional, so `search alpha --json` has
+		// NArg 2 — the hint must cover both mistakes.
+		return fmt.Errorf("search takes one query argument (got %d) — flags go before the query; quote multi-word queries", fs.NArg())
 	}
 	query := fs.Arg(0)
 	if strings.TrimSpace(query) == "" {
@@ -76,16 +85,23 @@ func runSearch(args []string, out io.Writer) error {
 		return fmt.Errorf("--limit %d out of range [1, %d]", *limit, maxLimit)
 	}
 
-	cfg, err := config.Load(*configPath)
+	_, embedder, err := loadInference(*configPath, *dbPath)
 	if err != nil {
 		return err
 	}
-	if cfg.Inference.EmbeddingModel == "" {
-		return fmt.Errorf("inference.embedding_model is not set — add it to %s (the M2 bake-off records recommended defaults in DESIGN.md)", *configPath)
+	spec := embedder.Spec()
+
+	// The embedder enforces the input ceiling too, but its error is
+	// phrased for indexing bugs ("composed"); a pasted-in over-long query
+	// deserves a message that names the actual problem. Same heuristic
+	// budget as the embedder's guard (BytesPerToken).
+	if spec.CeilingTokens > 0 {
+		if composed := spec.ComposeQuery(query); len(composed) > spec.CeilingTokens*domain.BytesPerToken {
+			return fmt.Errorf("query is too long for the embedding model (limit %d tokens ≈ %d bytes; query composes to %d bytes) — shorten it",
+				spec.CeilingTokens, spec.CeilingTokens*domain.BytesPerToken, len(composed))
+		}
 	}
-	if *dbPath == "" {
-		return fmt.Errorf("cannot resolve the default database path (no home directory?) — pass --db")
-	}
+
 	// Search is read-only: without this check, sqlite.Open would create and
 	// migrate an empty database as a side effect, then fail on the missing
 	// vec table anyway.
@@ -93,20 +109,6 @@ func runSearch(args []string, out io.Writer) error {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("no index database at %s — run 'bsearch index' first", *dbPath)
 		}
-		return err
-	}
-
-	spec := embedding.ResolveSpec(
-		cfg.Inference.EmbeddingModel,
-		cfg.Inference.QueryTemplate,
-		cfg.Inference.PassageTemplate,
-		cfg.Inference.InputCeilingTokens,
-	)
-	embedder, err := openai.NewEmbedder(openai.EmbedderConfig{
-		Endpoint: cfg.Inference.Endpoint,
-		Spec:     spec,
-	})
-	if err != nil {
 		return err
 	}
 
@@ -127,29 +129,39 @@ func runSearch(args []string, out io.Writer) error {
 	// Fail fast (before the embedding HTTP call) when the index was built
 	// under a different embedding identity: dims alone can't catch a model
 	// swapped to another of equal dimensions, which would silently search
-	// the wrong vector space.
-	indexed, _, err := store.CurrentVecSpec(ctx)
+	// the wrong vector space. Whole-struct comparison so a future identity
+	// field can't be silently skipped.
+	indexed, dims, err := store.CurrentVecSpec(ctx)
 	if err != nil {
 		if errors.Is(err, sqlite.ErrNoVecTable) {
 			return errors.New("nothing indexed yet — run 'bsearch index' first")
 		}
 		return err
 	}
-	current := embedder.Spec()
-	if indexed.Model != current.Model {
-		return fmt.Errorf("the index was built with model %q but config now says %q — run 'bsearch index' to re-embed",
-			indexed.Model, current.Model)
-	}
-	if indexed.QueryTemplate != current.QueryTemplate || indexed.PassageTemplate != current.PassageTemplate {
-		return fmt.Errorf("the index was built with different prefix templates for model %q — run 'bsearch index' to re-embed",
-			current.Model)
+	want := spec
+	want.CeilingTokens = 0 // excluded from vector-space identity (see CurrentVecSpec)
+	if indexed != want {
+		if indexed.Model != want.Model {
+			return fmt.Errorf("the index was built with model %q but config now says %q — run 'bsearch index' to re-embed",
+				indexed.Model, want.Model)
+		}
+		return fmt.Errorf("the index was built with a different embedding configuration for model %q (prefix templates changed?) — run 'bsearch index' to re-embed",
+			want.Model)
 	}
 
 	vec, err := embedder.EmbedQuery(ctx, query)
 	if err != nil {
 		return err
 	}
-	hits, err := store.SearchVectors(ctx, vec, *limit*overFetchFactor)
+	// Same model name, different dimensions: the server's model changed
+	// under us. SearchVectors would reject this too, but with a raw table
+	// error; name the remedy.
+	if len(vec) != dims {
+		return fmt.Errorf("the embedding server returned %d dimensions but the index was built with %d — the model behind %q changed; run 'bsearch index' to re-embed",
+			len(vec), dims, want.Model)
+	}
+
+	hits, err := store.SearchVectors(ctx, vec, knnK(*limit))
 	if err != nil {
 		return err
 	}
@@ -161,6 +173,12 @@ func runSearch(args []string, out io.Writer) error {
 	}
 	writeSearchHuman(out, docs)
 	return nil
+}
+
+// knnK is the chunk over-fetch for a document limit, clamped to sqlite-vec's
+// k ceiling. maxLimit <= maxKNNK keeps k >= limit after clamping.
+func knnK(limit int) int {
+	return min(limit*overFetchFactor, maxKNNK)
 }
 
 type searchHitJSON struct {
@@ -201,23 +219,28 @@ func writeSearchHuman(out io.Writer, docs []domain.Hit) {
 		fmt.Fprintln(out, "no results")
 		return
 	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
 	for i, h := range docs {
 		if i > 0 {
 			fmt.Fprintln(out)
 		}
-		fmt.Fprintf(out, "%s  (distance %.3f)\n", tildePath(h.Doc.Path), h.Distance)
-		if h.Chunk.HeadingPath != "" {
-			fmt.Fprintf(out, "    %s\n", h.Chunk.HeadingPath)
+		fmt.Fprintf(out, "%s  (distance %.3f)\n", tildePath(home, h.Doc.Path), h.Distance)
+		// Heading paths come from indexed documents — untrusted, like
+		// chunk text; preview() sanitizes both.
+		if hp := preview(h.Chunk.HeadingPath, previewRunes); hp != "" {
+			fmt.Fprintf(out, "    %s\n", hp)
 		}
 		fmt.Fprintf(out, "    %s\n", preview(h.Chunk.Text, previewRunes))
 	}
 }
 
-// tildePath abbreviates the user's home directory prefix to ~ for display.
+// tildePath abbreviates the home directory prefix to ~ for display.
 // JSON output keeps absolute paths — machine consumers need usable paths.
-func tildePath(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
+func tildePath(home, path string) string {
+	if home == "" {
 		return path
 	}
 	if path == home {
@@ -229,15 +252,38 @@ func tildePath(path string) string {
 	return path
 }
 
-// preview collapses all whitespace runs to single spaces and truncates to
-// maxRunes runes, appending an ellipsis when truncated. Truncation is
+// preview renders untrusted document text for one line of output: whitespace
+// runs collapse to single spaces, control characters are dropped (a crafted
+// document must not drive the terminal via escape sequences), and the result
+// is truncated to maxRunes runes with an ellipsis. Truncation is
 // rune-boundary safe (grapheme clusters may still split; acceptable for a
-// preview).
+// preview). Single pass — never allocates proportional to the full text.
 func preview(text string, maxRunes int) string {
-	s := strings.Join(strings.Fields(text), " ")
-	runes := []rune(s)
-	if len(runes) <= maxRunes {
-		return s
+	var b strings.Builder
+	runes := 0
+	pendingSpace := false
+	for _, r := range text {
+		if unicode.IsSpace(r) {
+			pendingSpace = runes > 0
+			continue
+		}
+		if unicode.IsControl(r) {
+			continue
+		}
+		need := 1
+		if pendingSpace {
+			need = 2
+		}
+		if runes+need > maxRunes {
+			return b.String() + "…"
+		}
+		if pendingSpace {
+			b.WriteByte(' ')
+			runes++
+			pendingSpace = false
+		}
+		b.WriteRune(r)
+		runes++
 	}
-	return string(runes[:maxRunes]) + "…"
+	return b.String()
 }

@@ -208,8 +208,10 @@ func currentVecTable(ctx context.Context, q queryer) (string, vecDescriptor, err
 // and dims of the current vector table, for search-time compatibility checks:
 // dims alone can't catch a model swapped to another of equal dimensions, which
 // would silently search the wrong vector space. The ceiling is excluded — it
-// is not part of vector-space identity (see vecDescriptor). Returns
-// ErrNoVecTable when nothing has been embedded.
+// is not part of vector-space identity (see vecDescriptor). Layout is part of
+// generation identity but has no EmbeddingSpec field to carry it; when
+// quantization adds a second layout, this method and its callers' checks must
+// widen with it. Returns ErrNoVecTable when nothing has been embedded.
 func (s *Store) CurrentVecSpec(ctx context.Context) (domain.EmbeddingSpec, int, error) {
 	_, desc, err := currentVecTable(ctx, s.db.Reader())
 	if err != nil {

@@ -2,9 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +21,12 @@ func TestRunSearchRejectsExtraArgs(t *testing.T) {
 	err := run([]string{"search", "heat", "pump"}, &out)
 	if err == nil || !strings.Contains(err.Error(), "quote") {
 		t.Fatalf("run(search heat pump) = %v, want error hinting to quote the query", err)
+	}
+	// Flags after the query hit the same path — the hint must cover it.
+	out.Reset()
+	err = run([]string{"search", "heat pump", "--json"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "flags go before the query") {
+		t.Fatalf("run(search q --json) = %v, want flags-before-query hint", err)
 	}
 }
 
@@ -47,6 +50,21 @@ func TestRunSearchBadLimit(t *testing.T) {
 	}
 }
 
+func TestKNNKClampedToVecCeiling(t *testing.T) {
+	if got := knnK(10); got != 80 {
+		t.Errorf("knnK(10) = %d, want 80", got)
+	}
+	// sqlite-vec rejects k > 4096 outright; the largest --limit values
+	// must clamp rather than fail the query (found the hard way: any
+	// --limit >= 513 used to error).
+	if got := knnK(maxLimit); got != maxKNNK {
+		t.Errorf("knnK(%d) = %d, want clamped to %d", maxLimit, got, maxKNNK)
+	}
+	if maxLimit > maxKNNK {
+		t.Errorf("maxLimit %d > maxKNNK %d: clamped k could return fewer chunks than documents requested", maxLimit, maxKNNK)
+	}
+}
+
 func TestRunSearchBadFlag(t *testing.T) {
 	var out strings.Builder
 	if err := run([]string{"search", "--nope", "q"}, &out); err == nil {
@@ -66,11 +84,7 @@ func TestRunSearchHelp(t *testing.T) {
 
 func TestRunSearchNoIndex(t *testing.T) {
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	cfg := "[inference]\nendpoint = \"http://localhost:1\"\nembedding_model = \"test-model\"\n"
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	cfgPath := writeTestConfig(t, dir, dir, "http://localhost:1")
 	dbPath := filepath.Join(dir, "data", "bsearch.db")
 
 	var out strings.Builder
@@ -84,65 +98,49 @@ func TestRunSearchNoIndex(t *testing.T) {
 	}
 }
 
-// searchFixture indexes a temp corpus against a fake OpenAI server whose
-// embeddings are content-keyed: input mentioning "alpha" → [1,0,0], "beta"
-// → [0,1,0], anything else → [0,0,1]. Works on template-composed passage
-// text since composition only prepends/wraps. Returns config and db paths.
-func searchFixture(t *testing.T) (cfgPath, dbPath string) {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Input []string `json:"input"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("decode request: %v", err)
-		}
-		type datum struct {
-			Index     int       `json:"index"`
-			Embedding []float32 `json:"embedding"`
-		}
-		var resp struct {
-			Data []datum `json:"data"`
-		}
-		for n, input := range req.Input {
-			var vec []float32
-			switch {
-			case strings.Contains(input, "alpha"):
-				vec = []float32{1, 0, 0}
-			case strings.Contains(input, "beta"):
-				vec = []float32{0, 1, 0}
-			default:
-				vec = []float32{0, 0, 1}
-			}
-			resp.Data = append(resp.Data, datum{Index: n, Embedding: vec})
-		}
-		if err := json.NewEncoder(w).Encode(&resp); err != nil {
-			t.Errorf("encode response: %v", err)
-		}
-	}))
-	t.Cleanup(srv.Close)
-
+func TestRunSearchQueryTooLong(t *testing.T) {
 	dir := t.TempDir()
-	corpus := filepath.Join(dir, "notes")
-	if err := os.MkdirAll(corpus, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	// a.md has TWO alpha sections: collapse must return it once.
-	files := map[string]string{
-		"a.md": "# Alpha One\n\nalpha text here\n\n# Alpha Two\n\nmore alpha text\n",
-		"b.md": "# Beta\n\nbeta text\n",
-	}
-	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(corpus, name), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	cfgPath = filepath.Join(dir, "config.toml")
-	cfg := fmt.Sprintf("[paths]\ninclude = [%q]\n\n[inference]\nendpoint = %q\nembedding_model = \"test-model\"\n", corpus, srv.URL)
+	cfgPath := filepath.Join(dir, "config.toml")
+	// Ceiling 80 tokens ≈ 320 bytes (domain.MinCeilingTokens floor).
+	cfg := "[inference]\nendpoint = \"http://localhost:1\"\nembedding_model = \"test-model\"\ninput_ceiling_tokens = 80\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
+
+	var out strings.Builder
+	err := run([]string{"search", "--config", cfgPath, "--db", filepath.Join(dir, "db"), strings.Repeat("x", 400)}, &out)
+	if err == nil || !strings.Contains(err.Error(), "too long") {
+		t.Fatalf("run(search, 400-byte query, 320-byte ceiling) = %v, want query-too-long error", err)
+	}
+}
+
+// contentVec keys fake embeddings by input content: alpha → x-axis,
+// beta → y-axis, else z-axis. Works on template-composed passage text
+// since composition only prepends/wraps.
+func contentVec(_ int, input string) []float32 {
+	switch {
+	case strings.Contains(input, "alpha"):
+		return []float32{1, 0, 0}
+	case strings.Contains(input, "beta"):
+		return []float32{0, 1, 0}
+	default:
+		return []float32{0, 0, 1}
+	}
+}
+
+// searchFixture indexes a temp corpus against a content-keyed fake
+// embeddings server and returns config and db paths.
+func searchFixture(t *testing.T) (cfgPath, dbPath string) {
+	t.Helper()
+	srv := fakeEmbeddingsServer(t, contentVec)
+
+	dir := t.TempDir()
+	// a.md has TWO alpha sections: collapse must return it once.
+	corpus := writeTestCorpus(t, dir, map[string]string{
+		"a.md": "# Alpha One\n\nalpha text here\n\n# Alpha Two\n\nmore alpha text\n",
+		"b.md": "# Beta\n\nbeta text\n",
+	})
+	cfgPath = writeTestConfig(t, dir, corpus, srv.URL)
 	dbPath = filepath.Join(dir, "data", "bsearch.db")
 
 	var out strings.Builder
@@ -180,6 +178,17 @@ func TestRunSearchEndToEnd(t *testing.T) {
 	}
 	if !strings.Contains(got, "Alpha") {
 		t.Errorf("output missing heading path\noutput:\n%s", got)
+	}
+}
+
+func TestRunSearchLargeLimitSucceeds(t *testing.T) {
+	cfgPath, dbPath := searchFixture(t)
+
+	// --limit 600 → un-clamped k would be 4800, over sqlite-vec's 4096
+	// ceiling; the clamp must keep the query working.
+	var out strings.Builder
+	if err := run([]string{"search", "--config", cfgPath, "--db", dbPath, "--limit", "600", "alpha"}, &out); err != nil {
+		t.Fatalf("search --limit 600: %v\noutput:\n%s", err, out.String())
 	}
 }
 
@@ -230,21 +239,18 @@ func TestRunSearchJSON(t *testing.T) {
 	}
 }
 
-func TestRunSearchJSONEmptyHits(t *testing.T) {
-	cfgPath, dbPath := searchFixture(t)
-
-	// --limit 1 keeps only the best doc; assert hits is a JSON array either
-	// way (never null) by decoding into a type that distinguishes.
+func TestWriteSearchJSONEmptyHits(t *testing.T) {
+	// hits must encode as [], never null — JSON consumers iterate it.
 	var out strings.Builder
-	if err := run([]string{"search", "--config", cfgPath, "--db", dbPath, "--json", "--limit", "1", "alpha"}, &out); err != nil {
-		t.Fatalf("search: %v", err)
+	if err := writeSearchJSON(&out, nil, 0); err != nil {
+		t.Fatal(err)
 	}
 	var resp map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(out.String()), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(resp["hits"])) == "null" {
-		t.Error(`hits encoded as null, want []`)
+	if got := strings.TrimSpace(string(resp["hits"])); got != "[]" {
+		t.Errorf("hits encoded as %s, want []", got)
 	}
 }
 
@@ -277,6 +283,28 @@ func TestRunSearchModelChanged(t *testing.T) {
 	}
 }
 
+func TestRunSearchDimsChanged(t *testing.T) {
+	cfgPath, dbPath := searchFixture(t)
+
+	// Same model name, but the server now returns 4-dim vectors (the
+	// operator swapped the model behind the name). The identity pre-flight
+	// passes; the post-embed dims check must name the remedy.
+	srv := fakeEmbeddingsServer(t, func(int, string) []float32 {
+		return []float32{1, 0, 0, 0}
+	})
+	dir := filepath.Dir(cfgPath)
+	newCfg := writeTestConfig(t, dir, dir, srv.URL)
+
+	var out strings.Builder
+	err := run([]string{"search", "--config", newCfg, "--db", dbPath, "alpha"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "run 'bsearch index'") {
+		t.Fatalf("run(search, dims changed) = %v, want re-index error", err)
+	}
+	if !strings.Contains(err.Error(), "dimensions") {
+		t.Errorf("error %q does not mention dimensions", err)
+	}
+}
+
 func TestPreview(t *testing.T) {
 	tests := []struct {
 		name string
@@ -286,10 +314,13 @@ func TestPreview(t *testing.T) {
 	}{
 		{"short passthrough", "hello world", 150, "hello world"},
 		{"whitespace collapse", "a\n\nb\t c  d", 150, "a b c d"},
+		{"leading and trailing whitespace trimmed", "  a b  ", 150, "a b"},
 		{"exact limit not truncated", strings.Repeat("x", 150), 150, strings.Repeat("x", 150)},
 		{"over limit truncated", strings.Repeat("x", 151), 150, strings.Repeat("x", 150) + "…"},
 		{"multibyte at boundary", strings.Repeat("é", 151), 150, strings.Repeat("é", 150) + "…"},
 		{"emoji at boundary", strings.Repeat("🐟", 151), 150, strings.Repeat("🐟", 150) + "…"},
+		{"control chars stripped", "a\x1b]0;owned\x07b", 150, "a]0;ownedb"},
+		{"ansi escape initiator stripped", "red \x1b[31mtext", 150, "red [31mtext"},
 		{"empty", "", 150, ""},
 	}
 	for _, tt := range tests {
@@ -302,10 +333,7 @@ func TestPreview(t *testing.T) {
 }
 
 func TestTildePath(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no home dir")
-	}
+	home := "/Users/testuser"
 	tests := []struct {
 		in, want string
 	}{
@@ -315,8 +343,11 @@ func TestTildePath(t *testing.T) {
 		{home + "stuff/a.md", home + "stuff/a.md"}, // prefix but not a path boundary
 	}
 	for _, tt := range tests {
-		if got := tildePath(tt.in); got != tt.want {
-			t.Errorf("tildePath(%q) = %q, want %q", tt.in, got, tt.want)
+		if got := tildePath(home, tt.in); got != tt.want {
+			t.Errorf("tildePath(%q, %q) = %q, want %q", home, tt.in, got, tt.want)
 		}
+	}
+	if got := tildePath("", "/Users/x/a.md"); got != "/Users/x/a.md" {
+		t.Errorf("tildePath with no home = %q, want path unchanged", got)
 	}
 }
