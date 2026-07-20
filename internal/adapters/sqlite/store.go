@@ -42,7 +42,7 @@ func (s *Store) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 // the path (e.g. deleted-and-recreated file whose old row wasn't purged yet)
 // is displaced — removed with its chunks and vectors — instead of failing
 // the UNIQUE(path) constraint. Which document ID a path gets (rename/copy
-// detection) is the crawler's policy; by the time this is called, it has
+// detection) is discovery's policy; by the time this is called, it has
 // been decided.
 //
 // An upsert also resets the retry columns (attempts, next_retry_at,

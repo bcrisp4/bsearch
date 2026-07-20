@@ -52,7 +52,7 @@ Follow `docs/adr/0000-template.md`.
 
 - Runs on a battery-powered laptop: background work is batched and
   power-aware; near-zero CPU when idle.
-- macOS TCC: the daemon needs Full Disk Access; treat EPERM on crawl as
+- macOS TCC: the daemon needs Full Disk Access; treat EPERM on scan as
   first-class state surfaced in `bsearch status`, never a silent skip.
 - Search latency SLO: p95 < 500 ms warm. Indexing is allowed to be slow;
   queries are not.
