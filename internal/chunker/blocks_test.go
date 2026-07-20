@@ -207,3 +207,15 @@ func TestScanBlocksNoTrailingNewline(t *testing.T) {
 		t.Fatalf("last block must end at EOF: %d != %d", bs[1].end, len(src))
 	}
 }
+
+func TestScanBlocksFrontmatterTrailingWhitespace(t *testing.T) {
+	// Delimiter lines with trailing spaces/tabs are still frontmatter.
+	src := "---  \ntitle: x\n--- \t\nbody\n"
+	bs := scanBlocks(src)
+	if !kindsEqual(kinds(bs), []blockKind{blockParagraph}) {
+		t.Fatalf("kinds: %v", kinds(bs))
+	}
+	if src[bs[0].start:bs[0].end] != "body\n" {
+		t.Fatalf("frontmatter leaked: %q", src[bs[0].start:bs[0].end])
+	}
+}
