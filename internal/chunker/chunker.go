@@ -17,17 +17,21 @@ const Version = "1"
 // well under nominal; the min/max bounds carry that slack. Token counts
 // are never persisted — nothing downstream may trust them.
 const (
-	targetBytes       = 2048 // ~512 nominal tokens
-	minBytes          = 256  // ~64 — smaller chunks merge into a neighbour
-	maxBytes          = 4096 // ~1024 — packing and merge cap, not an atomic-block cap
-	overlapBytes      = 256  // ~12.5% of target, always block-aligned
-	breadcrumbReserve = 256  // ceiling headroom for heading path + model prefix template
+	targetBytes  = 2048 // ~512 nominal tokens
+	minBytes     = 256  // ~64 — smaller chunks merge into a neighbour
+	maxBytes     = 4096 // ~1024 — packing and merge cap, not an atomic-block cap
+	overlapBytes = 256  // ~12.5% of target, always block-aligned
+	// prefixReserve is ceiling headroom for the model's query/passage
+	// prefix template; the heading-path breadcrumb is accounted for
+	// per-section on top of this.
+	prefixReserve = 256
 )
 
 // Warning reports an atomic block (code fence, table, single paragraph)
 // that exceeded the embedder input ceiling and was split as a fallback —
 // never truncated. The pipeline surfaces these in status.
 type Warning struct {
+	DocID       string
 	Ordinal     int // index into Result.Chunks
 	HeadingPath string
 	ByteStart   int
@@ -49,29 +53,19 @@ type Result struct {
 // Every chunk's Text is exactly text[ByteStart:ByteEnd]; successive chunks
 // of a split section may overlap.
 func Chunk(docID, text string, inputCeilingTokens int) Result {
-	// Effective ceiling in bytes, with headroom reserved for the breadcrumb
-	// and model prefix template that join the chunk at embed time.
-	ceiling := 0 // 0 = unlimited
+	// Base ceiling in bytes, with headroom reserved for the model prefix
+	// template that joins the chunk at embed time. The per-section
+	// breadcrumb is subtracted in chunkSection, where its length is known.
+	baseCeiling := 0 // 0 = unlimited
 	if inputCeilingTokens > 0 {
-		ceiling = inputCeilingTokens*4 - breadcrumbReserve
-		if ceiling < 64 {
-			ceiling = 64
-		}
-	}
-	capBytes := maxBytes // packing/merge cap
-	target := targetBytes
-	if ceiling > 0 && ceiling < capBytes {
-		capBytes = ceiling
-	}
-	if target > capBytes {
-		target = capBytes
+		baseCeiling = inputCeilingTokens*4 - prefixReserve
 	}
 
 	var cands []candidate
 	for _, sec := range sections(text) {
-		cands = append(cands, chunkSection(text, sec, target, capBytes, ceiling)...)
+		cands = append(cands, chunkSection(text, sec, baseCeiling)...)
 	}
-	cands = mergeTiny(cands, capBytes)
+	cands = mergeTiny(cands, baseCeiling)
 
 	res := Result{}
 	for i, c := range cands {
@@ -85,6 +79,7 @@ func Chunk(docID, text string, inputCeilingTokens int) Result {
 		})
 		if c.warn != "" {
 			res.Warnings = append(res.Warnings, Warning{
+				DocID:       docID,
 				Ordinal:     i,
 				HeadingPath: c.path,
 				ByteStart:   c.start,
@@ -152,40 +147,62 @@ func sections(text string) []section {
 	return out
 }
 
+// sectionCeiling is the effective byte ceiling for chunks under the given
+// heading path: the base ceiling minus the breadcrumb that will be
+// prepended at embed time. 0 = unlimited; floored so a pathologically
+// deep path can't zero the budget.
+func sectionCeiling(baseCeiling int, path string) int {
+	if baseCeiling <= 0 {
+		return 0
+	}
+	c := baseCeiling - len(path)
+	if c < 64 {
+		c = 64
+	}
+	return c
+}
+
 // chunkSection turns one section into candidates: a single chunk when it
 // fits, otherwise greedy atomic-block packing to target with block-aligned
-// trailing overlap. Atomic blocks larger than the ceiling are hard-split
-// with a warning per piece.
-func chunkSection(text string, sec section, target, capBytes, ceiling int) []candidate {
+// trailing overlap. Atomic blocks larger than the section's ceiling are
+// hard-split with a warning per piece.
+func chunkSection(text string, sec section, baseCeiling int) []candidate {
+	ceiling := sectionCeiling(baseCeiling, sec.path)
+	capB := maxBytes // packing cap: maxBytes tightened by the ceiling
+	if ceiling > 0 && ceiling < capB {
+		capB = ceiling
+	}
+	target := targetBytes
+	if target > capB {
+		target = capB
+	}
+
 	span := func(first, last block) int { return last.end - first.start }
 	cand := func(start, end int) candidate {
 		return candidate{start: start, end: end, path: sec.path, preamble: sec.preamble}
 	}
 
-	total := span(sec.blocks[0], sec.blocks[len(sec.blocks)-1])
-	if total <= capBytes && (ceiling == 0 || total <= ceiling) {
+	if span(sec.blocks[0], sec.blocks[len(sec.blocks)-1]) <= capB {
 		return []candidate{cand(sec.blocks[0].start, sec.blocks[len(sec.blocks)-1].end)}
 	}
 
-	// Greedy packing. cur holds the open group; curNew counts blocks added
-	// since the overlap seed — a group is only emitted once it contains new
-	// content, so overlap can never produce a duplicate chunk.
+	// Greedy packing. cur holds the open group; the overlap seed is always
+	// a strict suffix of the emitted group (see overlapSuffix) and the
+	// incoming block is appended in the same iteration, so an emitted group
+	// can never be a subset of its successor.
 	var groups [][]block
 	var cur []block
-	curNew := 0
 	for _, b := range sec.blocks {
-		if len(cur) > 0 && curNew > 0 && span(cur[0], b) > target {
+		if len(cur) > 0 && span(cur[0], b) > target {
 			groups = append(groups, cur)
 			cur = overlapSuffix(cur)
-			curNew = 0
-			if len(cur) > 0 && span(cur[0], b) > capBytes {
+			if len(cur) > 0 && span(cur[0], b) > capB {
 				cur = nil // oversized incoming block: drop overlap rather than exceed cap
 			}
 		}
 		cur = append(cur, b)
-		curNew++
 	}
-	if curNew > 0 {
+	if len(cur) > 0 {
 		groups = append(groups, cur)
 	}
 
@@ -209,11 +226,16 @@ func chunkSection(text string, sec section, target, capBytes, ceiling int) []can
 
 // overlapSuffix returns the trailing blocks of a group whose combined span
 // fits overlapBytes — the block-aligned overlap seeding the next group.
-// Empty when even the last block alone is too big.
+// The first block is never included (the seed must be a strict suffix, or
+// the emitted group would be a subset of its successor); empty when the
+// last block alone is too big.
 func overlapSuffix(g []block) []block {
 	i := len(g)
-	for i > 0 && g[len(g)-1].end-g[i-1].start <= overlapBytes {
+	for i > 1 && g[len(g)-1].end-g[i-1].start <= overlapBytes {
 		i--
+	}
+	if i == len(g) {
+		return nil
 	}
 	return append([]block(nil), g[i:]...)
 }
@@ -230,11 +252,11 @@ func hardSplit(text string, start, end, limit int) [][2]int {
 		}
 		w := text[start : start+limit]
 		cut := 0
-		if i := strings.LastIndex(w, "\n\n"); i > 0 {
+		if i := strings.LastIndex(w, "\n\n"); i >= 0 {
 			cut = i + 2
-		} else if i := strings.LastIndexByte(w, '\n'); i > 0 {
+		} else if i := strings.LastIndexByte(w, '\n'); i >= 0 {
 			cut = i + 1
-		} else if i := strings.LastIndexByte(w, ' '); i > 0 {
+		} else if i := strings.LastIndexByte(w, ' '); i >= 0 {
 			cut = i + 1
 		} else {
 			cut = limit
@@ -253,12 +275,13 @@ func hardSplit(text string, start, end, limit int) [][2]int {
 
 // mergeTiny folds chunks under minBytes into an adjacent chunk. Guards
 // (lessons from lore): the neighbour must itself be >= minBytes (two tiny
-// chunks never fold together), the merged span must fit the cap, and
-// preamble chunks and ceiling-split pieces never merge. The neighbour
-// sharing the longer heading-path prefix wins; ties go to the previous.
-// The merged span is contiguous (it absorbs any interior heading line) and
-// its path is the common prefix of the two paths.
-func mergeTiny(cands []candidate, capBytes int) []candidate {
+// chunks never fold together), the merged span must fit maxBytes and the
+// merged path's ceiling, and preamble chunks and ceiling-split pieces
+// never merge. The neighbour sharing the longer heading-path prefix wins;
+// ties go to the previous. The merged span is contiguous (it absorbs any
+// interior heading line) and its path is the common prefix of the two
+// paths.
+func mergeTiny(cands []candidate, baseCeiling int) []candidate {
 	mergeable := func(c candidate) bool { return !c.preamble && c.warn == "" }
 	i := 0
 	for i < len(cands) {
@@ -268,8 +291,15 @@ func mergeTiny(cands []candidate, capBytes int) []candidate {
 			continue
 		}
 		fits := func(n candidate) bool {
-			return mergeable(n) && n.end-n.start >= minBytes &&
-				max(n.end, c.end)-min(n.start, c.start) <= capBytes
+			if !mergeable(n) || n.end-n.start < minBytes {
+				return false
+			}
+			size := max(n.end, c.end) - min(n.start, c.start)
+			if size > maxBytes {
+				return false
+			}
+			ceiling := sectionCeiling(baseCeiling, commonPathPrefix(n.path, c.path))
+			return ceiling == 0 || size <= ceiling
 		}
 		prevOK := i > 0 && fits(cands[i-1])
 		nextOK := i+1 < len(cands) && fits(cands[i+1])
@@ -290,18 +320,14 @@ func mergeTiny(cands []candidate, capBytes int) []candidate {
 			continue
 		}
 		n := cands[into]
-		merged := candidate{
+		cands[into] = candidate{
 			start: min(n.start, c.start),
 			end:   max(n.end, c.end),
 			path:  commonPathPrefix(n.path, c.path),
 		}
-		cands[into] = merged
+		// Delete the tiny chunk; the loop re-examines index i, which now
+		// holds either the merged neighbour or the next element.
 		cands = append(cands[:i], cands[i+1:]...)
-		if into > i {
-			// merged element shifted left into position i; re-examine it
-			continue
-		}
-		// merged into previous: stay at i (now the next element)
 	}
 	return cands
 }
