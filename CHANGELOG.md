@@ -23,6 +23,15 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   swallowed by the exclude rules — are reported per path instead of being
   silently skipped.
 
+- Markdown files are now split into search-sized chunks by a
+  markdown-aware chunker: sections follow the document's heading
+  structure, every chunk carries its heading path (e.g.
+  `Quotes > Vaillant`) for context, and tables and code blocks are never
+  split down the middle. Obsidian-style YAML frontmatter is excluded from
+  chunks, and UTF-16/BOM-marked files are transcoded automatically —
+  undecodable files are reported as failures instead of being indexed
+  garbled.
+
 - The index now lives in one SQLite database at
   `~/Library/Application Support/bsearch/bsearch.db` (created 0600, directory
   0700): document catalog, chunks, pyramid-summary slots, and semantic-search
