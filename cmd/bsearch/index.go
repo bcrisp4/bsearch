@@ -15,7 +15,6 @@ import (
 	"github.com/bcrisp4/bsearch/internal/adapters/sqlite"
 	"github.com/bcrisp4/bsearch/internal/config"
 	"github.com/bcrisp4/bsearch/internal/discovery"
-	"github.com/bcrisp4/bsearch/internal/embedding"
 	"github.com/bcrisp4/bsearch/internal/pipeline"
 )
 
@@ -41,27 +40,7 @@ func runIndex(args []string, out io.Writer) error {
 		return fmt.Errorf("index takes no arguments (got %q) — indexing scope is [paths].include in the config", fs.Arg(0))
 	}
 
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		return err
-	}
-	if cfg.Inference.EmbeddingModel == "" {
-		return fmt.Errorf("inference.embedding_model is not set — add it to %s (the M2 bake-off records recommended defaults in DESIGN.md)", *configPath)
-	}
-	if *dbPath == "" {
-		return fmt.Errorf("cannot resolve the default database path (no home directory?) — pass --db")
-	}
-
-	spec := embedding.ResolveSpec(
-		cfg.Inference.EmbeddingModel,
-		cfg.Inference.QueryTemplate,
-		cfg.Inference.PassageTemplate,
-		cfg.Inference.InputCeilingTokens,
-	)
-	embedder, err := openai.NewEmbedder(openai.EmbedderConfig{
-		Endpoint: cfg.Inference.Endpoint,
-		Spec:     spec,
-	})
+	cfg, embedder, err := loadInference(*configPath, *dbPath)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -415,6 +416,44 @@ func TestDescriptorTemplateBackfill(t *testing.T) {
 	}
 	if current != "vec_chunks_1" {
 		t.Errorf("vec_current = %q — legacy descriptor mismatched raw spec, new generation minted", current)
+	}
+}
+
+func TestCurrentVecSpec(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	// Fresh DB: nothing embedded.
+	if _, _, err := store.CurrentVecSpec(ctx); !errors.Is(err, ErrNoVecTable) {
+		t.Fatalf("CurrentVecSpec on fresh DB = %v, want ErrNoVecTable", err)
+	}
+
+	spec := domain.EmbeddingSpec{
+		Model:           "test-model",
+		QueryTemplate:   "query: {q}",
+		PassageTemplate: "passage: {d}",
+		CeilingTokens:   2048,
+	}
+	if err := store.EnsureVecTable(ctx, spec, 3); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+
+	got, dims, err := store.CurrentVecSpec(ctx)
+	if err != nil {
+		t.Fatalf("CurrentVecSpec: %v", err)
+	}
+	// Ceiling is excluded from vector-space identity.
+	want := domain.EmbeddingSpec{
+		Model:           "test-model",
+		QueryTemplate:   "query: {q}",
+		PassageTemplate: "passage: {d}",
+	}
+	if got != want {
+		t.Errorf("CurrentVecSpec = %+v, want %+v", got, want)
+	}
+	if dims != 3 {
+		t.Errorf("dims = %d, want 3", dims)
 	}
 }
 
