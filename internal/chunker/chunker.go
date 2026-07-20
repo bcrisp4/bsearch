@@ -149,8 +149,12 @@ func sections(text string) []section {
 
 // sectionCeiling is the effective byte ceiling for chunks under the given
 // heading path: the base ceiling minus the breadcrumb that will be
-// prepended at embed time. 0 = unlimited; floored so a pathologically
-// deep path can't zero the budget.
+// prepended at embed time. 0 = unlimited; floored at 64 bytes so a
+// pathologically deep path (or an absurdly small configured ceiling)
+// can't zero the budget and spiral into per-rune pieces. The floor means
+// ceilings under ~(prefixReserve+64)/4 ≈ 80 tokens are out of contract —
+// no real embedding model is that small; the pipeline validates model
+// metadata before calling Chunk.
 func sectionCeiling(baseCeiling int, path string) int {
 	if baseCeiling <= 0 {
 		return 0

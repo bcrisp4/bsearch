@@ -131,15 +131,18 @@ func scanBlocks(text string) []block {
 
 // skipFrontmatter returns the index of the first content line, skipping a
 // YAML frontmatter section delimited by an opening "---" on the very first
-// line and a closing "---" or "..." line. Unterminated frontmatter is not
-// frontmatter — the whole file is content.
+// line and a closing "---" or "..." line. Delimiter lines may carry
+// trailing spaces/tabs (common copy-paste artifact). Unterminated
+// frontmatter is not frontmatter — the whole file is content.
 func skipFrontmatter(text string, lines []line) int {
-	if len(lines) == 0 || trimLine(text, lines[0]) != "---" {
+	delim := func(l line) string {
+		return strings.TrimRight(trimLine(text, l), " \t")
+	}
+	if len(lines) == 0 || delim(lines[0]) != "---" {
 		return 0
 	}
 	for i := 1; i < len(lines); i++ {
-		s := trimLine(text, lines[i])
-		if s == "---" || s == "..." {
+		if s := delim(lines[i]); s == "---" || s == "..." {
 			return i + 1
 		}
 	}
