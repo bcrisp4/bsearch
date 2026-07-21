@@ -6,10 +6,11 @@ import argparse
 import sys
 from pathlib import Path
 
+# generate/convert are imported lazily in main(): they (transitively) load
+# WeasyPrint's native libraries, which `corpusgen check` must not require —
+# the pre-commit hook runs check in environments without the render deps.
 from corpusgen.check import scan_tree
-from corpusgen.convert import convert
 from corpusgen.denylist import Denylist
-from corpusgen.generate import generate
 
 
 def _cmd_check(denylist_path: Path, roots: list[Path]) -> int:
@@ -66,11 +67,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         return _cmd_check(args.denylist, args.roots)
     if args.command == "convert":
+        from corpusgen.convert import convert
+
         token = args.token_file.read_text(encoding="utf-8").strip()
         records = convert(args.corpus_dir, endpoint=args.endpoint, token=token)
         print(f"converted/copied {len(records)} files")  # noqa: T201
         return 0
     if args.command == "generate":
+        from corpusgen.generate import generate
+
         results = generate(args.corpus_dir)
         scanned = sum(1 for r in results if r.scanned)
         print(f"rendered {len(results)} documents ({scanned} scanned)")  # noqa: T201

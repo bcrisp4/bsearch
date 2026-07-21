@@ -44,6 +44,7 @@ entries:
       - {test: "Vitamin D (25-hydroxy)", result: "42 nmol/L", range: "50–120 nmol/L", flag: "Borderline low"}
 
   - id: hospital_appointment_letter
+    scan: true
     template: letters/hospital_appointment_letter.html
     letter_date: "6 February 2026"
     hospital_number: "SPH 8841207"
@@ -206,6 +207,7 @@ entries:
     follow_up: "Return as needed; recommend re-evaluation if more than two sinus infections in the next 12 months. Records available to patient via portal for overseas relocation."
 
   - id: bank_account_opening_letter
+    scan: true
     template: letters/bank_account_opening_letter.html
     letter_date: "4 August 2025"
     opened_date: "1 August 2025"
@@ -252,22 +254,25 @@ entries:
     moved_in: "1 August 2025"
     period_end: "31 March 2026"
     days: "243"
-    # Arithmetic: 1,842.19 × 25% = 460.55 discount → 1,381.64 discounted
-    # annual; × 243/365 days = 919.83 due; instalments 139.83 + 6 × 130.00.
-    annual_charge: "1,842.19"
-    discount: "460.55"
-    discounted_annual: "1,381.64"
-    amount_due: "919.83"
+    # Arithmetic matches data/council_tax_bills.yaml ctax-2025-26: band C
+    # annual 1,712.80 − 25% discount 428.20 = 1,284.60 discounted annual;
+    # × 243/365 days = 855.23 due; instalments 106.93 + 7 × 106.90.
+    annual_charge: "1,712.80"
+    discount: "428.20"
+    discounted_annual: "1,284.60"
+    amount_due: "855.23"
     instalments:
-      - {due: "1 September 2025", amount: "139.83"}
-      - {due: "1 October 2025", amount: "130.00"}
-      - {due: "1 November 2025", amount: "130.00"}
-      - {due: "1 December 2025", amount: "130.00"}
-      - {due: "1 January 2026", amount: "130.00"}
-      - {due: "1 February 2026", amount: "130.00"}
-      - {due: "1 March 2026", amount: "130.00"}
+      - {due: "1 September 2025", amount: "106.93"}
+      - {due: "1 October 2025", amount: "106.90"}
+      - {due: "1 November 2025", amount: "106.90"}
+      - {due: "1 December 2025", amount: "106.90"}
+      - {due: "1 January 2026", amount: "106.90"}
+      - {due: "1 February 2026", amount: "106.90"}
+      - {due: "1 March 2026", amount: "106.90"}
+      - {due: "1 April 2026", amount: "106.90"}
 
   - id: council_parking_permit_letter
+    scan: true
     template: letters/council_parking_permit_letter.html
     vendor_key: council
     letter_date: "22 September 2025"
@@ -321,6 +326,7 @@ entries:
     new_rate: "4.6"
 
   - id: charity_donation_form
+    scan: true
     template: letters/charity_donation_form.html
     vendor_key: charity
     form_date: "14 February 2026"
