@@ -51,6 +51,27 @@ entries:
     title: "A certificate"
 """
 
+OFFICE = """\
+entries:
+  - id: letter-one
+    format: docx
+    builder: letter
+    vendor_key: energy
+    sender_lines: ["{{ vendor.name }}"]
+    date: "1 May 2026"
+    recipient_lines: ["{{ person.full_name }}"]
+    subject: "About account {{ vendor.account_number }}"
+    paragraphs: ["Dear {{ person.full_name }},", "Body."]
+    signature_lines: ["A Clerk"]
+  - id: sheet-one
+    format: xlsx
+    builder: sheet
+    vendor_key: null
+    sheet_name: "Summary"
+    rows:
+      - ["Owner", "{{ person.full_name }}"]
+"""
+
 
 @pytest.fixture
 def corpus_dir(tmp_path: Path) -> Path:
@@ -62,6 +83,7 @@ def corpus_dir(tmp_path: Path) -> Path:
     (spec / "templates" / "cert.html").write_text(NOVENDOR_TEMPLATE, encoding="utf-8")
     (spec / "data" / "energy_bills.yaml").write_text(SERIES, encoding="utf-8")
     (spec / "data" / "certs.yaml").write_text(SINGLES, encoding="utf-8")
+    (spec / "data" / "office.yaml").write_text(OFFICE, encoding="utf-8")
     return tmp_path
 
 
@@ -72,7 +94,7 @@ class TestGenerate:
         out = corpus_dir / "corpus-src"
         assert (out / "energy_bills" / "bill-2026-01.pdf").is_file()
         assert (out / "certs" / "cert-one.pdf").is_file()
-        assert len(results) == 3
+        assert len(results) == 5
 
     def test_scan_entries_are_rasterised(self, corpus_dir: Path) -> None:
         generate(corpus_dir)
@@ -92,6 +114,20 @@ class TestGenerate:
         )
         assert "A certificate" in text
         assert "Jane Doe" in text
+
+    def test_office_entries_build_with_substituted_values(
+        self, corpus_dir: Path
+    ) -> None:
+        from docx import Document
+
+        generate(corpus_dir)
+
+        letter = corpus_dir / "corpus-src" / "office" / "letter-one.docx"
+        text = "\n".join(p.text for p in Document(str(letter)).paragraphs)
+        assert "Harwood Energy" in text
+        assert "Jane Doe" in text
+        assert "{{" not in text
+        assert (corpus_dir / "corpus-src" / "office" / "sheet-one.xlsx").is_file()
 
     def test_rerun_is_stable(self, corpus_dir: Path) -> None:
         generate(corpus_dir)

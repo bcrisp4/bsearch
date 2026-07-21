@@ -11,6 +11,7 @@ template: bills/council_tax_bill.html
 vendor_key: council
 issues:
   - id: ctax-2024-25
+    scan: true
     year_label: "2024/2025"
     issue_date: "12 March 2024"
     address_key: uk_previous

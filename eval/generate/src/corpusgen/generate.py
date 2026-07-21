@@ -15,9 +15,16 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
+from jinja2 import Environment, StrictUndefined
 
+from corpusgen.office import build_docx_letter, build_xlsx_sheet
 from corpusgen.render import build_env, html_to_pdf, render_html
 from corpusgen.scanify import scanify
+
+_OFFICE_BUILDERS = {
+    ("docx", "letter"): build_docx_letter,
+    ("xlsx", "sheet"): build_xlsx_sheet,
+}
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,48 @@ def _entries(dataset: dict[str, Any]) -> list[dict[str, Any]]:
     return entries
 
 
+def _substitute(value: Any, env: Environment, context: dict[str, Any]) -> Any:
+    """Recursively render Jinja expressions in an entry's string values.
+
+    Office builders consume data directly (no HTML template), but the
+    persona-only-values rule still applies — strings reference the persona
+    via Jinja and are substituted here, StrictUndefined included.
+    """
+    if isinstance(value, str):
+        return env.from_string(value).render(context)
+    if isinstance(value, list):
+        return [_substitute(v, env, context) for v in cast("list[Any]", value)]
+    if isinstance(value, dict):
+        return {
+            k: _substitute(v, env, context)
+            for k, v in cast("dict[str, Any]", value).items()
+        }
+    return value
+
+
+def _build_office(
+    *,
+    persona: dict[str, Any],
+    entry: dict[str, Any],
+    out_dir: Path,
+) -> Rendered:
+    fmt = str(entry["format"])
+    builder = _OFFICE_BUILDERS.get((fmt, str(entry.get("builder"))))
+    if builder is None:
+        raise ValueError(f"entry {entry.get('id')}: no builder for format {fmt!r}")
+    context: dict[str, Any] = dict(persona)
+    vendor_key = entry.get("vendor_key")
+    if vendor_key:
+        context["vendor"] = persona["vendors"][vendor_key]
+    env = Environment(autoescape=False, undefined=StrictUndefined)  # noqa: S701 — plain text, not HTML
+    resolved = cast("dict[str, Any]", _substitute(entry, env, context))
+    entry_id = str(entry["id"])
+    out_path = out_dir / f"{entry_id}.{fmt}"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    builder(resolved, out_path)
+    return Rendered(id=entry_id, path=out_path, scanned=False)
+
+
 def _render_one(
     *,
     spec: Path,
@@ -51,6 +100,8 @@ def _render_one(
     entry: dict[str, Any],
     out_dir: Path,
 ) -> Rendered:
+    if entry.get("format") in ("docx", "xlsx"):
+        return _build_office(persona=persona, entry=entry, out_dir=out_dir)
     template_rel = entry.get("template") or dataset.get("template")
     if not template_rel:
         raise ValueError(f"entry {entry.get('id')}: no template (file or entry level)")

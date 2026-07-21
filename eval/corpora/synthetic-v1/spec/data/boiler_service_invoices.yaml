@@ -9,6 +9,7 @@ template: invoices/boiler_service_invoice.html
 vendor_key: heating_engineer
 issues:
   - id: boiler-service-2024
+    scan: true
     invoice_number: "HH-1447"
     invoice_date: "19 September 2024"
     service_date: "17 September 2024"
@@ -29,6 +30,7 @@ issues:
     vat: "18.10"
     total: "108.60"
   - id: boiler-service-2025
+    scan: true
     invoice_number: "HH-1892"
     invoice_date: "8 October 2025"
     service_date: "6 October 2025"

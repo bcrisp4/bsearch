@@ -32,6 +32,7 @@ entries:
       address: "Lakeview Road, London SE28 8WD"
 
   - id: gp_test_results_letter
+    scan: true
     template: letters/gp_test_results_letter.html
     vendor_key: gp_uk
     letter_date: "20 October 2025"
