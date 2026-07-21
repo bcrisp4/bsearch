@@ -1,0 +1,184 @@
+/* Shared print stylesheet for synthetic-v1 templates.
+   Conventions: A4, Liberation fonts only (vendored — never system fonts),
+   component classes below are the shared furniture; per-template styles
+   go in a <style> block in the template itself. */
+
+@font-face {
+  font-family: "Doc Sans";
+  src: url("fonts/LiberationSans-Regular.ttf");
+}
+@font-face {
+  font-family: "Doc Sans";
+  font-weight: bold;
+  src: url("fonts/LiberationSans-Bold.ttf");
+}
+@font-face {
+  font-family: "Doc Sans";
+  font-style: italic;
+  src: url("fonts/LiberationSans-Italic.ttf");
+}
+@font-face {
+  font-family: "Doc Serif";
+  src: url("fonts/LiberationSerif-Regular.ttf");
+}
+@font-face {
+  font-family: "Doc Serif";
+  font-weight: bold;
+  src: url("fonts/LiberationSerif-Bold.ttf");
+}
+@font-face {
+  font-family: "Doc Mono";
+  src: url("fonts/LiberationMono-Regular.ttf");
+}
+
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm 16mm;
+  @bottom-center {
+    content: element(pagefooter);
+  }
+}
+@page us-letter {
+  size: letter;
+}
+
+html {
+  font-family: "Doc Sans", sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.35;
+  color: #1a1a1a;
+}
+body { margin: 0; }
+h1 { font-size: 16pt; margin: 0 0 4mm; }
+h2 { font-size: 11.5pt; margin: 5mm 0 2mm; }
+h3 { font-size: 10pt; margin: 3mm 0 1.5mm; }
+p { margin: 0 0 2.2mm; }
+
+.page-break { page-break-before: always; }
+
+/* Running footer (regulatory small print + page numbers). */
+.page-footer {
+  position: running(pagefooter);
+  font-size: 6.5pt;
+  color: #555;
+  border-top: 0.3pt solid #999;
+  padding-top: 1.2mm;
+  width: 100%;
+}
+.page-footer .pageno::after {
+  content: "Page " counter(page) " of " counter(pages);
+}
+
+/* Letterhead: brand block left, contact block right. */
+.letterhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6mm;
+}
+.brand {
+  font-size: 17pt;
+  font-weight: bold;
+  letter-spacing: 0.4pt;
+}
+.brand .accent { color: #146c43; }
+.letterhead .contact {
+  font-size: 7.5pt;
+  text-align: right;
+  color: #444;
+}
+
+/* Window-envelope address block. */
+.addr-window {
+  width: 62mm;
+  min-height: 22mm;
+  font-size: 9.5pt;
+  margin-bottom: 6mm;
+}
+
+/* Top-right metadata box (account, date, reference). */
+.meta-box {
+  border: 0.4pt solid #888;
+  padding: 2.5mm 3mm;
+  font-size: 8.5pt;
+  width: 58mm;
+}
+.meta-box table { width: 100%; border-collapse: collapse; }
+.meta-box td { padding: 0.6mm 0; vertical-align: top; }
+.meta-box td.label { color: #555; padding-right: 2mm; white-space: nowrap; }
+.meta-box td.value { text-align: right; font-weight: bold; }
+
+.two-col {
+  display: flex;
+  justify-content: space-between;
+  gap: 8mm;
+}
+
+/* Reverse-video total banner. */
+.total-banner {
+  background: #1a1a1a;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 2.5mm 4mm;
+  margin: 4mm 0;
+  font-size: 11pt;
+  font-weight: bold;
+  -weasy-box-decoration-break: clone;
+}
+.total-banner .amount { font-size: 15pt; }
+
+/* Summary grid: label/value rows with a rule between. */
+.summary { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; }
+.summary td { padding: 1.6mm 0; border-bottom: 0.3pt solid #ccc; }
+.summary td.amount { text-align: right; font-variant-numeric: tabular-nums; }
+.summary tr.total td { font-weight: bold; border-bottom: 0.8pt solid #1a1a1a; }
+
+/* Ruled data table (transactions, tariffs, readings). */
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+  margin: 2mm 0 4mm;
+}
+table.data th {
+  background: #e9efe9;
+  text-align: left;
+  padding: 1.6mm 2mm;
+  border-bottom: 0.6pt solid #888;
+  font-size: 8pt;
+}
+table.data td {
+  padding: 1.4mm 2mm;
+  border-bottom: 0.3pt solid #ddd;
+  vertical-align: top;
+}
+table.data td.num, table.data th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+table.data tr.subtotal td { font-weight: bold; border-top: 0.6pt solid #888; }
+
+/* Tinted call-out panel (notices, marketing, prose-variation slot). */
+.panel {
+  background: #f0f4ef;
+  border-left: 1.6mm solid #146c43;
+  padding: 3mm 4mm;
+  margin: 4mm 0;
+  font-size: 9pt;
+}
+.panel h3 { margin-top: 0; }
+
+/* Right-rail label:value mini-sections. */
+.rail { font-size: 8pt; color: #333; }
+.rail dt { font-weight: bold; margin-top: 2.5mm; }
+.rail dd { margin: 0.4mm 0 0 0; }
+
+.small-print {
+  font-size: 7pt;
+  color: #555;
+  column-count: 2;
+  column-gap: 6mm;
+  margin-top: 5mm;
+}

@@ -1,0 +1,76 @@
+# Per-issue data for the Harwood Energy monthly bill series (12 issues,
+# corpus.yaml: energy_bills). Exemplar carries two issues; the full year is
+# authored in the template-authoring pass. Prose-variation slots per spec —
+# `notice` is the rotating slot; at least one issue is a golden target
+# (disputed standing charge).
+template: bills/energy_bill.html
+vendor_key: energy
+issues:
+  - id: energy-2025-09
+    bill_ref: "HW-B-250901"
+    bill_date: "5 September 2025"
+    period: "1–31 Aug 2025"
+    due_date: "19 September 2025"
+    previous_balance: "61.40"
+    payments_received: "61.40"
+    charges_total: "65.77"
+    total_due: "65.77"
+    meter_serial: "Z19K 044782"
+    reading_previous: "31,844"
+    reading_latest: "32,041"
+    reading_type: "Actual (smart meter)"
+    kwh_used: "197"
+    unit_rate: "24.1"
+    energy_charge: "47.48"
+    standing_rate: "48.9"
+    days: "31"
+    standing_charge: "15.16"
+    vat: "3.13"
+    estimated_annual_kwh: "2,450"
+    cheapest_tariff: "Fair Deal Fixed 12"
+    cheapest_annual_cost: "702"
+    reading_note: "Your smart meter sent us this reading automatically on 31 August."
+    notice:
+      title: "Your Direct Debit is changing"
+      body:
+        - >-
+          Based on your usage over the summer we're lowering your monthly
+          Direct Debit from £68 to £61 starting 1 October. You don't need to
+          do anything.
+  - id: energy-2025-10
+    bill_ref: "HW-B-251002"
+    bill_date: "5 October 2025"
+    period: "1–30 Sep 2025"
+    due_date: "19 October 2025"
+    previous_balance: "65.77"
+    payments_received: "65.77"
+    charges_total: "68.09"
+    total_due: "68.09"
+    meter_serial: "Z19K 044782"
+    reading_previous: "32,041"
+    reading_latest: "32,258"
+    reading_type: "Actual (smart meter)"
+    kwh_used: "217"
+    unit_rate: "24.1"
+    energy_charge: "52.30"
+    standing_rate: "48.9"
+    days: "30"
+    standing_charge: "14.67"
+    vat: "3.24"
+    adjustments:
+      - label: "Standing charge correction (Jun–Aug)"
+        amount: "2.12"
+    estimated_annual_kwh: "2,450"
+    cheapest_tariff: "Fair Deal Fixed 12"
+    cheapest_annual_cost: "702"
+    reading_note: "Your smart meter sent us this reading automatically on 30 September."
+    notice:
+      title: "We're correcting your standing charge"
+      body:
+        - >-
+          Between June and August we charged your standing charge at 51.2p a
+          day instead of the 48.9p your tariff sets. We've credited the
+          difference of £2.12 to this bill and are sorry for the mistake.
+        - >-
+          You raised this with us on 14 September — thank you. The credit
+          appears in your charges total above.
