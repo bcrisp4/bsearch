@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Ferrand certificate of interest: deliberately sparse one-pager
+     (shape notes doc 4) — right-aligned label/value stack, three-row
+     amount list, ~60% white space. */
+  .brand { font-family: "Doc Serif", serif; color: #16355e; font-size: 17pt;
+    font-weight: bold; letter-spacing: 0.4pt; }
+  .brand .accent { color: #b98d2f; }
+  .doc-title { color: #16355e; font-size: 13pt; font-weight: bold;
+    margin: 2mm 0 8mm; }
+  .id-stack { text-align: right; font-size: 9pt; }
+  .id-stack .row { margin-bottom: 1mm; }
+  .id-stack .lbl { color: #555; padding-right: 2mm; }
+  .id-stack .val { font-weight: bold; }
+  .amounts { width: 110mm; border-collapse: collapse; margin: 6mm 0;
+    font-size: 10.5pt; }
+  .amounts td { padding: 2mm 0; border-bottom: 0.3pt solid #ccc; }
+  .amounts td.num { text-align: right; font-weight: bold;
+    font-variant-numeric: tabular-nums; }
+  .spacer { height: 55mm; }
+  .provenance { font-size: 7.5pt; color: #555; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Ferrand Bank plc is registered in England and Wales (company no. 07103428).
+  Registered office: 12 Cordwainer Square, London EC2Y 8LH. Authorised as a
+  deposit taker and regulated in the United Kingdom. FE-COI-01
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div>
+    <div class="brand">FERRAND<span class="accent"> BANK</span></div>
+    <div class="doc-title">Certificate of interest</div>
+  </div>
+  <div class="id-stack">
+    <div class="row"><span class="lbl">Account type:</span>
+      <span class="val">{{ issue.account_type }}</span></div>
+    <div class="row"><span class="lbl">Sort code:</span>
+      <span class="val">{{ banks[issue.bank_key].sort_code }}</span></div>
+    <div class="row"><span class="lbl">Account number:</span>
+      <span class="val">{{ banks[issue.bank_key].account_number }}</span></div>
+    <div class="row"><span class="lbl">Account holder:</span>
+      <span class="val">{{ person.title }} {{ person.full_name }}</span></div>
+  </div>
+</div>
+
+<h2>Tax year ending {{ issue.tax_year_ending }}</h2>
+
+<p>This is the interest you were paid on your {{ issue.account_type }}
+during the tax year ending {{ issue.tax_year_ending }}.</p>
+
+<table class="amounts">
+  <tr><td>Gross interest of</td><td class="num">&pound;{{ issue.gross_interest }}</td></tr>
+  <tr><td>Income Tax deducted of</td><td class="num">&pound;{{ issue.tax_deducted }}</td></tr>
+  <tr><td>Actual amount received</td><td class="num">&pound;{{ issue.net_received }}</td></tr>
+</table>
+
+<p>Interest was paid without tax deducted. You may need this certificate if
+you complete a tax return; whether tax is due on this interest depends on
+your personal circumstances and allowances.</p>
+
+<div class="spacer"></div>
+
+<p class="provenance">This certificate was downloaded from the Ferrand
+Online Banking statement service on {{ issue.downloaded }}. It needs no
+signature. If any detail is wrong, call us on 020 7946 0552.</p>
+
+</body>
+</html>

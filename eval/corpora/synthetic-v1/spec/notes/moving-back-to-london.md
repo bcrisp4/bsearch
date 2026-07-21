@@ -23,7 +23,7 @@ repairs get approved by email in days rather than never.
 - Deposit: **£1,850**, protected on 8 Aug — certificate in the files.
   Chased Sophie for the certificate on day 6 because the scheme says 30
   days but I've been burned before (Millbeck Road, 2015, never again)
-- Rent £1,600 pcm, which after Brooklyn feels almost reasonable. Almost.
+- Rent £1,603.33 pcm (weird number — exactly £370/week apparently), which after Brooklyn feels almost reasonable. Almost.
 
 ## The circular dependency problem
 

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Ferrand Bank savings variant: same navy/gold identity as the current
+     account statement, green product bar for the Instant Saver. */
+  .brand { font-family: "Doc Serif", serif; color: #16355e; }
+  .brand .accent { color: #b98d2f; }
+  .gold-rule { border-bottom: 1mm solid #b98d2f; margin: 1mm 0 4mm; }
+  .product-bar {
+    background: #1e5c46; color: #fff; font-weight: bold; font-size: 11pt;
+    padding: 2mm 4mm; margin: 3mm 0 4mm;
+  }
+  .acct-strip {
+    display: flex; justify-content: space-between;
+    border-top: 0.6pt solid #16355e; border-bottom: 0.6pt solid #16355e;
+    padding: 1.6mm 0; margin-bottom: 5mm; font-size: 8pt;
+  }
+  .acct-strip .cell .lbl { color: #555; font-size: 7pt; display: block; }
+  .acct-strip .cell .val { font-weight: bold; }
+  table.data th { background: #e2ece7; }
+  table.data td:first-child { white-space: nowrap; }
+  tr.carry td { font-weight: bold; background: #f4f8f6; }
+  .ratebox {
+    border: 0.4pt solid #888; padding: 2.5mm 3mm; margin: 3mm 0;
+    font-size: 8.5pt;
+  }
+  .ratebox h3 { margin-top: 0; }
+  .fb-banner {
+    background: #eef1f5; border-left: 1.6mm solid #1e5c46;
+    padding: 3mm 4mm; margin: 4mm 0; font-size: 9pt;
+  }
+  .fb-banner h3 { margin-top: 0; color: #1e5c46; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Ferrand Bank plc is registered in England and Wales (company no. 07103428).
+  Registered office: 12 Cordwainer Square, London EC2Y 8LH. Authorised as a
+  deposit taker and regulated in the United Kingdom. Eligible deposits are
+  protected by the UK deposit guarantee scheme. FE-SAV-02
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">FERRAND<span class="accent"> BANK</span></div>
+  <div class="contact">
+    Ferrand Bank plc, 12 Cordwainer Square, London EC2Y 8LH<br>
+    020 7946 0552 &middot; ferrandbank.example/savings
+  </div>
+</div>
+<div class="gold-rule"></div>
+
+<div class="product-bar">Instant Saver &mdash; quarterly statement</div>
+
+<div class="acct-strip">
+  <div class="cell"><span class="lbl">Account name</span>
+    <span class="val">{{ person.title }} {{ person.full_name }}</span></div>
+  <div class="cell"><span class="lbl">Sort code</span>
+    <span class="val">{{ banks.uk_savings.sort_code }}</span></div>
+  <div class="cell"><span class="lbl">Account number</span>
+    <span class="val">{{ banks.uk_savings.account_number }}</span></div>
+  <div class="cell"><span class="lbl">Sheet number</span>
+    <span class="val">{{ issue.sheet }}</span></div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Statement date</td><td class="value">{{ issue.statement_date }}</td></tr>
+      <tr><td class="label">Period covered</td><td class="value">{{ issue.period }}</td></tr>
+      <tr><td class="label">Previous balance</td><td class="value">&pound;{{ issue.previous_balance }}</td></tr>
+      <tr><td class="label">Paid in</td><td class="value">&pound;{{ issue.paid_in }}</td></tr>
+      <tr><td class="label">Withdrawn</td><td class="value">&pound;{{ issue.withdrawn }}</td></tr>
+      <tr><td class="label">New balance</td><td class="value">&pound;{{ issue.new_balance }}</td></tr>
+      <tr><td class="label">Interest this quarter</td><td class="value">&pound;{{ issue.interest_paid }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="fb-banner">
+  <h3>{{ issue.notice.title }}</h3>
+  {% for para in issue.notice.body %}<p>{{ para }}</p>{% endfor %}
+</div>
+
+<h2>Your transactions</h2>
+<table class="data">
+  <tr>
+    <th>Date</th><th>Description</th><th class="num">Money out (&pound;)</th>
+    <th class="num">Money in (&pound;)</th><th class="num">Balance (&pound;)</th>
+  </tr>
+  <tr class="carry">
+    <td></td><td>BROUGHT FORWARD</td><td class="num"></td><td class="num"></td>
+    <td class="num">{{ issue.previous_balance }}</td>
+  </tr>
+  {% for t in issue.transactions %}
+  <tr>
+    <td>{{ t.date }}</td><td>{{ t.desc }}</td>
+    <td class="num">{{ t.money_out }}</td>
+    <td class="num">{{ t.money_in }}</td>
+    <td class="num">{{ t.balance }}</td>
+  </tr>
+  {% endfor %}
+  <tr class="carry">
+    <td></td><td>NEW BALANCE</td><td class="num"></td><td class="num"></td>
+    <td class="num">{{ issue.new_balance }}</td>
+  </tr>
+</table>
+
+<div class="ratebox">
+  <h3>Interest on this account</h3>
+  <p>Your current rate is <strong>{{ issue.gross_rate }}% gross /
+  {{ issue.aer }}% AER (variable)</strong>. Interest is calculated daily on
+  your full balance and paid on the last day of each statement quarter.
+  Interest is paid gross, without tax deducted; whether you owe tax on it
+  depends on your personal circumstances and allowances.</p>
+</div>
+
+<div class="ratebox">
+  <h3>What AER means</h3>
+  <p>AER (Annual Equivalent Rate) shows what the interest rate would be if
+  interest were paid and compounded once each year, so you can compare
+  savings accounts fairly. The gross rate is the flat rate before
+  compounding within the year is taken into account.</p>
+</div>
+
+<div class="small-print">
+  <p><strong>Withdrawals.</strong> The Instant Saver has no notice period
+  and no withdrawal penalty. Transfers to your Ferrand current account
+  arrive instantly.</p>
+  <p><strong>How your money is protected.</strong> Your eligible deposits at
+  Ferrand Bank are protected up to &pound;85,000 per person by the UK deposit
+  guarantee scheme; the limit applies across all accounts you hold with us.</p>
+  <p><strong>Certificates of interest</strong> for each tax year are
+  available from Ferrand Online Banking from mid-April, or on request.</p>
+  <p><strong>If you have a complaint</strong>, contact us first. If you are
+  unhappy with our final response you can refer the matter free of charge to
+  the statutory ombudsman for financial services.</p>
+</div>
+
+</body>
+</html>

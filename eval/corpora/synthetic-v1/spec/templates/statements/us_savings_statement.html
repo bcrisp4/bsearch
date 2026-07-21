@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Commonwealth Harbor savings: label/value pairs left/right on shared
+     lines, ALL-CAPS summary list, italic continuation markers (shape
+     notes doc 2) — same brand as the checking statement. */
+  body { page: us-letter; }
+  html { font-size: 9pt; }
+  .chb-brand {
+    font-size: 15pt; font-weight: bold; letter-spacing: 0.6pt;
+    color: #2b3a4a;
+  }
+  .chb-brand .anchor { color: #8a1e2d; }
+  .chb-tag { font-size: 7pt; color: #555; }
+  .questions { font-size: 7.5pt; text-align: right; }
+  .questions h4 { margin: 0 0 1mm; font-size: 8.5pt; }
+  .prod-rule { border-bottom: 1.2pt solid #2b3a4a; margin: 1mm 0 2mm; }
+  .prod-line { display: flex; justify-content: space-between;
+    align-items: baseline; margin-top: 5mm; }
+  .prod-line h2 { margin: 0; }
+  .prod-line .right { font-size: 8pt; text-align: right; }
+  .holder { font-style: italic; margin: 1mm 0 3mm; }
+  table.caps { border-collapse: collapse; width: 96mm; font-size: 8.5pt; }
+  table.caps td { padding: 0.9mm 2mm 0.9mm 0; }
+  table.caps td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.caps td.lbl { text-transform: uppercase; letter-spacing: 0.3pt; }
+  table.caps tr.tot td { font-weight: bold; border-top: 0.6pt solid #333; }
+  .intnote { font-style: italic; font-size: 7.5pt; color: #444; }
+  table.data th { background: #d9dde2; text-transform: uppercase; }
+  tr.carry td { font-weight: bold; }
+  .exhort { font-style: italic; font-size: 7.5pt; margin-top: 3mm; }
+  .legal { font-size: 7pt; color: #444; margin-top: 4mm; }
+  .legal h4 { font-size: 7.5pt; margin: 2mm 0 1mm; text-transform: uppercase; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Commonwealth Harbor Bank, N.A. &middot; PO Box 7729, New York, NY 10008.
+  Deposits are insured by the federal deposit insurance program up to
+  applicable limits. An equal opportunity lender. Form CHB-1073 (Rev. 06/24)
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div>
+    <div class="chb-brand">COMMONWEALTH <span class="anchor">HARBOR</span> BANK</div>
+    <div class="chb-tag">PO Box 7729, New York, NY 10008</div>
+  </div>
+  <div class="questions">
+    <h4>Questions?</h4>
+    Call Member Services: (800) 555-0142<br>
+    commonwealthharbor.example<br>
+    Or write: PO Box 7729, New York, NY 10008
+  </div>
+</div>
+
+<div class="addr-window">
+  {{ person.full_name | upper }}<br>
+  {{ addresses.us_former.line1 | upper }}<br>
+  {{ addresses.us_former.city | upper }}, {{ addresses.us_former.state }}
+  {{ addresses.us_former.zip }}
+</div>
+
+<div class="notice">
+  <h3>{{ issue.notice.title }}</h3>
+  {% for para in issue.notice.body %}<p>{{ para }}</p>{% endfor %}
+</div>
+
+<div class="prod-line">
+  <h2>Harbor High-Yield Savings</h2>
+  <div class="right">
+    ACCOUNT NUMBER &nbsp;<strong>{{ banks.us_savings.account_number }}</strong><br>
+    STATEMENT PERIOD &nbsp;<strong>{{ issue.period }}</strong>
+  </div>
+</div>
+<div class="prod-rule"></div>
+<p class="holder">{{ person.full_name }}</p>
+
+<table class="caps">
+  <tr><td class="lbl">Beginning Balance</td><td class="num">${{ issue.beginning_balance }}</td></tr>
+  <tr><td class="lbl">Deposits &amp; Other Additions</td><td class="num">${{ issue.deposits_additions }}</td></tr>
+  <tr><td class="lbl">Withdrawals &amp; Other Subtractions</td><td class="num">${{ issue.withdrawals_subtractions }}</td></tr>
+  <tr class="tot"><td class="lbl">Ending Balance</td><td class="num">${{ issue.ending_balance }}</td></tr>
+</table>
+
+<h3 style="margin-top: 4mm">Interest Summary</h3>
+<table class="caps">
+  <tr><td class="lbl">Annual Percentage Yield Earned This Period</td><td class="num">{{ issue.apy_earned }}%</td></tr>
+  <tr><td class="lbl">Interest Earned This Period</td><td class="num">${{ issue.interest_period }}</td></tr>
+  <tr><td class="lbl">Average Daily Balance</td><td class="num">${{ issue.average_daily_balance }}</td></tr>
+  <tr><td class="lbl">Interest Paid Year To Date</td><td class="num">${{ issue.interest_ytd }}</td></tr>
+</table>
+<p class="intnote">Interest earned during a statement period is not
+available until it has been credited to your account.</p>
+
+<h3 style="margin-top: 4mm">Transaction Detail</h3>
+<table class="data">
+  <tr>
+    <th>Date Posted</th><th>Description of Transactions</th>
+    <th class="num">Deposits &amp; Other Additions</th>
+    <th class="num">Withdrawals &amp; Other Subtractions</th>
+    <th class="num">Balance</th>
+  </tr>
+  <tr class="carry">
+    <td></td><td>OPENING BALANCE</td><td class="num"></td><td class="num"></td>
+    <td class="num">${{ issue.beginning_balance }}</td>
+  </tr>
+  {% for t in issue.transactions %}
+  <tr>
+    <td>{{ t.date }}</td><td>{{ t.desc }}</td>
+    <td class="num">{{ t.deposits }}</td>
+    <td class="num">{{ t.withdrawals }}</td>
+    <td class="num">{{ t.balance }}</td>
+  </tr>
+  {% endfor %}
+  <tr class="carry">
+    <td></td><td>ENDING BALANCE</td><td class="num"></td><td class="num"></td>
+    <td class="num">${{ issue.ending_balance }}</td>
+  </tr>
+</table>
+
+<p class="exhort">Please examine your statement at once. If no error is
+reported within 60 days, the account will be considered correct.</p>
+<p class="exhort">Has your address changed? Update it in online banking or
+call Member Services so statements and tax documents reach you.</p>
+
+<div class="legal">
+  <h4>For Consumer Accounts Only &mdash; Error Resolution</h4>
+  <p>In case of errors or questions about your electronic funds transfers,
+  call or write us at the phone number or address shown above as soon as you
+  can. We must hear from you no later than 60 days after we sent the FIRST
+  statement on which the problem or error appeared. Tell us your name and
+  account number, describe the error or the transfer you are unsure about,
+  and tell us the dollar amount of the suspected error. We will investigate
+  and correct any error promptly; if we take more than 10 business days, we
+  will credit your account for the amount in question while we finish our
+  investigation.</p>
+</div>
+
+</body>
+</html>

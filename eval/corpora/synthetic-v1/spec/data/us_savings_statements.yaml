@@ -1,0 +1,89 @@
+# Per-issue data for the Commonwealth Harbor Bank High-Yield Savings
+# quarterly statement series (3 issues, corpus.yaml:
+# us_savings_statements), Oct 2024 - Jun 2025. Deposits are the
+# 400.00/month transfers from checking; interest accrues daily (4.30%
+# APY to 11 Mar 2025, 3.95% APY after) and is credited monthly. The 2025
+# interest credits (Jan-Jun, plus a final accrual at the July 2025
+# account closure) are what the savings 1042-S in bank_certificates.yaml
+# reports.
+template: statements/us_savings_statement.html
+vendor_key: null
+issues:
+  - id: harbor-savings-2024-q4
+    statement_date: "December 31, 2024"
+    period: "October 1, 2024 through December 31, 2024"
+    beginning_balance: "6,500.00"
+    deposits_additions: "1,279.06"
+    withdrawals_subtractions: "0.00"
+    ending_balance: "7,779.06"
+    apy_earned: "4.30"
+    interest_period: "79.06"
+    interest_ytd: "79.06"
+    average_daily_balance: "7,295.74"
+    notice:
+      title: "How your interest works"
+      body:
+        - >-
+          Interest on Harbor High-Yield Savings is calculated on your daily
+          balance and credited on the last day of each month. The Annual
+          Percentage Yield (APY) assumes interest remains on deposit;
+          withdrawals will reduce earnings. Your rate is variable and may
+          change after the account is opened.
+    transactions:
+      - {date: "10/03", desc: "Online Transfer from Checking account ending 7209", deposits: "400.00", withdrawals: "", balance: "6,900.00"}
+      - {date: "10/31", desc: "Interest Payment", deposits: "25.10", withdrawals: "", balance: "6,925.10"}
+      - {date: "11/04", desc: "Online Transfer from Checking account ending 7209", deposits: "400.00", withdrawals: "", balance: "7,325.10"}
+      - {date: "11/30", desc: "Interest Payment", deposits: "25.75", withdrawals: "", balance: "7,350.85"}
+      - {date: "12/03", desc: "Online Transfer from Checking account ending 7209", deposits: "400.00", withdrawals: "", balance: "7,750.85"}
+      - {date: "12/31", desc: "Interest Payment", deposits: "28.21", withdrawals: "", balance: "7,779.06"}
+  - id: harbor-savings-2025-q1
+    statement_date: "March 31, 2025"
+    period: "January 1, 2025 through March 31, 2025"
+    beginning_balance: "7,779.06"
+    deposits_additions: "1,289.26"
+    withdrawals_subtractions: "0.00"
+    ending_balance: "9,068.32"
+    apy_earned: "4.22"
+    interest_period: "89.26"
+    interest_ytd: "89.26"
+    average_daily_balance: "8,582.66"
+    notice:
+      title: "Rate change effective March 12, 2025"
+      body:
+        - >-
+          The Annual Percentage Yield on this account changed from 4.30% to
+          3.95% on March 12, 2025, reflecting changes in short-term market
+          rates. Interest already credited is not affected. Current rates are
+          published at commonwealthharbor.example/rates.
+    transactions:
+      - {date: "01/03", desc: "Online Transfer from Checking account ending 7209", deposits: "400.00", withdrawals: "", balance: "8,179.06"}
+      - {date: "01/31", desc: "Interest Payment", deposits: "29.78", withdrawals: "", balance: "8,208.84"}
+      - {date: "02/03", desc: "Online Transfer from Checking account ending 7209", deposits: "400.00", withdrawals: "", balance: "8,608.84"}
+      - {date: "02/28", desc: "Interest Payment", deposits: "28.30", withdrawals: "", balance: "8,637.14"}
+      - {date: "03/03", desc: "Online Transfer from Checking account ending 7209", deposits: "400.00", withdrawals: "", balance: "9,037.14"}
+      - {date: "03/31", desc: "Interest Payment", deposits: "31.18", withdrawals: "", balance: "9,068.32"}
+  - id: harbor-savings-2025-q2
+    statement_date: "June 30, 2025"
+    period: "April 1, 2025 through June 30, 2025"
+    beginning_balance: "9,068.32"
+    deposits_additions: "895.94"
+    withdrawals_subtractions: "0.00"
+    ending_balance: "9,964.26"
+    apy_earned: "3.95"
+    interest_period: "95.94"
+    interest_ytd: "185.20"
+    average_daily_balance: "9,742.57"
+    notice:
+      title: "Interest reporting for non-U.S. persons"
+      body:
+        - >-
+          If our records show you are not a U.S. person, deposit interest paid
+          to you during a calendar year is reported on Form 1042-S, mailed by
+          March 15 of the following year. Keep your address and tax
+          certification up to date so the form reaches you.
+    transactions:
+      - {date: "04/03", desc: "Online Transfer from Checking account ending 7209", deposits: "400.00", withdrawals: "", balance: "9,468.32"}
+      - {date: "04/30", desc: "Interest Payment", deposits: "30.65", withdrawals: "", balance: "9,498.97"}
+      - {date: "05/05", desc: "Online Transfer from Checking account ending 7209", deposits: "400.00", withdrawals: "", balance: "9,898.97"}
+      - {date: "05/31", desc: "Interest Payment", deposits: "33.04", withdrawals: "", balance: "9,932.01"}
+      - {date: "06/30", desc: "Interest Payment", deposits: "32.25", withdrawals: "", balance: "9,964.26"}

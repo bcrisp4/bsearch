@@ -10,7 +10,7 @@ Updated after the energy direct debit went up. Fixed outgoings:
 
 | Thing | £/month | Notes |
 |---|---|---|
-| Rent | 1,600.00 | Penfold & Reach, 1st of month |
+| Rent | 1,603.33 | Penfold & Reach, 1st of month |
 | Council tax | 106.90 | Netherhale, band C, single person discount |
 | Energy | 74.00 | Harwood DD, up from £61 in June (winter caught up with me) |
 | Broadband | 37.99 | Loopfibre — was £34.99, +£3 rise from 1 May. Incl the £5 static IP |

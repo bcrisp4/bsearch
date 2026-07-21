@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Commonwealth Harbor Bank: US Letter, grey section-header bars, boxed
+     customer-service panel — deliberately unlike the Ferrand navy/serif. */
+  body { page: us-letter; }
+  html { font-size: 9pt; }
+  .chb-brand {
+    font-size: 15pt; font-weight: bold; letter-spacing: 0.6pt;
+    color: #2b3a4a;
+  }
+  .chb-brand .anchor { color: #8a1e2d; }
+  .chb-tag { font-size: 7pt; color: #555; }
+  .stmt-meta { text-align: right; font-size: 8.5pt; }
+  .stmt-meta .big { font-weight: bold; }
+  .service-box {
+    border: 0.5pt solid #666; padding: 2.5mm 3mm; width: 62mm;
+    font-size: 7.5pt;
+  }
+  .service-box h4 {
+    margin: 0 0 1.5mm; font-size: 8pt; letter-spacing: 0.4pt;
+  }
+  .service-box td { padding: 0.4mm 0; vertical-align: top; }
+  .service-box td.l { color: #444; padding-right: 2mm; }
+  .bar {
+    background: #d9dde2; font-weight: bold; font-size: 9.5pt;
+    padding: 1.6mm 3mm; margin: 4mm 0 2mm; letter-spacing: 0.4pt;
+  }
+  .notice h3 { margin-bottom: 1mm; }
+  table.sum { border-collapse: collapse; width: 92mm; font-size: 8.5pt; }
+  table.sum td { padding: 1mm 2mm 1mm 0; }
+  table.sum td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.sum tr.tot td { font-weight: bold; border-top: 0.6pt solid #333; }
+  table.data th { background: #d9dde2; }
+  tr.carry td { font-weight: bold; }
+  .waiver { font-size: 8pt; margin: 2mm 0; }
+  .waiver li { margin-bottom: 0.8mm; }
+  .legal { font-size: 7pt; color: #444; margin-top: 4mm; }
+  .legal h4 { font-size: 7.5pt; margin: 2mm 0 1mm; text-transform: uppercase; }
+  .memberline { font-size: 7.5pt; margin-top: 3mm; text-align: right; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Commonwealth Harbor Bank, N.A. &middot; PO Box 7729, New York, NY 10008.
+  Deposits are insured by the federal deposit insurance program up to
+  applicable limits. An equal opportunity lender. Form CHB-1071 (Rev. 06/24)
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div>
+    <div class="chb-brand">COMMONWEALTH <span class="anchor">HARBOR</span> BANK</div>
+    <div class="chb-tag">PO Box 7729, New York, NY 10008</div>
+  </div>
+  <div class="stmt-meta">
+    <span class="big">{{ issue.period }}</span><br>
+    Primary Account: <span class="big">{{ banks.us_checking.account_number }}</span><br>
+    Routing Number: {{ banks.us_checking.routing_number }}
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.full_name | upper }}<br>
+    {{ addresses.us_former.line1 | upper }}<br>
+    {{ addresses.us_former.city | upper }}, {{ addresses.us_former.state }}
+    {{ addresses.us_former.zip }}
+  </div>
+  <div class="service-box">
+    <h4>CUSTOMER SERVICE INFORMATION</h4>
+    <table>
+      <tr><td class="l">Web site:</td><td>commonwealthharbor.example</td></tr>
+      <tr><td class="l">Service Center:</td><td>(800) 555-0142</td></tr>
+      <tr><td class="l">Espa&ntilde;ol:</td><td>(800) 555-0186</td></tr>
+      <tr><td class="l">International Calls:</td><td>(212) 555-0104</td></tr>
+      <tr><td class="l" colspan="2">We accept operator relay calls.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="notice">
+  <h3>{{ issue.notice.title }}</h3>
+  {% for para in issue.notice.body %}<p>{{ para }}</p>{% endfor %}
+</div>
+
+<div class="bar">HARBOR ADVANTAGE CHECKING</div>
+<p>{{ person.full_name | upper }} &nbsp;&mdash;&nbsp; Account Number:
+{{ banks.us_checking.account_number }}</p>
+
+<div class="bar">CHECKING SUMMARY</div>
+<table class="sum">
+  <tr><td>Beginning Balance</td><td class="num">${{ issue.beginning_balance }}</td></tr>
+  <tr><td>Deposits and Additions</td><td class="num">${{ issue.deposits_additions }}</td></tr>
+  <tr><td>Card Purchases &amp; ATM Withdrawals</td><td class="num">&minus; ${{ issue.card_withdrawals }}</td></tr>
+  <tr><td>Electronic Withdrawals</td><td class="num">&minus; ${{ issue.electronic_withdrawals }}</td></tr>
+  <tr class="tot"><td>Ending Balance</td><td class="num">${{ issue.ending_balance }}</td></tr>
+</table>
+<table class="sum" style="margin-top: 2mm">
+  <tr><td>Annual Percentage Yield Earned This Period</td><td class="num">{{ issue.apy_earned }}%</td></tr>
+  <tr><td>Interest Paid This Period</td><td class="num">${{ issue.interest_paid }}</td></tr>
+  <tr><td>Interest Paid Year-to-Date</td><td class="num">${{ issue.interest_ytd }}</td></tr>
+</table>
+
+<div class="waiver">
+  <p><strong>Your $12.00 Monthly Service Fee was waived this period.</strong>
+  The fee is waived in any statement period in which at least one of the
+  following applies:</p>
+  <ul>
+    <li>Qualifying direct deposits totaling $500.00 or more
+    (you had ${{ issue.deposits_additions }} in deposits and additions)</li>
+    <li>A minimum daily balance of $1,500.00 or more</li>
+    <li>An average linked savings balance of $5,000.00 or more</li>
+  </ul>
+</div>
+
+<div class="bar">TRANSACTION DETAIL</div>
+<table class="data">
+  <tr>
+    <th>Date</th><th>Description</th><th class="num">Amount</th>
+    <th class="num">Balance</th>
+  </tr>
+  <tr class="carry">
+    <td></td><td>Beginning Balance</td><td class="num"></td>
+    <td class="num">${{ issue.beginning_balance }}</td>
+  </tr>
+  {% for t in issue.transactions %}
+  <tr>
+    <td>{{ t.date }}</td><td>{{ t.desc }}</td>
+    <td class="num">{{ t.amount }}</td>
+    <td class="num">{{ t.balance }}</td>
+  </tr>
+  {% endfor %}
+  <tr class="carry">
+    <td></td><td>Ending Balance</td><td class="num"></td>
+    <td class="num">${{ issue.ending_balance }}</td>
+  </tr>
+</table>
+
+<div class="legal">
+  <h4>In Case of Errors or Questions About Your Electronic Funds Transfers</h4>
+  <p>Call or write us at the phone number or address on the front of this
+  statement as soon as you can, if you think your statement or receipt is
+  wrong or if you need more information about a transfer listed on the
+  statement or receipt. We must hear from you no later than 60 days after we
+  sent the FIRST statement on which the problem or error appeared.</p>
+  <p>1. Tell us your name and account number. &nbsp;2. Describe the error or
+  the transfer you are unsure about, and explain as clearly as you can why
+  you believe it is an error or why you need more information. &nbsp;3. Tell
+  us the dollar amount of the suspected error.</p>
+  <p>We will investigate your complaint and will correct any error promptly.
+  If we take more than 10 business days to do this, we will credit your
+  account for the amount you think is in error, so that you will have use of
+  the money during the time it takes us to complete our investigation.</p>
+  <p>Please examine your statement at once. If no error is reported within
+  60 days, the account will be considered correct.</p>
+</div>
+
+<div class="memberline">
+  Commonwealth Harbor Bank, N.A. &middot; Deposits federally insured up to
+  applicable limits
+</div>
+
+</body>
+</html>

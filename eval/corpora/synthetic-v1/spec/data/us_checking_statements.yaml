@@ -1,0 +1,373 @@
+# Per-issue data for the Commonwealth Harbor Bank Harbor Advantage
+# Checking monthly statement series (8 issues, corpus.yaml:
+# us_checking_statements), Oct 2024 - May 2025 (US residency era per
+# persona timeline). Biweekly Brightpath Payroll direct deposits of
+# 2,118.47 (Meridian Loft Inc.), rent 2,395.00 to Calver Street Realty,
+# 400.00/month transfer to the linked savings account (mirrored in
+# us_savings_statements.yaml), Umbrella Row and Stonecroft Mutual
+# premiums matching the insurance policy numbers in persona.yaml.
+# Interest-bearing checking at 0.25% APY, credited monthly; monthly
+# service fee waived by qualifying direct deposits. Balances chain.
+template: statements/us_checking_statement.html
+vendor_key: null
+issues:
+  - id: harbor-checking-2024-10
+    page_count: "2"
+    statement_date: "October 31, 2024"
+    period: "October 1, 2024 through October 31, 2024"
+    beginning_balance: "3,412.68"
+    deposits_additions: "4,237.59"
+    card_withdrawals: "566.66"
+    electronic_withdrawals: "3,046.09"
+    ending_balance: "4,037.52"
+    apy_earned: "0.25"
+    interest_paid: "0.65"
+    interest_ytd: "0.65"
+    notice:
+      title: "Change to our funds availability policy"
+      body:
+        - >-
+          Effective November 1, 2024, the first $275 of a day's check deposits
+          will be available on the day of deposit, up from $225. Longer holds
+          may still apply to some deposits; when they do, we will tell you at
+          the time of deposit.
+    transactions:
+      - {date: "10/01", desc: "ACH Debit — CALVER STREET REALTY LLC, RENT APT 3B", amount: "-2,395.00", balance: "1,017.68"}
+      - {date: "10/02", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "983.68"}
+      - {date: "10/03", desc: "Online Transfer to Savings account ending 7217", amount: "-400.00", balance: "583.68"}
+      - {date: "10/03", desc: "Recurring Payment — PEAK FITNESS, BROOKLYN NY", amount: "-42.00", balance: "541.68"}
+      - {date: "10/04", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "2,660.15"}
+      - {date: "10/05", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-62.34", balance: "2,597.81"}
+      - {date: "10/07", desc: "ACH Debit — UMBRELLA ROW INSURANCE, PREMIUM UR7734902A", amount: "-18.50", balance: "2,579.31"}
+      - {date: "10/07", desc: "Debit Card Purchase — HALCYON COFFEE ROASTERS, BROOKLYN NY", amount: "-6.25", balance: "2,573.06"}
+      - {date: "10/08", desc: "ACH Debit — HUDSON LIGHT & POWER, ELECTRIC SERVICE", amount: "-96.40", balance: "2,476.66"}
+      - {date: "10/10", desc: "Debit Card Purchase — LUCKY DUMPLING HOUSE, BROOKLYN NY", amount: "-27.84", balance: "2,448.82"}
+      - {date: "10/12", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-48.91", balance: "2,399.91"}
+      - {date: "10/15", desc: "ACH Debit — SKYBRIDGE INTERNET, MONTHLY SERVICE", amount: "-59.99", balance: "2,339.92"}
+      - {date: "10/15", desc: "Recurring Payment — STREAMPIX SUBSCRIPTION", amount: "-11.99", balance: "2,327.93"}
+      - {date: "10/15", desc: "Debit Card Purchase — SPIN CYCLE LAUNDRY, BROOKLYN NY", amount: "-12.50", balance: "2,315.43"}
+      - {date: "10/16", desc: "ACH Debit — TELMARK MOBILE, WIRELESS SERVICE", amount: "-45.00", balance: "2,270.43"}
+      - {date: "10/17", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "2,236.43"}
+      - {date: "10/18", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "4,354.90"}
+      - {date: "10/19", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-71.28", balance: "4,283.62"}
+      - {date: "10/21", desc: "ACH Debit — STONECROFT MUTUAL, POLICY SM-D 2201-4478", amount: "-31.20", balance: "4,252.42"}
+      - {date: "10/22", desc: "Debit Card Purchase — CALVER ST BODEGA, BROOKLYN NY", amount: "-11.36", balance: "4,241.06"}
+      - {date: "10/24", desc: "ATM Withdrawal — COMMONWEALTH HARBOR BANK, COURT ST BROOKLYN", amount: "-100.00", balance: "4,141.06"}
+      - {date: "10/26", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-55.47", balance: "4,085.59"}
+      - {date: "10/28", desc: "Debit Card Purchase — MARISCOS EL FARO, BROOKLYN NY", amount: "-48.72", balance: "4,036.87"}
+      - {date: "10/31", desc: "Interest Payment", amount: "0.65", balance: "4,037.52"}
+  - id: harbor-checking-2024-11
+    page_count: "2"
+    statement_date: "November 30, 2024"
+    period: "November 1, 2024 through November 30, 2024"
+    beginning_balance: "4,037.52"
+    deposits_additions: "6,356.27"
+    card_withdrawals: "610.51"
+    electronic_withdrawals: "3,062.44"
+    ending_balance: "6,720.84"
+    apy_earned: "0.25"
+    interest_paid: "0.86"
+    interest_ytd: "1.51"
+    notice:
+      title: "Holiday processing schedule"
+      body:
+        - >-
+          Our branches and processing centers will be closed on Thursday,
+          November 28 and Wednesday, December 25. Deposits and payments
+          received on those days will post the next business day. Online and
+          mobile banking remain available as usual.
+    transactions:
+      - {date: "11/01", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "6,155.99"}
+      - {date: "11/01", desc: "ACH Debit — CALVER STREET REALTY LLC, RENT APT 3B", amount: "-2,395.00", balance: "3,760.99"}
+      - {date: "11/02", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "3,726.99"}
+      - {date: "11/02", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-58.62", balance: "3,668.37"}
+      - {date: "11/04", desc: "Online Transfer to Savings account ending 7217", amount: "-400.00", balance: "3,268.37"}
+      - {date: "11/04", desc: "Recurring Payment — PEAK FITNESS, BROOKLYN NY", amount: "-42.00", balance: "3,226.37"}
+      - {date: "11/05", desc: "ACH Debit — UMBRELLA ROW INSURANCE, PREMIUM UR7734902A", amount: "-18.50", balance: "3,207.87"}
+      - {date: "11/06", desc: "Debit Card Purchase — HALCYON COFFEE ROASTERS, BROOKLYN NY", amount: "-6.25", balance: "3,201.62"}
+      - {date: "11/08", desc: "ACH Debit — HUDSON LIGHT & POWER, ELECTRIC SERVICE", amount: "-112.75", balance: "3,088.87"}
+      - {date: "11/09", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-67.13", balance: "3,021.74"}
+      - {date: "11/12", desc: "ACH Debit — SKYBRIDGE INTERNET, MONTHLY SERVICE", amount: "-59.99", balance: "2,961.75"}
+      - {date: "11/12", desc: "Recurring Payment — STREAMPIX SUBSCRIPTION", amount: "-11.99", balance: "2,949.76"}
+      - {date: "11/12", desc: "Debit Card Purchase — SPINE & LEAF BOOKSELLERS, BROOKLYN NY", amount: "-23.48", balance: "2,926.28"}
+      - {date: "11/14", desc: "Debit Card Purchase — SPIN CYCLE LAUNDRY, BROOKLYN NY", amount: "-12.50", balance: "2,913.78"}
+      - {date: "11/15", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "5,032.25"}
+      - {date: "11/16", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-52.89", balance: "4,979.36"}
+      - {date: "11/17", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "4,945.36"}
+      - {date: "11/18", desc: "ACH Debit — TELMARK MOBILE, WIRELESS SERVICE", amount: "-45.00", balance: "4,900.36"}
+      - {date: "11/20", desc: "ACH Debit — STONECROFT MUTUAL, POLICY SM-D 2201-4478", amount: "-31.20", balance: "4,869.16"}
+      - {date: "11/21", desc: "Debit Card Purchase — BAGEL BARN, BROOKLYN NY", amount: "-9.87", balance: "4,859.29"}
+      - {date: "11/23", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-78.44", balance: "4,780.85"}
+      - {date: "11/26", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-94.36", balance: "4,686.49"}
+      - {date: "11/29", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "6,804.96"}
+      - {date: "11/29", desc: "Debit Card Purchase — LUCKY DUMPLING HOUSE, BROOKLYN NY", amount: "-35.62", balance: "6,769.34"}
+      - {date: "11/30", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-49.36", balance: "6,719.98"}
+      - {date: "11/30", desc: "Interest Payment", amount: "0.86", balance: "6,720.84"}
+  - id: harbor-checking-2024-12
+    page_count: "2"
+    statement_date: "December 31, 2024"
+    period: "December 1, 2024 through December 31, 2024"
+    beginning_balance: "6,720.84"
+    deposits_additions: "4,238.02"
+    card_withdrawals: "646.22"
+    electronic_withdrawals: "3,087.89"
+    ending_balance: "7,224.75"
+    apy_earned: "0.25"
+    interest_paid: "1.08"
+    interest_ytd: "2.59"
+    notice:
+      title: "Updates to our fee schedule"
+      body:
+        - >-
+          Effective February 1, 2025, the fee for an outgoing domestic wire
+          falls from $30 to $25 and incoming domestic wires become free on
+          this account. The monthly service fee and the ways to waive it are
+          unchanged. The full fee schedule is at
+          commonwealthharbor.example/fees.
+    transactions:
+      - {date: "12/02", desc: "ACH Debit — CALVER STREET REALTY LLC, RENT APT 3B", amount: "-2,395.00", balance: "4,325.84"}
+      - {date: "12/02", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "4,291.84"}
+      - {date: "12/03", desc: "Online Transfer to Savings account ending 7217", amount: "-400.00", balance: "3,891.84"}
+      - {date: "12/03", desc: "Recurring Payment — PEAK FITNESS, BROOKLYN NY", amount: "-42.00", balance: "3,849.84"}
+      - {date: "12/04", desc: "Debit Card Purchase — SPINE & LEAF BOOKSELLERS, BROOKLYN NY", amount: "-41.23", balance: "3,808.61"}
+      - {date: "12/05", desc: "ACH Debit — UMBRELLA ROW INSURANCE, PREMIUM UR7734902A", amount: "-18.50", balance: "3,790.11"}
+      - {date: "12/07", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-64.28", balance: "3,725.83"}
+      - {date: "12/09", desc: "ACH Debit — HUDSON LIGHT & POWER, ELECTRIC SERVICE", amount: "-138.20", balance: "3,587.63"}
+      - {date: "12/10", desc: "Debit Card Purchase — CALVERT DRUGS, BROOKLYN NY", amount: "-18.94", balance: "3,568.69"}
+      - {date: "12/12", desc: "ACH Debit — SKYBRIDGE INTERNET, MONTHLY SERVICE", amount: "-59.99", balance: "3,508.70"}
+      - {date: "12/12", desc: "Recurring Payment — STREAMPIX SUBSCRIPTION", amount: "-11.99", balance: "3,496.71"}
+      - {date: "12/13", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "5,615.18"}
+      - {date: "12/13", desc: "ATM Withdrawal — COMMONWEALTH HARBOR BANK, COURT ST BROOKLYN", amount: "-120.00", balance: "5,495.18"}
+      - {date: "12/14", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-59.71", balance: "5,435.47"}
+      - {date: "12/16", desc: "ACH Debit — TELMARK MOBILE, WIRELESS SERVICE", amount: "-45.00", balance: "5,390.47"}
+      - {date: "12/17", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "5,356.47"}
+      - {date: "12/17", desc: "Debit Card Purchase — SPIN CYCLE LAUNDRY, BROOKLYN NY", amount: "-12.50", balance: "5,343.97"}
+      - {date: "12/20", desc: "ACH Debit — STONECROFT MUTUAL, POLICY SM-D 2201-4478", amount: "-31.20", balance: "5,312.77"}
+      - {date: "12/20", desc: "Debit Card Purchase — MARISCOS EL FARO, BROOKLYN NY", amount: "-64.18", balance: "5,248.59"}
+      - {date: "12/21", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-83.15", balance: "5,165.44"}
+      - {date: "12/23", desc: "Debit Card Purchase — BAGEL BARN, BROOKLYN NY", amount: "-14.32", balance: "5,151.12"}
+      - {date: "12/27", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "7,269.59"}
+      - {date: "12/28", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-45.92", balance: "7,223.67"}
+      - {date: "12/31", desc: "Interest Payment", amount: "1.08", balance: "7,224.75"}
+  - id: harbor-checking-2025-01
+    page_count: "2"
+    statement_date: "January 31, 2025"
+    period: "January 1, 2025 through January 31, 2025"
+    beginning_balance: "7,224.75"
+    deposits_additions: "4,238.24"
+    card_withdrawals: "413.87"
+    electronic_withdrawals: "3,096.54"
+    ending_balance: "7,952.58"
+    apy_earned: "0.25"
+    interest_paid: "1.30"
+    interest_ytd: "1.30"
+    notice:
+      title: "Protect yourself from payment scams"
+      body:
+        - >-
+          We are seeing more texts and emails that pretend to be a bank fraud
+          alert and ask you to “verify” a payment or share a one-time code.
+          Commonwealth Harbor Bank will never ask you for a code, your
+          password, or to move money to keep it safe. Forward suspicious
+          messages to reportfraud@commonwealthharbor.example.
+    transactions:
+      - {date: "01/02", desc: "ACH Debit — CALVER STREET REALTY LLC, RENT APT 3B", amount: "-2,395.00", balance: "4,829.75"}
+      - {date: "01/02", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "4,795.75"}
+      - {date: "01/03", desc: "Online Transfer to Savings account ending 7217", amount: "-400.00", balance: "4,395.75"}
+      - {date: "01/03", desc: "Recurring Payment — PEAK FITNESS, BROOKLYN NY", amount: "-42.00", balance: "4,353.75"}
+      - {date: "01/04", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-56.83", balance: "4,296.92"}
+      - {date: "01/06", desc: "ACH Debit — UMBRELLA ROW INSURANCE, PREMIUM UR7734902A", amount: "-18.50", balance: "4,278.42"}
+      - {date: "01/08", desc: "ACH Debit — HUDSON LIGHT & POWER, ELECTRIC SERVICE", amount: "-146.85", balance: "4,131.57"}
+      - {date: "01/08", desc: "Debit Card Purchase — HALCYON COFFEE ROASTERS, BROOKLYN NY", amount: "-6.75", balance: "4,124.82"}
+      - {date: "01/10", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "6,243.29"}
+      - {date: "01/11", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-61.47", balance: "6,181.82"}
+      - {date: "01/13", desc: "ACH Debit — SKYBRIDGE INTERNET, MONTHLY SERVICE", amount: "-59.99", balance: "6,121.83"}
+      - {date: "01/13", desc: "Recurring Payment — STREAMPIX SUBSCRIPTION", amount: "-11.99", balance: "6,109.84"}
+      - {date: "01/15", desc: "Debit Card Purchase — SPIN CYCLE LAUNDRY, BROOKLYN NY", amount: "-12.50", balance: "6,097.34"}
+      - {date: "01/16", desc: "ACH Debit — TELMARK MOBILE, WIRELESS SERVICE", amount: "-45.00", balance: "6,052.34"}
+      - {date: "01/17", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "6,018.34"}
+      - {date: "01/18", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-53.28", balance: "5,965.06"}
+      - {date: "01/21", desc: "ACH Debit — STONECROFT MUTUAL, POLICY SM-D 2201-4478", amount: "-31.20", balance: "5,933.86"}
+      - {date: "01/21", desc: "Debit Card Purchase — CALVER ST BODEGA, BROOKLYN NY", amount: "-8.63", balance: "5,925.23"}
+      - {date: "01/24", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "8,043.70"}
+      - {date: "01/25", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-67.91", balance: "7,975.79"}
+      - {date: "01/27", desc: "Debit Card Purchase — LUCKY DUMPLING HOUSE, BROOKLYN NY", amount: "-24.51", balance: "7,951.28"}
+      - {date: "01/31", desc: "Interest Payment", amount: "1.30", balance: "7,952.58"}
+  - id: harbor-checking-2025-02
+    page_count: "2"
+    statement_date: "February 28, 2025"
+    period: "February 1, 2025 through February 28, 2025"
+    beginning_balance: "7,952.58"
+    deposits_additions: "4,238.32"
+    card_withdrawals: "456.41"
+    electronic_withdrawals: "3,090.99"
+    ending_balance: "8,643.50"
+    apy_earned: "0.25"
+    interest_paid: "1.38"
+    interest_ytd: "2.68"
+    notice:
+      title: "Switch to e-statements"
+      body:
+        - >-
+          Get your statement the day it cuts, keep every month in one
+          searchable archive, and cut down on mail. Enroll under Statements &
+          Documents in online banking — you can switch back to paper at any
+          time at no charge.
+    transactions:
+      - {date: "02/01", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-59.34", balance: "7,893.24"}
+      - {date: "02/02", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "7,859.24"}
+      - {date: "02/03", desc: "ACH Debit — CALVER STREET REALTY LLC, RENT APT 3B", amount: "-2,395.00", balance: "5,464.24"}
+      - {date: "02/03", desc: "Online Transfer to Savings account ending 7217", amount: "-400.00", balance: "5,064.24"}
+      - {date: "02/03", desc: "Recurring Payment — PEAK FITNESS, BROOKLYN NY", amount: "-42.00", balance: "5,022.24"}
+      - {date: "02/05", desc: "ACH Debit — UMBRELLA ROW INSURANCE, PREMIUM UR7734902A", amount: "-18.50", balance: "5,003.74"}
+      - {date: "02/05", desc: "Debit Card Purchase — CALVERT DRUGS, BROOKLYN NY", amount: "-22.37", balance: "4,981.37"}
+      - {date: "02/07", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "7,099.84"}
+      - {date: "02/08", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-54.76", balance: "7,045.08"}
+      - {date: "02/10", desc: "ACH Debit — HUDSON LIGHT & POWER, ELECTRIC SERVICE", amount: "-141.30", balance: "6,903.78"}
+      - {date: "02/11", desc: "Debit Card Purchase — HALCYON COFFEE ROASTERS, BROOKLYN NY", amount: "-6.75", balance: "6,897.03"}
+      - {date: "02/12", desc: "ACH Debit — SKYBRIDGE INTERNET, MONTHLY SERVICE", amount: "-59.99", balance: "6,837.04"}
+      - {date: "02/12", desc: "Recurring Payment — STREAMPIX SUBSCRIPTION", amount: "-11.99", balance: "6,825.05"}
+      - {date: "02/15", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-68.23", balance: "6,756.82"}
+      - {date: "02/17", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "6,722.82"}
+      - {date: "02/18", desc: "ACH Debit — TELMARK MOBILE, WIRELESS SERVICE", amount: "-45.00", balance: "6,677.82"}
+      - {date: "02/18", desc: "Debit Card Purchase — SPIN CYCLE LAUNDRY, BROOKLYN NY", amount: "-12.50", balance: "6,665.32"}
+      - {date: "02/20", desc: "ACH Debit — STONECROFT MUTUAL, POLICY SM-D 2201-4478", amount: "-31.20", balance: "6,634.12"}
+      - {date: "02/21", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "8,752.59"}
+      - {date: "02/22", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-57.61", balance: "8,694.98"}
+      - {date: "02/24", desc: "Debit Card Purchase — MARISCOS EL FARO, BROOKLYN NY", amount: "-52.86", balance: "8,642.12"}
+      - {date: "02/28", desc: "Interest Payment", amount: "1.38", balance: "8,643.50"}
+  - id: harbor-checking-2025-03
+    page_count: "2"
+    statement_date: "March 31, 2025"
+    period: "March 1, 2025 through March 31, 2025"
+    beginning_balance: "8,643.50"
+    deposits_additions: "4,238.63"
+    card_withdrawals: "551.78"
+    electronic_withdrawals: "3,068.33"
+    ending_balance: "9,262.02"
+    apy_earned: "0.25"
+    interest_paid: "1.69"
+    interest_ytd: "4.37"
+    notice:
+      title: "Rate change on linked savings accounts"
+      body:
+        - >-
+          Effective March 12, 2025, the Annual Percentage Yield on Harbor
+          High-Yield Savings changed from 4.30% to 3.95%. The rate on this
+          checking account is unchanged. Rates are variable and current rates
+          are always available at commonwealthharbor.example/rates.
+    transactions:
+      - {date: "03/01", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-62.47", balance: "8,581.03"}
+      - {date: "03/02", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "8,547.03"}
+      - {date: "03/03", desc: "ACH Debit — CALVER STREET REALTY LLC, RENT APT 3B", amount: "-2,395.00", balance: "6,152.03"}
+      - {date: "03/03", desc: "Online Transfer to Savings account ending 7217", amount: "-400.00", balance: "5,752.03"}
+      - {date: "03/03", desc: "Recurring Payment — PEAK FITNESS, BROOKLYN NY", amount: "-42.00", balance: "5,710.03"}
+      - {date: "03/05", desc: "ACH Debit — UMBRELLA ROW INSURANCE, PREMIUM UR7734902A", amount: "-18.50", balance: "5,691.53"}
+      - {date: "03/05", desc: "Debit Card Purchase — SPINE & LEAF BOOKSELLERS, BROOKLYN NY", amount: "-17.29", balance: "5,674.24"}
+      - {date: "03/07", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "7,792.71"}
+      - {date: "03/08", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-55.83", balance: "7,736.88"}
+      - {date: "03/10", desc: "ACH Debit — HUDSON LIGHT & POWER, ELECTRIC SERVICE", amount: "-118.64", balance: "7,618.24"}
+      - {date: "03/12", desc: "ACH Debit — SKYBRIDGE INTERNET, MONTHLY SERVICE", amount: "-59.99", balance: "7,558.25"}
+      - {date: "03/12", desc: "Recurring Payment — STREAMPIX SUBSCRIPTION", amount: "-11.99", balance: "7,546.26"}
+      - {date: "03/12", desc: "ATM Withdrawal — COMMONWEALTH HARBOR BANK, COURT ST BROOKLYN", amount: "-80.00", balance: "7,466.26"}
+      - {date: "03/15", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-70.36", balance: "7,395.90"}
+      - {date: "03/17", desc: "ACH Debit — TELMARK MOBILE, WIRELESS SERVICE", amount: "-45.00", balance: "7,350.90"}
+      - {date: "03/17", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "7,316.90"}
+      - {date: "03/18", desc: "Debit Card Purchase — SPIN CYCLE LAUNDRY, BROOKLYN NY", amount: "-12.50", balance: "7,304.40"}
+      - {date: "03/20", desc: "ACH Debit — STONECROFT MUTUAL, POLICY SM-D 2201-4478", amount: "-31.20", balance: "7,273.20"}
+      - {date: "03/21", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "9,391.67"}
+      - {date: "03/22", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-58.14", balance: "9,333.53"}
+      - {date: "03/25", desc: "Debit Card Purchase — BAGEL BARN, BROOKLYN NY", amount: "-11.48", balance: "9,322.05"}
+      - {date: "03/29", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-61.72", balance: "9,260.33"}
+      - {date: "03/31", desc: "Interest Payment", amount: "1.69", balance: "9,262.02"}
+  - id: harbor-checking-2025-04
+    page_count: "2"
+    statement_date: "April 30, 2025"
+    period: "April 1, 2025 through April 30, 2025"
+    beginning_balance: "9,262.02"
+    deposits_additions: "4,238.77"
+    card_withdrawals: "468.61"
+    electronic_withdrawals: "3,047.21"
+    ending_balance: "9,984.97"
+    apy_earned: "0.25"
+    interest_paid: "1.83"
+    interest_ytd: "6.20"
+    notice:
+      title: "Your overdraft choices"
+      body:
+        - >-
+          Unless you opt in, everyday debit card purchases that would overdraw
+          your account are simply declined at no charge. You can review or
+          change your overdraft election at any time in online banking or by
+          calling the number on this statement.
+    transactions:
+      - {date: "04/01", desc: "ACH Debit — CALVER STREET REALTY LLC, RENT APT 3B", amount: "-2,395.00", balance: "6,867.02"}
+      - {date: "04/02", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "6,833.02"}
+      - {date: "04/03", desc: "Online Transfer to Savings account ending 7217", amount: "-400.00", balance: "6,433.02"}
+      - {date: "04/03", desc: "Recurring Payment — PEAK FITNESS, BROOKLYN NY", amount: "-42.00", balance: "6,391.02"}
+      - {date: "04/04", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "8,509.49"}
+      - {date: "04/05", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-57.28", balance: "8,452.21"}
+      - {date: "04/07", desc: "ACH Debit — UMBRELLA ROW INSURANCE, PREMIUM UR7734902A", amount: "-18.50", balance: "8,433.71"}
+      - {date: "04/08", desc: "ACH Debit — HUDSON LIGHT & POWER, ELECTRIC SERVICE", amount: "-97.52", balance: "8,336.19"}
+      - {date: "04/09", desc: "Debit Card Purchase — HALCYON COFFEE ROASTERS, BROOKLYN NY", amount: "-6.75", balance: "8,329.44"}
+      - {date: "04/12", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-66.41", balance: "8,263.03"}
+      - {date: "04/14", desc: "ACH Debit — SKYBRIDGE INTERNET, MONTHLY SERVICE", amount: "-59.99", balance: "8,203.04"}
+      - {date: "04/14", desc: "Recurring Payment — STREAMPIX SUBSCRIPTION", amount: "-11.99", balance: "8,191.05"}
+      - {date: "04/14", desc: "Debit Card Purchase — LUCKY DUMPLING HOUSE, BROOKLYN NY", amount: "-31.76", balance: "8,159.29"}
+      - {date: "04/16", desc: "ACH Debit — TELMARK MOBILE, WIRELESS SERVICE", amount: "-45.00", balance: "8,114.29"}
+      - {date: "04/17", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "8,080.29"}
+      - {date: "04/17", desc: "Debit Card Purchase — SPIN CYCLE LAUNDRY, BROOKLYN NY", amount: "-12.50", balance: "8,067.79"}
+      - {date: "04/18", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "10,186.26"}
+      - {date: "04/19", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-54.93", balance: "10,131.33"}
+      - {date: "04/21", desc: "ACH Debit — STONECROFT MUTUAL, POLICY SM-D 2201-4478", amount: "-31.20", balance: "10,100.13"}
+      - {date: "04/23", desc: "Debit Card Purchase — CALVER ST BODEGA, BROOKLYN NY", amount: "-13.42", balance: "10,086.71"}
+      - {date: "04/26", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-63.57", balance: "10,023.14"}
+      - {date: "04/29", desc: "Debit Card Purchase — RIVERSIDE OTOLARYNGOLOGY ASSOC COPAY", amount: "-40.00", balance: "9,983.14"}
+      - {date: "04/30", desc: "Interest Payment", amount: "1.83", balance: "9,984.97"}
+  - id: harbor-checking-2025-05
+    page_count: "2"
+    statement_date: "May 31, 2025"
+    period: "May 1, 2025 through May 31, 2025"
+    beginning_balance: "9,984.97"
+    deposits_additions: "6,357.55"
+    card_withdrawals: "581.80"
+    electronic_withdrawals: "3,037.86"
+    ending_balance: "12,722.86"
+    apy_earned: "0.25"
+    interest_paid: "2.14"
+    interest_ytd: "8.34"
+    notice:
+      title: "Moving? Keep your details current"
+      body:
+        - >-
+          If your mailing address, phone number, or country of residence
+          changes, update your profile before you move so statements and tax
+          documents reach you. If you become a resident of another country,
+          you may also need to give us an updated tax residency certification
+          — see commonwealthharbor.example/tax-forms.
+    transactions:
+      - {date: "05/01", desc: "ACH Debit — CALVER STREET REALTY LLC, RENT APT 3B", amount: "-2,395.00", balance: "7,589.97"}
+      - {date: "05/02", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "9,708.44"}
+      - {date: "05/02", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "9,674.44"}
+      - {date: "05/03", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-60.82", balance: "9,613.62"}
+      - {date: "05/05", desc: "Online Transfer to Savings account ending 7217", amount: "-400.00", balance: "9,213.62"}
+      - {date: "05/05", desc: "Recurring Payment — PEAK FITNESS, BROOKLYN NY", amount: "-42.00", balance: "9,171.62"}
+      - {date: "05/05", desc: "ACH Debit — UMBRELLA ROW INSURANCE, PREMIUM UR7734902A", amount: "-18.50", balance: "9,153.12"}
+      - {date: "05/07", desc: "Debit Card Purchase — HALCYON COFFEE ROASTERS, BROOKLYN NY", amount: "-6.75", balance: "9,146.37"}
+      - {date: "05/08", desc: "ACH Debit — HUDSON LIGHT & POWER, ELECTRIC SERVICE", amount: "-88.17", balance: "9,058.20"}
+      - {date: "05/10", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-58.36", balance: "8,999.84"}
+      - {date: "05/12", desc: "ACH Debit — SKYBRIDGE INTERNET, MONTHLY SERVICE", amount: "-59.99", balance: "8,939.85"}
+      - {date: "05/12", desc: "Recurring Payment — STREAMPIX SUBSCRIPTION", amount: "-11.99", balance: "8,927.86"}
+      - {date: "05/13", desc: "Debit Card Purchase — SPIN CYCLE LAUNDRY, BROOKLYN NY", amount: "-12.50", balance: "8,915.36"}
+      - {date: "05/16", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "11,033.83"}
+      - {date: "05/16", desc: "ACH Debit — TELMARK MOBILE, WIRELESS SERVICE", amount: "-45.00", balance: "10,988.83"}
+      - {date: "05/17", desc: "Debit Card Purchase — CITY METRO FARE, NEW YORK NY", amount: "-34.00", balance: "10,954.83"}
+      - {date: "05/17", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-69.14", balance: "10,885.69"}
+      - {date: "05/19", desc: "Debit Card Purchase — PACK & TRACK MOVING SUPPLIES, BROOKLYN NY", amount: "-64.85", balance: "10,820.84"}
+      - {date: "05/20", desc: "ACH Debit — STONECROFT MUTUAL, POLICY SM-D 2201-4478", amount: "-31.20", balance: "10,789.64"}
+      - {date: "05/22", desc: "Debit Card Purchase — MARISCOS EL FARO, BROOKLYN NY", amount: "-58.21", balance: "10,731.43"}
+      - {date: "05/24", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-56.47", balance: "10,674.96"}
+      - {date: "05/28", desc: "Debit Card Purchase — CALVER ST BODEGA, BROOKLYN NY", amount: "-9.78", balance: "10,665.18"}
+      - {date: "05/30", desc: "Direct Deposit — BRIGHTPATH PAYROLL, MERIDIAN LOFT INC PAY", amount: "2,118.47", balance: "12,783.65"}
+      - {date: "05/31", desc: "Debit Card Purchase — GREENPOINT FOODS, BROOKLYN NY", amount: "-62.93", balance: "12,720.72"}
+      - {date: "05/31", desc: "Interest Payment", amount: "2.14", balance: "12,722.86"}

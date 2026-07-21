@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Ferrand Bank identity: navy serif wordmark, gold rule, boxed rate
+     sections. Distinct from the Harwood green and the Harbor grey bars. */
+  .brand { font-family: "Doc Serif", serif; color: #16355e; }
+  .brand .accent { color: #b98d2f; }
+  .gold-rule { border-bottom: 1mm solid #b98d2f; margin: 1mm 0 4mm; }
+  .acct-strip {
+    display: flex; justify-content: space-between;
+    border-top: 0.6pt solid #16355e; border-bottom: 0.6pt solid #16355e;
+    padding: 1.6mm 0; margin-bottom: 5mm; font-size: 8pt;
+  }
+  .acct-strip .cell .lbl { color: #555; font-size: 7pt; display: block; }
+  .acct-strip .cell .val { font-weight: bold; }
+  .fb-banner {
+    background: #eef1f5; border-left: 1.6mm solid #16355e;
+    padding: 3mm 4mm; margin: 4mm 0; font-size: 9pt;
+  }
+  .fb-banner h3 { margin-top: 0; color: #16355e; }
+  table.data th { background: #e4e9f1; }
+  table.data td:first-child { white-space: nowrap; }
+  tr.carry td { font-weight: bold; background: #f5f7fa; }
+  .ratebox {
+    border: 0.4pt solid #888; padding: 2.5mm 3mm; margin: 3mm 0;
+    font-size: 8.5pt;
+  }
+  .ratebox h3 { margin-top: 0; }
+  .ratebox .rates { font-weight: bold; }
+  .panel-grid { display: flex; gap: 5mm; margin-top: 4mm; }
+  .panel-grid .panel { flex: 1; margin: 0; }
+  .access-banner {
+    border: 0.8pt solid #16355e; padding: 3mm 4mm; margin-top: 5mm;
+    font-size: 11pt; font-weight: bold; color: #16355e; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Ferrand Bank plc is registered in England and Wales (company no. 07103428).
+  Registered office: 12 Cordwainer Square, London EC2Y 8LH. Authorised as a
+  deposit taker and regulated in the United Kingdom. Eligible deposits are
+  protected by the UK deposit guarantee scheme. FE-STMT-01
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">FERRAND<span class="accent"> BANK</span></div>
+  <div class="contact">
+    Ferrand Bank plc, 12 Cordwainer Square, London EC2Y 8LH<br>
+    020 7946 0552 &middot; ferrandbank.example<br>
+    Textphone-friendly &mdash; we accept relay calls
+  </div>
+</div>
+<div class="gold-rule"></div>
+
+<div class="acct-strip">
+  <div class="cell"><span class="lbl">Account name</span>
+    <span class="val">{{ person.title }} {{ person.full_name }}</span><br>
+    Everyday Current Account</div>
+  <div class="cell"><span class="lbl">Sort code</span>
+    <span class="val">{{ banks.uk_current_account.sort_code }}</span></div>
+  <div class="cell"><span class="lbl">Account number</span>
+    <span class="val">{{ banks.uk_current_account.account_number }}</span></div>
+  <div class="cell"><span class="lbl">Sheet number</span>
+    <span class="val">{{ issue.sheet }}</span></div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Statement date</td><td class="value">{{ issue.statement_date }}</td></tr>
+      <tr><td class="label">Period covered</td><td class="value">{{ issue.period }}</td></tr>
+      <tr><td class="label">Previous balance</td><td class="value">&pound;{{ issue.previous_balance }}</td></tr>
+      <tr><td class="label">Paid in</td><td class="value">&pound;{{ issue.paid_in }}</td></tr>
+      <tr><td class="label">Withdrawn</td><td class="value">&pound;{{ issue.withdrawn }}</td></tr>
+      <tr><td class="label">New balance</td><td class="value">&pound;{{ issue.new_balance }}</td></tr>
+      <tr><td class="label">BIC</td><td class="value">{{ banks.uk_current_account.bic }}</td></tr>
+      <tr><td class="label">IBAN</td><td class="value">{{ banks.uk_current_account.iban }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="fb-banner">
+  <h3>{{ issue.notice.title }}</h3>
+  {% for para in issue.notice.body %}<p>{{ para }}</p>{% endfor %}
+</div>
+
+<h2>Your transactions</h2>
+<table class="data">
+  <tr>
+    <th>Date</th><th>Description</th><th class="num">Money out (&pound;)</th>
+    <th class="num">Money in (&pound;)</th><th class="num">Balance (&pound;)</th>
+  </tr>
+  <tr class="carry">
+    <td></td><td>BROUGHT FORWARD</td><td class="num"></td><td class="num"></td>
+    <td class="num">{{ issue.previous_balance }}</td>
+  </tr>
+  {% for t in issue.transactions %}
+  <tr>
+    <td>{{ t.date }}</td><td>{{ t.desc }}</td>
+    <td class="num">{{ t.money_out }}</td>
+    <td class="num">{{ t.money_in }}</td>
+    <td class="num">{{ t.balance }}</td>
+  </tr>
+  {% endfor %}
+  <tr class="carry">
+    <td></td><td>NEW BALANCE</td><td class="num"></td><td class="num"></td>
+    <td class="num">{{ issue.new_balance }}</td>
+  </tr>
+</table>
+
+<div class="ratebox">
+  <h3>Interest (variable) you currently pay us on overdrawn balances</h3>
+  <p>Within an arranged overdraft limit:
+  <span class="rates">{{ issue.ovd_nar }}% NAR &middot; {{ issue.ovd_ear }}% EAR</span><br>
+  Without an arranged limit, we simply refuse or return payments &mdash; we do
+  not charge unarranged overdraft interest on this account.</p>
+</div>
+
+<div class="ratebox">
+  <h3>Interest (variable) we currently pay you on your credit balance</h3>
+  <p><span class="rates">0.00% AER</span> &mdash; this account does not pay
+  credit interest. Our savings accounts are at ferrandbank.example/savings.</p>
+</div>
+
+<div class="ratebox">
+  <h3>Understanding the jargon</h3>
+  <p>EAR (Effective Annual Rate) is the cost of an overdraft stated as a
+  yearly rate that takes account of compounding, but not fees. NAR (Nominal
+  Annual Rate) is the simple yearly rate before compounding. AER (Annual
+  Equivalent Rate) shows what a savings rate would be if interest were paid
+  and compounded once each year. Overdraft interest is worked out daily on
+  the amount you are overdrawn and charged monthly.</p>
+</div>
+
+<div class="panel-grid">
+  <div class="panel">
+    <h3>How to contact us</h3>
+    <p>Call 020 7946 0552 (24 hours), message us in the Ferrand Mobile app,
+    or write to Ferrand Bank plc, 12 Cordwainer Square, London EC2Y 8LH.
+    We accept relay calls.</p>
+  </div>
+  <div class="panel">
+    <h3>How your money is protected</h3>
+    <p>Your eligible deposits at Ferrand Bank are protected up to &pound;85,000
+    per person by the UK deposit guarantee scheme. For further information
+    see the scheme information sheet at ferrandbank.example/protection.</p>
+  </div>
+</div>
+
+<div class="small-print">
+  <p><strong>Check your statement.</strong> Please look through the entries
+  and tell us as soon as possible if anything looks wrong or unfamiliar.
+  Prompt notice protects your rights if a payment was unauthorised.</p>
+  <p><strong>If you have a complaint</strong>, contact us first and we will
+  do our best to put things right. If you are unhappy with our final
+  response, you can refer your complaint free of charge to the statutory
+  ombudsman for financial services.</p>
+  <p><strong>Direct Debit guarantee.</strong> If an error is made in the
+  payment of a Direct Debit by us or the organisation collecting it, you are
+  entitled to a full and immediate refund from your branch or us.</p>
+  <p><strong>Moving or changing your details?</strong> Tell us straight away
+  so statements and important notices reach you.</p>
+</div>
+
+<div class="access-banner">
+  For a Braille, large print or audio version of your statement, call
+  020 7946 0552 or ask in the app.
+</div>
+
+</body>
+</html>
