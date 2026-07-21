@@ -46,6 +46,19 @@ ln -s ../../eval/generate/hooks/pre-commit .git/hooks/pre-commit
 Matching is case-insensitive and separator-normalised (`00-00-63` ≡
 `000063`). The check cannot run in CI — the denylist is local by design.
 
+## Machine dependencies
+
+Rendering needs two Homebrew packages and a library path for WeasyPrint's
+native libraries:
+
+```sh
+brew install pango poppler         # pango/glib for WeasyPrint, pdftoppm for scan-ify
+export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
+```
+
+Fonts are vendored in each corpus spec (`spec/templates/fonts/`, Liberation
+family, SIL OFL) — rendering never depends on system fonts.
+
 ## Development
 
 `eval/generate` follows the house Python style: uv-managed, ruff, pyright
