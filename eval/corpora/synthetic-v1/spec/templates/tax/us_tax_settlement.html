@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Tax-equalization settlement letter + calculation pack from the same
+     preparer firm as the return binder: branded letter with balance-due
+     mini-table, full-page cash flow summary, and one hypothetical pro
+     forma page with ACTUAL/HYPOTHETICAL columns and a vertical
+     "DO NOT FILE" margin watermark. */
+  body { page: us-letter; }
+  html { font-size: 8.5pt; }
+  .brandbar { background: #0f4c5c; color: #fff; padding: 1.6mm 3mm;
+              display: flex; justify-content: space-between;
+              font-size: 8pt; margin-bottom: 5mm; }
+  .brandbar .fm { font-weight: bold; letter-spacing: 0.6pt; }
+  h1.ttl { text-align: center; text-decoration: underline; font-size: 12pt;
+           margin: 5mm 0; }
+  table.mini { border-collapse: collapse; margin: 4mm auto; width: 120mm;
+               font-size: 8.5pt; }
+  table.mini td { border: 0.5pt solid #333; padding: 1.8mm 2.5mm; }
+  table.mini td.amt { text-align: right; font-family: "Doc Mono", monospace;
+                      width: 32mm; }
+  table.mini tr.net td { font-weight: bold; background: #e8eef0; }
+  table.cash { width: 100%; border-collapse: collapse; font-size: 7.6pt; }
+  table.cash th { background: #0f4c5c; color: #fff; padding: 1.4mm 2mm;
+                  font-size: 7.2pt; }
+  table.cash td { border: 0.35pt solid #666; padding: 1.2mm 2mm; }
+  table.cash td.amt { text-align: right; font-family: "Doc Mono", monospace; }
+  table.cash tr.grp td { background: #dfe7ea; font-weight: bold; }
+  table.cash tr.tot td { font-weight: bold; border-top: 1pt solid #000; }
+  .pagewrap { position: relative; }
+  .vwm { position: absolute; right: -11mm; top: 2mm; width: 3.4mm;
+         font-family: "Doc Mono", monospace; font-size: 6.6pt;
+         line-height: 1.28; color: #777; word-break: break-all;
+         text-align: center; }
+  table.pf { width: 100%; border-collapse: collapse; font-size: 7.4pt; }
+  table.pf td { border: 0.35pt solid #444; padding: 0.8mm 1.2mm; }
+  table.pf td.ln { width: 8mm; font-weight: bold; text-align: center; }
+  table.pf td.amt { width: 26mm; text-align: right;
+                    font-family: "Doc Mono", monospace; }
+  table.pf tr.hd td { background: #efefef; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ issue.efile_control }} &nbsp; {{ person.full_name | upper }} &nbsp;
+  {{ issue.software_code }} &nbsp;&middot;&nbsp; {{ issue.firm.name }} &middot;
+  Tax equalization services for {{ employers.us_former.name }}
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="brandbar"><span class="fm">{{ issue.firm.name }}</span>
+  <span>{{ issue.firm.phone }} &middot; {{ issue.firm.email }}</span></div>
+
+<p>{{ issue.letter_date }}</p>
+<div class="addr-window">
+  {{ person.full_name }}<br>
+  {{ addresses.uk_current.line1 }}<br>
+  {{ addresses.uk_current.line2 }}<br>
+  {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}<br>
+  United Kingdom
+</div>
+
+<h1 class="ttl">{{ employers.us_former.name }} &mdash; {{ issue.tax_year }}
+Tax Settlement Letter</h1>
+
+<p>Dear {{ person.short_name }},</p>
+{% for para in issue.intro_paragraphs %}
+<p>{{ para }}</p>
+{% endfor %}
+
+<table class="mini">
+  {% for row in issue.settlement_rows %}
+  <tr class="{{ 'net' if loop.last else '' }}">
+    <td>{{ row.label }}</td><td class="amt">{{ row.amount }}</td></tr>
+  {% endfor %}
+</table>
+
+{% for para in issue.outro_paragraphs %}
+<p>{{ para }}</p>
+{% endfor %}
+
+<p style="margin-top: 6mm">Yours sincerely,</p>
+<p style="font-family: 'Doc Serif'; font-style: italic; font-size: 11pt">
+  {{ supporting_cast.accountant }}</p>
+<p>{{ supporting_cast.accountant }}, Partner &mdash; Private Client &amp;
+Expatriate Tax<br>{{ issue.firm.name }}</p>
+
+<div class="page-break"></div>
+
+<h2>Cash Flow Summary &mdash; tax year {{ issue.tax_year }}</h2>
+<table class="cash">
+  <tr><th style="text-align:left">Item</th><th>Who Paid: Employee</th>
+      <th>Who Paid: Company</th><th>Total Tax</th></tr>
+  {% for row in issue.cashflow_rows %}
+  <tr class="{{ row.style | default('') }}">
+    <td>{{ row.label }}</td>
+    <td class="amt">{{ row.employee }}</td>
+    <td class="amt">{{ row.company }}</td>
+    <td class="amt">{{ row.total }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="panel" style="margin-top: 5mm">
+  <h3>Hypothetical tax &mdash; how your settlement is calculated</h3>
+  {% for para in issue.hypo_explainer %}
+  <p>{{ para }}</p>
+  {% endfor %}
+</div>
+
+<div class="page-break"></div>
+
+<div class="pagewrap">
+  <div class="vwm">{{ issue.vwm_text }}</div>
+  <h2>Pro forma &mdash; Form 1040 comparison</h2>
+  <p style="font-size: 7.2pt">Amounts in whole US dollars. The HYPOTHETICAL
+  column restates your position as if you had remained in your home-country
+  payroll with no assignment-related items.</p>
+  <table class="pf">
+    <tr class="hd"><td class="ln"></td><td>Line item</td>
+      <td class="amt">ACTUAL</td><td class="amt">HYPOTHETICAL</td></tr>
+    {% for row in issue.proforma_rows %}
+    <tr class="{{ row.style | default('') }}">
+      <td class="ln">{{ row.n | default("") }}</td><td>{{ row.label }}</td>
+      <td class="amt">{{ row.actual }}</td>
+      <td class="amt">{{ row.hypo }}</td></tr>
+    {% endfor %}
+  </table>
+  <p style="font-size: 6.6pt; color: #444; margin-top: 2mm">
+  {{ issue.proforma_note }}</p>
+</div>
+
+</body>
+</html>

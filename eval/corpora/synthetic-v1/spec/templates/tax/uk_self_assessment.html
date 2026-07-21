@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Self Assessment paper-return copy: teal two-column numbered-box pages,
+     SA102 employment page in the pale-pink variant, diagonal "COPY — DO NOT
+     FILE" watermark on every page. Public form format (SA100/SA102/SA106);
+     the issuing authority is referenced generically. */
+  html { font-size: 8pt; }
+  h1.sa { color: #007a70; font-size: 15pt; margin: 0 0 1mm; }
+  h2.sa { color: #007a70; font-size: 11pt; border-bottom: 1.4pt solid #007a70;
+          padding-bottom: 0.8mm; margin: 4mm 0 2.5mm; }
+  .watermark {
+    position: fixed; top: 118mm; left: 4mm; width: 180mm;
+    transform: rotate(-28deg); transform-origin: center;
+    font-size: 26pt; font-weight: bold; color: #9aa8a6; opacity: 0.35;
+    text-align: center; letter-spacing: 2pt; z-index: 10;
+  }
+  .boxgrid { display: flex; flex-wrap: wrap; gap: 2.6mm; }
+  .sabox { width: 84mm; background: #e2f0ee; padding: 1.6mm 2mm 2mm;
+           border-radius: 1mm; }
+  .sabox.pink { background: #f7e4e8; }
+  .sabox.full { width: 100%; }
+  .sabox .tab { display: inline-block; background: #007a70; color: #fff;
+                font-size: 7pt; font-weight: bold; padding: 0.3mm 1.2mm;
+                margin-right: 1.5mm; border-radius: 0.6mm; }
+  .sabox.pink .tab { background: #ad3a58; }
+  .sabox .lbl { font-weight: bold; font-size: 7.4pt; }
+  .sabox .input { background: #fff; border: 0.4pt solid #7ba39f;
+                  min-height: 5.4mm; margin-top: 1mm; padding: 0.8mm 1.5mm;
+                  font-family: "Doc Mono", monospace; font-size: 8.5pt; }
+  .sabox.pink .input { border-color: #c48ba0; }
+  .sabox .hint { font-size: 6.6pt; color: #445; margin-top: 0.6mm; }
+  .deadbox { border: 1.2pt solid #b02a2a; padding: 2mm 3mm; margin: 3mm 0;
+             font-size: 7.6pt; }
+  .deadbox h3 { color: #b02a2a; margin: 0 0 1mm; }
+  .ticks { border: 0.5pt solid #333; width: 70mm; min-height: 20mm;
+           padding: 2mm; position: relative; font-size: 8.5pt; }
+  .mrc { font-family: "Doc Mono", monospace; font-size: 6.6pt; color: #555;
+         margin-top: 4mm; }
+  .pgcode { text-align: right; font-size: 7pt; color: #00655f;
+            font-weight: bold; margin-bottom: 1mm; }
+  .yn { display: inline-block; border: 0.5pt solid #333; width: 4.6mm;
+        height: 4.6mm; text-align: center; font-weight: bold;
+        font-family: "Doc Mono", monospace; margin-left: 1.2mm;
+        vertical-align: middle; background: #fff; }
+</style>
+</head>
+<body>
+
+<div class="watermark">Copy only &mdash; do not file</div>
+
+<div class="page-footer">
+  {{ issue.form_footer }} &middot; Taxpayer copy retained for records &middot;
+  UTR {{ person.utr }}
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<!-- ============ Page TR 1: front page ============ -->
+<div class="pgcode">Page TR 1</div>
+<h1 class="sa">Tax Return {{ issue.return_year }}</h1>
+<p style="font-size: 9pt"><strong>Tax year 6 April {{ issue.year_start }} to
+5 April {{ issue.year_end }}</strong> &middot; Form SA100 (copy for your own
+records &mdash; this printout must not be submitted on paper)</p>
+
+<div class="two-col" style="margin-top: 4mm">
+  <div class="ticks">
+    <span style="position:absolute; top:-1mm; left:-1mm">&#8988;</span>
+    <span style="position:absolute; top:-1mm; right:-1mm">&#8989;</span>
+    <span style="position:absolute; bottom:-1mm; left:-1mm">&#8990;</span>
+    <span style="position:absolute; bottom:-1mm; right:-1mm">&#8991;</span>
+    {{ person.title }} {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Unique Taxpayer Reference (UTR)</td>
+          <td class="value">{{ person.utr }}</td></tr>
+      <tr><td class="label">National Insurance number</td>
+          <td class="value">{{ person.ni_number }}</td></tr>
+      <tr><td class="label">Employer reference</td>
+          <td class="value">{{ issue.paye_ref }}</td></tr>
+      <tr><td class="label">Issue date</td>
+          <td class="value">{{ issue.issue_date }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="deadbox">
+  <h3>Deadlines</h3>
+  <p>We must receive your tax return by these dates: if you are using a paper
+  return &mdash; by <strong>31 October {{ issue.year_end }}</strong>; if you are
+  filing online &mdash; by <strong>31 January {{ issue.online_deadline }}</strong>.
+  You will be charged a &pound;100 penalty if your return is late. Pay any tax
+  you owe by 31 January {{ issue.online_deadline }}.</p>
+</div>
+
+<h2 class="sa">Your personal details</h2>
+<div class="boxgrid">
+  <div class="sabox"><span class="tab">1</span><span class="lbl">Your date of
+    birth</span><div class="input">{{ person.date_of_birth[8:] }}
+    {{ person.date_of_birth[5:7] }} {{ person.date_of_birth[:4] }}</div></div>
+  <div class="sabox"><span class="tab">2</span><span class="lbl">Your name and
+    address (if different from above, and the date of the change)</span>
+    <div class="input"></div></div>
+  <div class="sabox"><span class="tab">3</span><span class="lbl">Your phone
+    number</span><div class="input">{{ person.phone_uk_mobile }}</div></div>
+  <div class="sabox"><span class="tab">4</span><span class="lbl">Your National
+    Insurance number</span><div class="input">{{ person.ni_number }}</div></div>
+</div>
+<p class="mrc">{{ issue.machine_codes[0] }}</p>
+
+<div class="page-break"></div>
+
+<!-- ============ Page TR 2: what makes up your tax return ============ -->
+<div class="pgcode">Page TR 2</div>
+<h2 class="sa">What makes up your tax return</h2>
+<div class="boxgrid">
+  <div class="sabox full"><span class="tab">1</span><span class="lbl">Employment
+    &mdash; were you an employee, director, office holder or agency worker in the
+    year to 5 April {{ issue.year_end }}?</span>
+    <span class="hint">Fill in a separate Employment page for each employment.</span>
+    <div class="input">Yes X &nbsp; Number of employments: 1</div></div>
+  <div class="sabox"><span class="tab">2</span><span class="lbl">Self-employment</span>
+    <div class="input">No X</div></div>
+  <div class="sabox"><span class="tab">3</span><span class="lbl">Partnership</span>
+    <div class="input">No X</div></div>
+  <div class="sabox"><span class="tab">4</span><span class="lbl">UK property</span>
+    <div class="input">No X</div></div>
+  <div class="sabox"><span class="tab">5</span><span class="lbl">Foreign
+    &mdash; if you received any foreign income, fill in the Foreign pages</span>
+    <div class="input">{{ issue.foreign_yesno }}</div></div>
+  <div class="sabox"><span class="tab">6</span><span class="lbl">Trusts etc.</span>
+    <div class="input">No X</div></div>
+  <div class="sabox"><span class="tab">7</span><span class="lbl">Capital Gains
+    Tax summary</span><div class="input">No X</div></div>
+  <div class="sabox full"><span class="tab">8</span><span class="lbl">Residence,
+    remittance basis etc. &mdash; were you, for all or part of the year, not
+    resident in the UK?</span>
+    <div class="input">{{ issue.residence_yesno }}</div></div>
+</div>
+<p class="mrc">{{ issue.machine_codes[1] }}</p>
+
+<div class="page-break"></div>
+
+<!-- ============ Page TR 3: income ============ -->
+<div class="pgcode">Page TR 3</div>
+<h2 class="sa">Income &mdash; interest and dividends from UK banks and building societies</h2>
+<div class="boxgrid">
+  <div class="sabox"><span class="tab">1</span><span class="lbl">Taxed UK
+    interest &mdash; the net amount after tax has been taken off</span>
+    <div class="input"></div></div>
+  <div class="sabox"><span class="tab">2</span><span class="lbl">Untaxed UK
+    interest &mdash; amounts which have not been taxed</span>
+    <span class="hint">Include interest shown on certificates of interest from
+    your bank. Copy the total from your {{ banks.uk_current_account.institution }}
+    certificate of interest.</span>
+    <div class="input">&pound; {{ issue.untaxed_interest }}</div></div>
+  <div class="sabox"><span class="tab">3</span><span class="lbl">Untaxed foreign
+    interest (up to &pound;2,000)</span>
+    <span class="hint">See box 5 on page TR 2 and the Foreign page notes.</span>
+    <div class="input">&pound; {{ issue.foreign_interest }}</div></div>
+  <div class="sabox"><span class="tab">4</span><span class="lbl">Dividends from
+    UK companies</span><div class="input"></div></div>
+  <div class="sabox"><span class="tab">5</span><span class="lbl">Other dividends</span>
+    <div class="input"></div></div>
+  <div class="sabox"><span class="tab">6</span><span class="lbl">Foreign
+    dividends (up to &pound;2,000)</span><div class="input"></div></div>
+</div>
+
+<h2 class="sa">Student Loan and Postgraduate Loan repayments</h2>
+<div class="boxgrid">
+  <div class="sabox"><span class="tab">1</span><span class="lbl">If you have
+    received notification that repayment of an Income Contingent Student Loan
+    began before 6 April {{ issue.year_end }}, put X in the box</span>
+    <div class="input">X</div></div>
+  <div class="sabox"><span class="tab">2</span><span class="lbl">Amount of
+    Student Loan repayments deducted by your employer (Plan 1)</span>
+    <div class="input">&pound; {{ issue.student_loan }}</div></div>
+</div>
+<p class="mrc">{{ issue.machine_codes[2] }}</p>
+
+<div class="page-break"></div>
+
+<!-- ============ Page TR 6: finishing ============ -->
+<div class="pgcode">Page TR 6</div>
+<h2 class="sa">Finishing your tax return</h2>
+<div class="boxgrid">
+  <div class="sabox"><span class="tab">1</span><span class="lbl">If you have
+    paid too much tax, we will repay you. Should the repayment be sent to your
+    bank or building society account?</span>
+    <div class="input">Yes X</div></div>
+  <div class="sabox"><span class="tab">2</span><span class="lbl">Name of bank
+    or building society</span>
+    <div class="input">{{ banks.uk_current_account.institution }}</div></div>
+  <div class="sabox"><span class="tab">3</span><span class="lbl">Branch sort
+    code</span>
+    <div class="input">{{ banks.uk_current_account.sort_code }}</div></div>
+  <div class="sabox"><span class="tab">4</span><span class="lbl">Account
+    number</span>
+    <div class="input">{{ banks.uk_current_account.account_number }}</div></div>
+  <div class="sabox full"><span class="tab">5</span><span class="lbl">Any other
+    information &mdash; please give any other information in this space</span>
+    <div class="input" style="min-height: 16mm">{{ issue.other_information }}</div></div>
+</div>
+
+<h2 class="sa">Signing your form and sending it back</h2>
+<div class="boxgrid">
+  <div class="sabox full"><span class="tab">22</span><span class="lbl">Declaration
+    &mdash; I declare that the information I have given on this tax return and any
+    supplementary pages is correct and complete to the best of my knowledge and
+    belief. I understand that I may have to pay financial penalties and face
+    prosecution if I give false information.</span>
+    <div class="input">Signature: &nbsp; {{ person.full_name.split(" ")[0][0] }}.
+    {{ person.full_name.split(" ")[-1] }} &nbsp;&nbsp;&nbsp;
+    Date: {{ issue.signature_date }}</div></div>
+</div>
+<p class="mrc">{{ issue.machine_codes[3] }}</p>
+
+<div class="page-break"></div>
+
+<!-- ============ Page E 1: SA102 Employment (pink variant) ============ -->
+<div class="pgcode" style="color: #ad3a58">Page E 1 &middot; SA102 Employment</div>
+<h2 class="sa" style="color: #ad3a58; border-color: #ad3a58">Employment</h2>
+<p style="font-size: 7.6pt">Fill in these boxes from your P60 (or P45). Complete
+a separate Employment page for each employment held in the year to
+5 April {{ issue.year_end }}.</p>
+<div class="boxgrid">
+  <div class="sabox pink"><span class="tab">1</span><span class="lbl">Pay from
+    this employment &mdash; the total from your P60 or P45</span>
+    <div class="input">&pound; {{ issue.employment_pay }}</div></div>
+  <div class="sabox pink"><span class="tab">2</span><span class="lbl">UK tax
+    taken off pay in box 1</span>
+    <div class="input">&pound; {{ issue.employment_tax }}</div></div>
+  <div class="sabox pink"><span class="tab">3</span><span class="lbl">Tips and
+    other payments not on your P60</span><div class="input"></div></div>
+  <div class="sabox pink"><span class="tab">4</span><span class="lbl">PAYE tax
+    reference of your employer</span>
+    <div class="input">{{ issue.paye_ref }}</div></div>
+  <div class="sabox pink"><span class="tab">5</span><span class="lbl">Your
+    employer's name</span>
+    <div class="input">{{ employers.uk_current.name }}</div></div>
+  <div class="sabox pink"><span class="tab">6</span><span class="lbl">If you
+    were a company director, put X in the box</span><div class="input"></div></div>
+  <div class="sabox pink"><span class="tab">7</span><span class="lbl">Benefits
+    from your employment &mdash; use your form P11D</span>
+    <div class="input"></div></div>
+  <div class="sabox pink"><span class="tab">8</span><span class="lbl">Employment
+    expenses &mdash; professional fees and subscriptions</span>
+    <div class="input"></div></div>
+</div>
+<p class="mrc">{{ issue.machine_codes[4] }}</p>
+
+<div class="page-break"></div>
+
+<!-- ============ Page F 2: SA106 Foreign ============ -->
+<div class="pgcode">Page F 2 &middot; SA106 Foreign</div>
+<h2 class="sa">Foreign income &mdash; interest and other savings income</h2>
+<p style="font-size: 7.6pt">Give details of interest arising outside the UK.
+Amounts are shown in sterling, converted at the exchange rate on the date the
+income arose.</p>
+<div class="boxgrid">
+  <div class="sabox full"><span class="lbl">Country: United States &mdash;
+    {{ banks.us_checking.institution }} (accounts ending
+    {{ banks.us_checking.account_number[-4:] }} and
+    {{ banks.us_savings.account_number[-4:] }})</span>
+    <span class="hint">{{ issue.foreign_note }}</span>
+    <div class="input">Amount of income arising: &pound; {{ issue.foreign_interest }}
+    &nbsp;&nbsp; Foreign tax taken off: &pound; {{ issue.foreign_tax_taken }}</div></div>
+  <div class="sabox"><span class="tab">1</span><span class="lbl">Foreign tax
+    credit relief claimed</span>
+    <div class="input">{{ issue.ftcr_yesno }}</div></div>
+  <div class="sabox"><span class="tab">2</span><span class="lbl">Total foreign
+    income on which relief is claimed</span>
+    <div class="input">&pound; {{ issue.foreign_interest }}</div></div>
+</div>
+<p class="mrc">{{ issue.machine_codes[5] }}</p>
+
+<div class="page-break"></div>
+
+<!-- ============ Page TC 1: tax calculation summary ============ -->
+<div class="pgcode">Page TC 1 &middot; SA110 Tax calculation summary</div>
+<h2 class="sa">Tax calculation summary</h2>
+<div class="boxgrid">
+  <div class="sabox"><span class="tab">1</span><span class="lbl">Total tax and
+    Student Loan repayment due for {{ issue.return_year_span }}</span>
+    <div class="input">&pound; {{ issue.calc_total_due }}</div></div>
+  <div class="sabox"><span class="tab">2</span><span class="lbl">Tax already
+    deducted at source (PAYE)</span>
+    <div class="input">&pound; {{ issue.calc_paye_deducted }}</div></div>
+  <div class="sabox"><span class="tab">3</span><span class="lbl">Balancing
+    payment due / (repayment due to you)</span>
+    <div class="input">&pound; {{ issue.calc_balance }}</div></div>
+  <div class="sabox"><span class="tab">4</span><span class="lbl">First payment
+    on account for the next year (if applicable)</span>
+    <div class="input">{{ issue.calc_poa }}</div></div>
+</div>
+
+<div class="panel" style="background: #e2f0ee; border-color: #007a70">
+  <h3>How the balancing figure was worked out</h3>
+  <table class="summary" style="font-size: 8pt">
+    {% for row in issue.calc_rows %}
+    <tr><td>{{ row.label }}</td><td class="amount">&pound;{{ row.amount }}</td></tr>
+    {% endfor %}
+    <tr class="total"><td>Balancing figure</td>
+        <td class="amount">&pound;{{ issue.calc_balance }}</td></tr>
+  </table>
+</div>
+<p class="mrc">{{ issue.machine_codes[6] }}</p>
+
+</body>
+</html>

@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  @font-face {
+    font-family: "Doc Serif";
+    font-style: italic;
+    src: url("../fonts/LiberationSerif-Italic.ttf");
+  }
+  body { page: us-letter; font-size: 9.5pt; line-height: 1.5; }
+  .sm-head { display: flex; justify-content: space-between; align-items: flex-start; }
+  .sm-logo { font-size: 13pt; font-weight: bold; color: #1f4e33; letter-spacing: 0.5pt; }
+  .sm-logo .rule { display: block; border-top: 2pt solid #1f4e33; width: 28mm; margin-top: 1mm; }
+  .mailer { text-align: center; padding-top: 70mm; min-height: 200mm; }
+  .blankpage { page-break-before: always; min-height: 200mm; }
+  .blankpage .tag { text-align: center; color: #999; font-size: 8pt; padding-top: 95mm; }
+  .boxed-title { border: 1pt solid #1a1a1a; box-shadow: 2mm 2mm 0 #c9d6ce;
+                 margin: 55mm 18mm 0; padding: 12mm 10mm; text-align: center; }
+  .change-page { text-align: center; padding-top: 70mm; }
+  h3.sect { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.5pt;
+            border-bottom: 0.6pt solid #1f4e33; color: #1f4e33;
+            padding-bottom: 0.8mm; margin: 6mm 0 2.5mm; }
+  .hang { display: flex; margin-bottom: 3mm; }
+  .hang .lab { width: 52mm; flex-shrink: 0; font-weight: bold; font-size: 9pt; }
+  .hang .val { flex-grow: 1; }
+  table.matrix { border-collapse: collapse; font-size: 9pt; margin: 2mm 0 3mm; width: 100%; }
+  table.matrix th { background: #dce8e0; border: 0.4pt solid #888; padding: 1.6mm 2.5mm; }
+  table.matrix td { border: 0.4pt solid #999; padding: 1.6mm 2.5mm; }
+  table.toc { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  table.toc td { padding: 1.3mm 0; border-bottom: 0.3pt dotted #999; }
+  table.toc td.pg { text-align: right; width: 14mm; }
+  .head-band { background: #eef4f0; border: 0.4pt solid #9db3a5; font-size: 8pt;
+               padding: 2mm 3mm; margin-bottom: 4mm; display: flex; flex-wrap: wrap; gap: 2mm 6mm; }
+  .head-band .kv { white-space: nowrap; }
+  .head-band .kv strong { color: #1f4e33; }
+  .prov { margin-left: 5mm; margin-bottom: 2.6mm; text-align: justify; }
+  p { text-align: justify; }
+  .officer-sig { display: inline-block; width: 58mm; margin: 8mm 6mm 0; text-align: center; }
+  .officer-sig .script { font-family: "Doc Serif", serif; font-style: italic; font-size: 14pt;
+                         border-bottom: 0.4pt solid #333; padding-bottom: 1mm; }
+  .officer-sig .who { font-size: 8pt; margin-top: 1.5mm; }
+  .privacy { column-count: 2; column-gap: 7mm; font-size: 8pt; }
+  .privacy h4 { text-transform: uppercase; font-size: 8.5pt; margin: 2.5mm 0 1mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Form SM-IDI-2201 (Amended on {{ issue.generation_date }}) &middot;
+  {{ vendor.name }} &middot; Policy {{ vendor.policy_number }}
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<!-- Mailer sheet -->
+<div class="sm-head">
+  <div class="sm-logo">STONECROFT MUTUAL<span class="rule"></span></div>
+  <div style="font-size: 8pt; text-align: right; color: #555;">
+    Head Office: 400 Copperline Avenue, Hartford, CT 06199<br>
+    stonecroftmutual.example &middot; (860) 555-0134
+  </div>
+</div>
+<div class="mailer">
+  {{ person.full_name }}<br>
+  {{ addresses.us_former.line1 }}<br>
+  {{ addresses.us_former.city }}, {{ addresses.us_former.state }} {{ addresses.us_former.zip }}
+</div>
+
+<div class="blankpage"><div class="tag">This page intentionally left blank.</div></div>
+
+<!-- Boxed title page -->
+<div class="page-break"></div>
+<div class="boxed-title">
+  <p style="font-size: 9pt; letter-spacing: 1.5pt; color: #1f4e33;">PREPARED FOR</p>
+  <p style="font-size: 15pt; font-weight: bold;">{{ person.full_name }}</p>
+  <p style="font-size: 12pt; margin-top: 8mm;">Individual Disability Income Insurance Policy</p>
+  <p style="margin-top: 8mm;">Policy Number: <strong>{{ vendor.policy_number }}</strong></p>
+  <p>Underwritten by: Stonecroft Mutual Life Insurance Company</p>
+  <p>Document Generation Date: {{ issue.generation_date }}</p>
+</div>
+
+<div class="blankpage"><div class="tag">This page intentionally left blank.</div></div>
+
+<!-- Cover letter -->
+<div class="page-break"></div>
+<div class="sm-head">
+  <div class="sm-logo">STONECROFT MUTUAL<span class="rule"></span></div>
+  <div style="font-size: 8pt; text-align: right; color: #555;">
+    Your policy is always available online:<br>portal.stonecroftmutual.example
+  </div>
+</div>
+<p style="margin-top: 8mm;">{{ issue.cover_letter_date }}</p>
+<p>{{ person.full_name }}<br>
+{{ addresses.us_former.line1 }}<br>
+{{ addresses.us_former.city }}, {{ addresses.us_former.state }} {{ addresses.us_former.zip }}</p>
+<p>Dear {{ person.full_name }},</p>
+<p>Enclosed is your re-issued individual disability income policy.
+{{ issue.benefit_change_note }}</p>
+<p>Your coverage is issued through the voluntary program arranged by your
+employer, {{ employers.us_former.name }}, and the premium shown in the
+Disability Income Highlights reflects the program discount. Your policy is
+individually owned: if you change employers, you keep this coverage at the
+same premium class, though the program discount may no longer apply.</p>
+<p>To view your policy online, register at
+<strong>portal.stonecroftmutual.example</strong> using your policy number
+and the email address we hold for you, then choose
+<strong>Add a policy</strong>. Questions? Call us at (860) 555-0134,
+Monday to Friday, 8:00 am to 6:00 pm Eastern.</p>
+<p>Thank you for choosing Stonecroft Mutual.</p>
+<p>Policyholder Services<br>
+Policy Number: {{ vendor.policy_number }} &middot; Risk Number:
+{{ issue.risk_number }} &middot; Group: {{ issue.group_ref }}</p>
+
+<!-- Policy change page -->
+<div class="page-break"></div>
+<div class="change-page">
+  <h2 style="letter-spacing: 1pt;">POLICY CHANGE ISSUED {{ issue.generation_date | upper }}</h2>
+  <p style="max-width: 120mm; margin: 6mm auto;">{{ issue.benefit_change_note }}</p>
+</div>
+
+<!-- Policy face page -->
+<div class="page-break"></div>
+<div class="sm-head">
+  <div class="sm-logo">STONECROFT MUTUAL<span class="rule"></span></div>
+</div>
+<h2 style="border-bottom: 1pt solid #1f4e33; padding-bottom: 1mm;">
+Individual Disability Income Insurance &mdash; Non-Cancellable</h2>
+<div class="hang"><div class="lab">Policyholder</div><div class="val">{{ person.full_name }}</div></div>
+<div class="hang"><div class="lab">Policy Number</div><div class="val">{{ vendor.policy_number }}</div></div>
+<div class="hang"><div class="lab">Coverage Effective Date</div><div class="val">{{ issue.effective_date }}</div></div>
+<div class="hang"><div class="lab">Policy Date</div><div class="val">{{ issue.policy_date }}</div></div>
+
+<p style="margin-top: 5mm;"><strong>NON-CANCELLABLE AND GUARANTEED
+RENEWABLE TO THE GUARANTEE DATE.</strong> Until the Guarantee Date of
+{{ issue.guarantee_date }}, We cannot cancel this policy, restrict its
+provisions, or raise its premium, as long as premiums are paid on time.</p>
+<p><strong>CONDITIONALLY RENEWABLE AFTER THE GUARANTEE DATE.</strong> After
+the Guarantee Date, You may renew this policy annually while You are
+gainfully employed full time, at the premium rates then in force for Your
+class.</p>
+<p><strong>THIRTY-DAY RIGHT TO EXAMINE.</strong> If You are not satisfied
+with this policy, return it to Us or to the agent who sold it within 30
+days of receipt. We will refund any premium paid, and the policy will be
+void from its start.</p>
+<p><strong>PRE-EXISTING CONDITION LIMITATION.</strong> Benefits are not
+payable for a Disability caused by a Pre-Existing Condition, as defined
+inside, that begins during the first 24 months after the Coverage
+Effective Date unless the condition was disclosed on the application and
+not excluded by name or specific description.</p>
+<p style="margin-top: 8mm; text-align: center;">Signed for Stonecroft
+Mutual Life Insurance Company:</p>
+<div style="text-align: center;">
+  <div class="officer-sig"><div class="script">Beatrice Kolhammer</div>
+    <div class="who">Beatrice Kolhammer, President</div></div>
+  <div class="officer-sig"><div class="script">Franklin Odewale</div>
+    <div class="who">Franklin Odewale, Secretary</div></div>
+</div>
+
+<!-- ToC -->
+<div class="page-break"></div>
+<h3 class="sect">Table of Contents</h3>
+<table class="toc">
+  <tr><td>Renewal Provisions</td><td class="pg">3</td></tr>
+  <tr><td>Disability Income Highlights</td><td class="pg">5</td></tr>
+  <tr><td>Disability Income Details</td><td class="pg">7</td></tr>
+  <tr><td>Exclusions and Limitations</td><td class="pg">9</td></tr>
+  <tr><td>Other Features</td><td class="pg">10</td></tr>
+  <tr><td>End of Coverage</td><td class="pg">11</td></tr>
+  <tr><td>Premium and Reinstatement</td><td class="pg">11</td></tr>
+  <tr><td>Claim Provisions</td><td class="pg">12</td></tr>
+  <tr><td>General Provisions</td><td class="pg">13</td></tr>
+  <tr><td>Glossary</td><td class="pg">14</td></tr>
+</table>
+<p style="font-size: 8pt; color: #555;">Throughout this policy,
+&ldquo;You&rdquo; and &ldquo;Your&rdquo; mean the Insured named in the
+Highlights; &ldquo;We&rdquo;, &ldquo;Us&rdquo; and &ldquo;Our&rdquo; mean
+Stonecroft Mutual Life Insurance Company. Capitalized terms are defined in
+the Glossary.</p>
+
+<!-- Highlights -->
+<div class="page-break"></div>
+<div class="head-band">
+  <span class="kv"><strong>Insured:</strong> {{ person.full_name }}</span>
+  <span class="kv"><strong>Owner:</strong> {{ person.full_name }}</span>
+  <span class="kv"><strong>Policy Number:</strong> {{ vendor.policy_number }}</span>
+  <span class="kv"><strong>Occupational Class:</strong> {{ issue.occupational_class }}</span>
+  <span class="kv"><strong>Policy Fee:</strong> {{ issue.policy_fee }}</span>
+  <span class="kv"><strong>Guarantee Date:</strong> {{ issue.guarantee_date }}</span>
+</div>
+<h3 class="sect">Disability Income Highlights</h3>
+
+<div class="hang"><div class="lab">Summary of Premium</div>
+  <div class="val">
+    Annual Premium for Disability Benefits: <strong>{{ issue.premium_disability }}</strong><br>
+    Annual Premium for Additional Benefits (riders): <strong>{{ issue.premium_additional }}</strong><br>
+    Total Annual Premium: <strong>{{ issue.premium_total }}</strong><br>
+    Discounted Monthly Premium (employer program, list bill):
+    <strong>{{ issue.premium_monthly }}</strong><br>
+    Other Premium Paying Methods: semi-annual {{ issue.premium_semiannual }};
+    quarterly {{ issue.premium_quarterly }}.
+  </div>
+</div>
+
+<div class="hang"><div class="lab">Elimination Period</div>
+  <div class="val">{{ issue.elimination_period }}. The Elimination Period is
+  the number of days of Disability that must pass before benefits begin to
+  accrue. Days of Disability need not be consecutive: separate periods are
+  added together if they result from the same or a related cause and each
+  begins within 12 months of the last.</div>
+</div>
+
+<div class="hang"><div class="lab">Monthly Benefit Amount</div>
+  <div class="val"><strong>{{ issue.monthly_benefit }}</strong> per month
+  while You are Totally Disabled after the Elimination Period. For a period
+  of Residual Disability, the benefit is the Monthly Benefit Amount
+  multiplied by the percentage of Prior Income lost, subject to the
+  provisions in Disability Income Details.</div>
+</div>
+
+<div class="hang"><div class="lab">Maximum Period of Payment</div>
+  <div class="val">
+    The Maximum Period of Payment depends on Your age when Disability
+    begins, as follows:
+    <table class="matrix">
+      <tr><th colspan="2" style="text-align: center;">Benefit Duration Schedule</th></tr>
+      <tr><th style="width: 40%;">Age at Disability</th>
+          <th>Maximum Period of Payment</th></tr>
+      {% for row in issue.benefit_matrix %}
+      <tr><td>{{ row.age }}</td><td>{{ row.period }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="hang"><div class="lab">Additional Benefits</div>
+  <div class="val">
+    {% for r in issue.riders %}
+    <p style="margin-bottom: 2mm;"><strong>{{ r.name }}</strong> &mdash;
+    annual premium {{ r.premium }}.<br>{{ r.text }}</p>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Details -->
+<div class="page-break"></div>
+<div class="head-band">
+  <span class="kv"><strong>Insured:</strong> {{ person.full_name }}</span>
+  <span class="kv"><strong>Policy Number:</strong> {{ vendor.policy_number }}</span>
+  <span class="kv"><strong>Form:</strong> SM-IDI-2201</span>
+</div>
+<h3 class="sect">Disability Income Details</h3>
+<p><strong>Total Disability</strong> means that, solely because of Injury or
+Sickness, You are unable to perform the material and substantial duties of
+Your Occupation, and You are not working in any other occupation. We will
+treat You as Totally Disabled if You have a loss of the use of two limbs,
+or total loss of sight, speech or hearing, even if You are able to work.</p>
+<p><strong>Residual Disability</strong> means that, solely because of Injury
+or Sickness, You are working in Your Occupation or another occupation but
+Your Income is reduced by at least 20% of Prior Income. A Residual
+Disability benefit is payable after the Elimination Period in proportion to
+the percentage of Prior Income lost; where the loss exceeds 75%, We pay the
+full Monthly Benefit Amount.</p>
+<p><strong>Your Occupation</strong> means the occupation, or occupations if
+more than one, in which You are regularly engaged at the time Disability
+begins. If You are working in a professional or technical specialty, Your
+Occupation means that specialty.</p>
+<p><strong>Successive Periods of Disability</strong> resulting from the same
+or a related cause are treated as one continuous period unless separated by
+Your return to full-time work for at least 6 consecutive months.</p>
+<p><strong>Waiver of Premium.</strong> After You have been Disabled for 90
+consecutive days, We will waive premiums that become due while Disability
+continues, and refund premiums paid for that 90-day period. Premium
+payments resume on the first premium due date after Disability ends.</p>
+<p><strong>Rehabilitation Benefit.</strong> If You participate in a
+vocational rehabilitation program approved by Us in writing, We will pay
+the reasonable costs of the program not covered by other insurance or
+public funding, in addition to any other benefit payable.</p>
+<p><strong>Presumptive Recovery.</strong> Benefits end on the earliest of
+the date You are no longer Disabled, the end of the Maximum Period of
+Payment, and the date You fail to provide required proof of continuing
+Disability.</p>
+
+<h3 class="sect">Exclusions and Limitations</h3>
+<p class="prov"><strong>1.</strong> We will not pay benefits for a
+Disability caused by, contributed to by, or resulting from war or an act of
+war, declared or undeclared, or Your active participation in a riot.</p>
+<p class="prov"><strong>2.</strong> We will not pay benefits for a
+Disability caused by an intentionally self-inflicted injury.</p>
+<p class="prov"><strong>3.</strong> We will not pay benefits for any period
+of Disability during which You are incarcerated.</p>
+<p class="prov"><strong>4.</strong> We will not pay benefits for a
+Disability caused by Your commission of, or attempt to commit, a felony,
+or Your engagement in an illegal occupation.</p>
+<p class="prov"><strong>5.</strong> We will not pay benefits for a
+Disability resulting from cosmetic surgery, except that reconstructive
+surgery following a covered Sickness or Injury, or surgery to donate an
+organ, is treated as a Sickness.</p>
+<p class="prov"><strong>6.</strong> Benefits for a Disability due to Mental
+Disorder or Substance Abuse are limited to a combined lifetime maximum of
+24 months of benefit payments, except while You are confined in a hospital
+or institution licensed to treat the condition.</p>
+<p class="prov"><strong>7.</strong> The Pre-Existing Condition Limitation
+on the policy face page applies to conditions, whether diagnosed or
+undiagnosed, for which You received advice or treatment, or experienced
+symptoms that would cause an ordinarily prudent person to seek advice or
+treatment, within 24 months before the Coverage Effective Date.</p>
+<p class="prov"><strong>8.</strong> Benefits are not payable for any period
+of Disability during which You are not under the Regular Care of a
+Physician appropriate for the disabling condition, unless We agree in
+writing that continued care would be of no benefit.</p>
+
+<h3 class="sect">Other Features</h3>
+<p><strong>Transplant and Cosmetic Surgery.</strong> If You are Disabled
+because You donate an organ, or because of complications of pregnancy, the
+Disability is treated as a Sickness under this policy.</p>
+<p><strong>Concurrent Disability.</strong> A Disability caused by more than
+one Injury or Sickness, or by both, is treated as one Disability; benefits
+are not doubled.</p>
+<p><strong>Suspension During Unemployment.</strong> If You are unemployed
+for at least 60 consecutive days, You may suspend this policy for up to 12
+months. No premiums are due and no benefits are payable during suspension;
+coverage resumes without evidence of insurability when premium payments
+restart.</p>
+
+<!-- End of coverage etc. -->
+<div class="page-break"></div>
+<div class="head-band">
+  <span class="kv"><strong>Insured:</strong> {{ person.full_name }}</span>
+  <span class="kv"><strong>Policy Number:</strong> {{ vendor.policy_number }}</span>
+  <span class="kv"><strong>Form:</strong> SM-IDI-2201</span>
+</div>
+<h3 class="sect">End of Coverage</h3>
+<p>This policy ends on the earliest of: the date You ask Us in writing to
+end it; the Guarantee Date, if You do not renew; the end of the grace
+period after an unpaid premium; and Your death. Ending of the policy does
+not affect a claim for a Disability that begins while the policy is in
+force.</p>
+
+<h3 class="sect">Premium and Reinstatement</h3>
+<p><strong>Grace Period.</strong> A grace period of 31 days is allowed for
+each premium after the first. The policy stays in force during the grace
+period. If the premium is not paid by the end of the grace period, the
+policy lapses as of the due date.</p>
+<p><strong>Reinstatement.</strong> If the policy lapses, it may be
+reinstated within one year on written application and payment of all
+overdue premiums with interest at 6% per year. We may require evidence of
+insurability. A reinstated policy covers only Sickness that first appears
+more than 10 days after reinstatement, and Injury sustained after
+reinstatement.</p>
+<p><strong>Premium Refund at Death.</strong> We will refund the part of any
+premium paid for a period beyond the date of Your death.</p>
+
+<h3 class="sect">Claim Provisions</h3>
+<p><strong>Notice of Claim.</strong> Written notice of claim must be given
+to Us within 30 days after Disability begins, or as soon as reasonably
+possible. Notice given by or for You to Our head office, or to Our
+authorized agent, with information sufficient to identify You, is notice to
+Us.</p>
+<p><strong>Claim Forms.</strong> When We receive notice of claim, We will
+send claim forms within 15 days. If We do not, You may meet the proof of
+loss requirement by giving Us a written statement of the nature and extent
+of the loss within the time limit below.</p>
+<p><strong>Proof of Loss.</strong> Written proof of loss must be given to Us
+within 90 days after the end of each monthly period for which benefits are
+claimed. Failure to furnish proof within that time will not reduce a claim
+if it was not reasonably possible to give proof on time and proof is given
+as soon as reasonably possible, and in any event within one year unless You
+lack legal capacity.</p>
+<p><strong>Time of Payment of Claims.</strong> Accrued benefits will be paid
+monthly during a period of Disability. Any balance remaining unpaid at the
+end of the period of liability will be paid immediately on receipt of due
+written proof.</p>
+<p><strong>Physical Examination.</strong> We may have You examined, at Our
+expense, as often as reasonably necessary while a claim is pending or
+benefits are being paid, and may require documentation of Income for
+Residual Disability claims, including tax returns and payroll records.</p>
+<p><strong>Legal Action.</strong> No legal action may be brought to recover
+on this policy within 60 days after written proof of loss has been given,
+nor after 3 years from the time written proof of loss is required.</p>
+
+<h3 class="sect">General Provisions</h3>
+<p><strong>Entire Contract; Changes.</strong> This policy, with the
+application and any attached riders, endorsements and amendments, is the
+entire contract. No change is valid unless approved in writing by one of
+Our officers and noted on or attached to this policy. No agent may change
+the policy or waive any of its provisions.</p>
+<p><strong>Time Limit on Certain Defenses (Incontestability).</strong>
+After this policy has been in force for 2 years during Your lifetime,
+excluding any period during which You are Disabled, We cannot contest the
+statements in the application. No claim for loss incurred or Disability
+that begins after 2 years from the Coverage Effective Date will be reduced
+or denied on the ground that a condition not excluded by name or specific
+description had existed before the Coverage Effective Date.</p>
+<p><strong>Misstatement of Age.</strong> If Your age has been misstated,
+the benefits will be those the premium paid would have purchased at the
+correct age.</p>
+<p><strong>Conformity with State Statutes.</strong> Any provision of this
+policy which, on the Coverage Effective Date, conflicts with the statutes
+of the state in which You reside on that date is amended to conform to the
+minimum requirements of those statutes.</p>
+<p><strong>Assignment.</strong> No assignment of this policy is binding on
+Us unless it is in writing and received at Our head office. We are not
+responsible for the validity of any assignment.</p>
+
+<h3 class="sect">Glossary</h3>
+<p class="prov"><strong>Income</strong> means Your gross earned income from
+salary, wages, commissions, bonuses and fees, less normal business
+expenses, before taxes. It does not include unearned income such as
+dividends, interest or rent.</p>
+<p class="prov"><strong>Injury</strong> means accidental bodily injury
+sustained while this policy is in force.</p>
+<p class="prov"><strong>Mental Disorder</strong> means a condition
+classified as a mental disorder in the current edition of the standard
+diagnostic manual of mental disorders, regardless of cause.</p>
+<p class="prov"><strong>Physician</strong> means a licensed medical
+practitioner acting within the scope of that license, other than You or a
+member of Your immediate family.</p>
+<p class="prov"><strong>Prior Income</strong> means the greater of Your
+average monthly Income for the 12 months, and for the highest-earning 24
+consecutive months in the 60 months, immediately before Disability
+begins.</p>
+<p class="prov"><strong>Sickness</strong> means illness or disease which
+first manifests itself while this policy is in force.</p>
+<p class="prov"><strong>Substance Abuse</strong> means abuse of, or
+psychological or physical dependence on, alcohol or drugs, other than
+medication taken as prescribed by a Physician.</p>
+
+<!-- Privacy notice -->
+<div class="page-break"></div>
+<div class="page-footer">
+  Form SM-PN-19 &middot; Stonecroft Mutual group privacy notice
+  <span style="float: right" class="pageno"></span>
+</div>
+<h2 style="font-size: 12pt;">Privacy Notice &mdash; Stonecroft Mutual Group</h2>
+<div class="privacy">
+  <h4>Collecting Information</h4>
+  <p>We collect personal information about You from Your application, from
+  Your transactions with Us, from consumer reporting agencies with Your
+  authorization, from medical providers You authorize, and, for
+  employer-arranged programs, limited eligibility and salary information
+  from Your employer.</p>
+  <h4>Sharing Information</h4>
+  <p>We share personal information with service providers who perform
+  functions on Our behalf under contract; with reinsurers; with regulators
+  and law enforcement where required; and as You direct or authorize. We do
+  not sell personal information, and We do not share medical information
+  for marketing purposes.</p>
+  <h4>Safeguarding Information</h4>
+  <p>Access to personal information is limited to persons who need it to
+  administer Your coverage, and is protected by administrative, technical
+  and physical safeguards, including encryption of records in transit and
+  at rest.</p>
+  <h4>Access and Correction</h4>
+  <p>You may request a copy of recorded personal information about You,
+  and request correction of information You believe is inaccurate. Write
+  to: Privacy Office, Stonecroft Mutual, 400 Copperline Avenue, Hartford,
+  CT 06199. We respond within 30 business days.</p>
+  <h4>Coverage Decisions</h4>
+  <p>If an adverse underwriting decision is made, You may ask for the
+  specific reasons and for the sources of the information relied on,
+  except that medical information may be disclosed through a Physician You
+  designate.</p>
+  <h4>Contacting Us</h4>
+  <p>Questions about this notice may be directed to the Privacy Office at
+  the address above or by phone at (860) 555-0134. This notice applies to
+  the following companies of the Stonecroft Mutual group: Stonecroft
+  Mutual Life Insurance Company; Stonecroft Benefits Administration Inc.;
+  Stonecroft Mutual Insurance Agency LLC.</p>
+</div>
+
+</body>
+</html>

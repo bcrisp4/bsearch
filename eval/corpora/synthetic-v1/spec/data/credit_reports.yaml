@@ -1,0 +1,373 @@
+# Per-entry data for the `credit_reports` document set (corpus.yaml).
+# Veracity Score (persona vendor credit_agency) consumer report, printable
+# version — one template, two generation dates ~6 months apart.
+#
+# Distractor/consistency design:
+#   - date1 (11 Oct 2025, score 782 "Good"): post-return file. The new
+#     Harwood Energy / Loopfibre accounts appear with 2 months' history;
+#     the Ferrand Bank current account (opened 4 Aug 2025 per the
+#     bank_account_opening_letter) is NOT yet reported — banks report on a
+#     lag — so it is absent here.
+#   - date2 (18 Apr 2026, score 826 "Very Good"): same skeleton, updated
+#     grids, one NEW boxed account — Ferrand Bank current account with a
+#     short history (the "Ferrand account appearing" golden hook), plus
+#     extra searches.
+#   - Linked addresses cover BOTH UK persona addresses AND the US address.
+#   - Utility/comms account numbers, tenancy ref, and rental record match
+#     the persona vendors and tenancy_legal.yaml. Grid balances end at the
+#     headline balance shown for each account.
+#   - Status codes: 0 = up to date; U = unclassified; S = settled;
+#     N = no data reported for that month.
+entries:
+  - id: credit_report_date1
+    template: credit/credit_report.html
+    vendor_key: credit_agency
+    report_date: "11 October 2025"
+    report_ref: "VS-2510-8841207"
+    score: 782
+    score_band: "Good"
+    score_pct: 78
+    score_note: >-
+      Your score has been affected by a recent change of address and by
+      several new credit agreements opened in the last three months. Newly
+      opened accounts lower your average account age; as they mature, your
+      score is likely to recover.
+    electoral_from: "01/09/2025"
+    rental:
+      - chip: "R1"
+        provider: "Penfold & Reach (agent for Wrenmoor Estates Ltd)"
+        started: "01/08/2025"
+        amount: "£1,603.33 per month"
+        updated_to: "30/09/2025"
+        note: "2 monthly rental payment records reported, both on time."
+    accounts:
+      - chip: "C1"
+        company: "Marrowgate Bank"
+        company_address: "PO Box 118, Sheffield S95 2AA"
+        account_type: "Credit card"
+        started: "12/03/2016"
+        balance: "£412"
+        credit_limit: "£5,400"
+        updated_to: "30/09/2025"
+        months:   ["09/25","08/25","07/25","06/25","05/25","04/25","03/25","02/25","01/25","12/24","11/24","10/24"]
+        statuses: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["412","371","455","390","348","512","488","401","615","842","588","472"]
+        payments: ["45","40","50","40","35","55","50","45","65","90","60","50"]
+        months2:   ["09/24","08/24","07/24","06/24","05/24","04/24","03/24","02/24","01/24","12/23","11/23","10/23"]
+        statuses2: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        balances2: ["455","430","388","410","372","365","348","390","505","688","472","401"]
+        codes25: "000000000000 000000000000 000000000000 0000000000"
+        limit_history: "Credit limit £5,400 from 04/2022; previously £4,000 from 03/2016."
+      - chip: "C2"
+        company: "Bardley & Vale Building Society"
+        company_address: "Vale House, 40 Ridgemount Street, Portsmouth PO95 1EE"
+        account_type: "Current account"
+        started: "04/09/2013"
+        settlement_date: "28/08/2023"
+        balance: "£0 (settled)"
+        updated_to: "28/08/2023"
+        months:   ["08/23","07/23","06/23","05/23","04/23","03/23","02/23","01/23","12/22","11/22","10/22","09/22"]
+        statuses: ["S","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        codes25: "000000000000 000000000000 000000000000"
+        note: "Account closed at the customer's request before a move abroad."
+      - chip: "C3"
+        company: "Tornbeck Mobile"
+        company_address: "PO Box 771, Warrington WA98 4GX"
+        account_type: "Communications"
+        started: "15/02/2019"
+        balance: "£22"
+        updated_to: "30/09/2025"
+        months:   ["09/25","08/25","07/25","06/25","05/25","04/25","03/25","02/25","01/25","12/24","11/24","10/24"]
+        statuses: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["22","22","22","22","22","22","22","22","22","22","22","22"]
+        months2:   ["09/24","08/24","07/24","06/24","05/24","04/24","03/24","02/24","01/24","12/23","11/23","10/23"]
+        statuses2: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        balances2: ["22","22","22","22","18","18","18","18","18","18","18","18"]
+        codes25: "000000000000 000000000000 000000000000"
+      - chip: "C4"
+        company: "Marrowgate Bank"
+        company_address: "PO Box 118, Sheffield S95 2AA"
+        account_type: "Unsecured personal loan"
+        started: "03/05/2018"
+        settlement_date: "03/05/2021"
+        balance: "£0 (settled)"
+        updated_to: "03/05/2021"
+        months:   ["05/21","04/21","03/21","02/21","01/21","12/20","11/20","10/20","09/20","08/20","07/20","06/20"]
+        statuses: ["S","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["0","218","434","648","860","1,070","1,278","1,484","1,688","1,890","2,090","2,288"]
+        note: "36-month loan of £6,500 for a motorcycle licence and travel; repaid in full on schedule."
+      - chip: "C5"
+        company: "Ostlerly Home Shopping"
+        company_address: "Ostlerly House, Bradford BD97 2LP"
+        account_type: "Mail order"
+        started: "22/10/2017"
+        settlement_date: "14/06/2020"
+        balance: "£0 (settled)"
+        updated_to: "14/06/2020"
+        months:   ["06/20","05/20","04/20","03/20","02/20","01/20","12/19","11/19","10/19","09/19","08/19","07/19"]
+        statuses: ["S","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["0","36","72","108","0","0","145","210","85","0","0","60"]
+      - chip: "C6"
+        company: "Harkness Card Services"
+        company_address: "PO Box 90, Chester CH94 3WR"
+        account_type: "Store card"
+        started: "30/07/2015"
+        settlement_date: "12/01/2018"
+        balance: "£0 (settled)"
+        updated_to: "12/01/2018"
+        months:   ["01/18","12/17","11/17","10/17","09/17","08/17","07/17","06/17","05/17","04/17","03/17","02/17"]
+        statuses: ["S","0","0","0","1","0","0","0","0","0","0","0"]
+        balances: ["0","184","150","95","120","88","64","110","75","42","96","130"]
+        note: "One payment received late in 09/2017; the account was otherwise maintained in order."
+      - chip: "C7"
+        company: "Quellworth Bank"
+        company_address: "PO Box 2200, Edinburgh EH95 6TB"
+        account_type: "Credit card"
+        started: "18/06/2014"
+        settlement_date: "09/09/2019"
+        balance: "£0 (settled)"
+        updated_to: "09/09/2019"
+        months:   ["09/19","08/19","07/19","06/19","05/19","04/19","03/19","02/19","01/19","12/18","11/18","10/18"]
+        statuses: ["S","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["0","0","120","260","180","95","210","340","410","520","280","195"]
+        limit_history: "Credit limit £2,500 from 06/2014 (unchanged to settlement)."
+      - chip: "C8"
+        company: "Harwood Energy"
+        company_address: "PO Box 884, Leeds LS99 4EF"
+        account_type: "Utility (electricity)"
+        started: "01/08/2025"
+        balance: "£68"
+        updated_to: "30/09/2025"
+        account_ref_note: "Supply account HW 4471 0925 at the current address."
+        months:   ["09/25","08/25","07/25","06/25","05/25","04/25","03/25","02/25","01/25","12/24","11/24","10/24"]
+        statuses: ["0","0","N","N","N","N","N","N","N","N","N","N"]
+        balances: ["68","66","—","—","—","—","—","—","—","—","—","—"]
+        note: "Recently opened account — 2 monthly records reported to date."
+      - chip: "C9"
+        company: "Loopfibre"
+        company_address: "PO Box 3081, Manchester M95 8YD"
+        account_type: "Communications (broadband)"
+        started: "12/08/2025"
+        balance: "£31"
+        updated_to: "30/09/2025"
+        account_ref_note: "Service account LF3308127 at the current address."
+        months:   ["09/25","08/25","07/25","06/25","05/25","04/25","03/25","02/25","01/25","12/24","11/24","10/24"]
+        statuses: ["0","0","N","N","N","N","N","N","N","N","N","N"]
+        balances: ["31","31","—","—","—","—","—","—","—","—","—","—"]
+        note: "Recently opened account — 2 monthly records reported to date."
+      - chip: "C10"
+        company: "Fernleaf Invest"
+        company_address: "1 Alderman Square, Bristol BS96 4HL"
+        account_type: "Basic account (ID-verified investment platform)"
+        started: "02/09/2025"
+        balance: "£0"
+        updated_to: "30/09/2025"
+        account_ref_note: "Account reference FL-88012993. Reported for identity purposes only; no credit facility."
+        months:   ["09/25","08/25","07/25","06/25","05/25","04/25","03/25","02/25","01/25","12/24","11/24","10/24"]
+        statuses: ["U","N","N","N","N","N","N","N","N","N","N","N"]
+        balances: ["0","—","—","—","—","—","—","—","—","—","—","—"]
+    searches:
+      - {chip: "P1", searched_by: "Penfold & Reach (via Merrowfield Rent Protection)", searched_on: "21/07/2025", type: "Tenant referencing", note: "Application ref REF-25-90218."}
+      - {chip: "P2", searched_by: "Ferrand Bank", searched_on: "04/08/2025", type: "Current account opening — identity and fraud checks"}
+      - {chip: "P3", searched_by: "Harwood Energy", searched_on: "01/08/2025", type: "Quotation / supply acceptance"}
+      - {chip: "P4", searched_by: "Loopfibre", searched_on: "10/08/2025", type: "Quotation"}
+      - {chip: "P5", searched_by: "Alderoak Insurance", searched_on: "05/08/2025", type: "Insurance quotation"}
+      - {chip: "P6", searched_by: "Fernleaf Invest", searched_on: "02/09/2025", type: "Identity verification"}
+      - {chip: "P7", searched_by: "Veracity Score", searched_on: "11/10/2025", type: "Consumer report request (your own)", note: "Requests you make yourself are never visible to lenders."}
+      - {chip: "P8", searched_by: "Tornbeck Mobile", searched_on: "03/02/2024", type: "Account review"}
+      - {chip: "P9", searched_by: "Marrowgate Bank", searched_on: "15/04/2025", type: "Account review (existing customer)"}
+      - {chip: "P10", searched_by: "Netherhale Borough Council", searched_on: "18/08/2025", type: "Identity check — council tax account"}
+    # Address text is rendered by the template from persona addresses
+    # (to_key/from_key name entries in addresses.*).
+    linked_addresses:
+      - {chip: "A1", to_key: "uk_current", from_key: "uk_previous",
+         source: "Lender address updates (Marrowgate Bank; Tornbeck Mobile)", date_info: "08/2025"}
+      - {chip: "A2", to_key: "uk_current", from_key: "us_former",
+         source: "Application data (Ferrand Bank account opening)", date_info: "08/2025"}
+      - {chip: "A3", to_key: "us_former", from_key: "uk_previous",
+         source: "Overseas correspondence address held by Bardley & Vale Building Society", date_info: "09/2023"}
+
+  - id: credit_report_date2
+    template: credit/credit_report.html
+    vendor_key: credit_agency
+    report_date: "18 April 2026"
+    report_ref: "VS-2604-9152218"
+    score: 826
+    score_band: "Very Good"
+    score_pct: 83
+    score_note: >-
+      Your score has risen by 44 points since your last report. The accounts
+      opened after your move in 2025 now show a longer payment history, your
+      electoral-roll registration is confirmed at your current address, and
+      no new adverse information has been recorded.
+    electoral_from: "01/09/2025"
+    rental:
+      - chip: "R1"
+        provider: "Penfold & Reach (agent for Wrenmoor Estates Ltd)"
+        started: "01/08/2025"
+        amount: "£1,603.33 per month"
+        updated_to: "31/03/2026"
+        note: "8 monthly rental payment records reported, all on time."
+    accounts:
+      - chip: "C1"
+        company: "Ferrand Bank"
+        company_address: "PO Box 12, London EC95 2FB"
+        account_type: "Current account"
+        started: "04/08/2025"
+        balance: "£0"
+        updated_to: "31/03/2026"
+        account_ref_note: "Account at sort code 12-98-76. First reported by the lender in 11/2025."
+        months:   ["03/26","02/26","01/26","12/25","11/25","10/25","09/25","08/25","07/25","06/25","05/25","04/25"]
+        statuses: ["0","0","0","0","0","U","U","U","N","N","N","N"]
+        balances: ["0","0","0","0","0","0","0","0","—","—","—","—"]
+        note: >-
+          NEW ACCOUNT since your last report. Current accounts are reported
+          with a zero balance unless an overdraft is used; no overdraft
+          usage has been reported on this account.
+      - chip: "C2"
+        company: "Marrowgate Bank"
+        company_address: "PO Box 118, Sheffield S95 2AA"
+        account_type: "Credit card"
+        started: "12/03/2016"
+        balance: "£268"
+        credit_limit: "£5,400"
+        updated_to: "31/03/2026"
+        months:   ["03/26","02/26","01/26","12/25","11/25","10/25","09/25","08/25","07/25","06/25","05/25","04/25"]
+        statuses: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["268","301","575","724","465","438","412","371","455","390","348","512"]
+        payments: ["35","40","60","75","50","45","45","40","50","40","35","55"]
+        months2:   ["03/25","02/25","01/25","12/24","11/24","10/24","09/24","08/24","07/24","06/24","05/24","04/24"]
+        statuses2: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        balances2: ["488","401","615","842","588","472","455","430","388","410","372","365"]
+        codes25: "000000000000 000000000000 000000000000 0000000000"
+        limit_history: "Credit limit £5,400 from 04/2022; previously £4,000 from 03/2016."
+      - chip: "C3"
+        company: "Bardley & Vale Building Society"
+        company_address: "Vale House, 40 Ridgemount Street, Portsmouth PO95 1EE"
+        account_type: "Current account"
+        started: "04/09/2013"
+        settlement_date: "28/08/2023"
+        balance: "£0 (settled)"
+        updated_to: "28/08/2023"
+        months:   ["08/23","07/23","06/23","05/23","04/23","03/23","02/23","01/23","12/22","11/22","10/22","09/22"]
+        statuses: ["S","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        codes25: "000000000000 000000000000 000000000000"
+        note: "Account closed at the customer's request before a move abroad."
+      - chip: "C4"
+        company: "Tornbeck Mobile"
+        company_address: "PO Box 771, Warrington WA98 4GX"
+        account_type: "Communications"
+        started: "15/02/2019"
+        balance: "£22"
+        updated_to: "31/03/2026"
+        months:   ["03/26","02/26","01/26","12/25","11/25","10/25","09/25","08/25","07/25","06/25","05/25","04/25"]
+        statuses: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["22","22","22","22","22","22","22","22","22","22","22","22"]
+        months2:   ["03/25","02/25","01/25","12/24","11/24","10/24","09/24","08/24","07/24","06/24","05/24","04/24"]
+        statuses2: ["0","0","0","0","0","0","0","0","0","0","0","0"]
+        balances2: ["22","22","22","22","22","22","22","22","22","22","18","18"]
+        codes25: "000000000000 000000000000 000000000000"
+      - chip: "C5"
+        company: "Marrowgate Bank"
+        company_address: "PO Box 118, Sheffield S95 2AA"
+        account_type: "Unsecured personal loan"
+        started: "03/05/2018"
+        settlement_date: "03/05/2021"
+        balance: "£0 (settled)"
+        updated_to: "03/05/2021"
+        months:   ["05/21","04/21","03/21","02/21","01/21","12/20","11/20","10/20","09/20","08/20","07/20","06/20"]
+        statuses: ["S","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["0","218","434","648","860","1,070","1,278","1,484","1,688","1,890","2,090","2,288"]
+        note: "36-month loan of £6,500 for a motorcycle licence and travel; repaid in full on schedule."
+      - chip: "C6"
+        company: "Ostlerly Home Shopping"
+        company_address: "Ostlerly House, Bradford BD97 2LP"
+        account_type: "Mail order"
+        started: "22/10/2017"
+        settlement_date: "14/06/2020"
+        balance: "£0 (settled)"
+        updated_to: "14/06/2020"
+        months:   ["06/20","05/20","04/20","03/20","02/20","01/20","12/19","11/19","10/19","09/19","08/19","07/19"]
+        statuses: ["S","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["0","36","72","108","0","0","145","210","85","0","0","60"]
+      - chip: "C7"
+        company: "Harkness Card Services"
+        company_address: "PO Box 90, Chester CH94 3WR"
+        account_type: "Store card"
+        started: "30/07/2015"
+        settlement_date: "12/01/2018"
+        balance: "£0 (settled)"
+        updated_to: "12/01/2018"
+        months:   ["01/18","12/17","11/17","10/17","09/17","08/17","07/17","06/17","05/17","04/17","03/17","02/17"]
+        statuses: ["S","0","0","0","1","0","0","0","0","0","0","0"]
+        balances: ["0","184","150","95","120","88","64","110","75","42","96","130"]
+        note: "One payment received late in 09/2017; the account was otherwise maintained in order."
+      - chip: "C8"
+        company: "Quellworth Bank"
+        company_address: "PO Box 2200, Edinburgh EH95 6TB"
+        account_type: "Credit card"
+        started: "18/06/2014"
+        settlement_date: "09/09/2019"
+        balance: "£0 (settled)"
+        updated_to: "09/09/2019"
+        months:   ["09/19","08/19","07/19","06/19","05/19","04/19","03/19","02/19","01/19","12/18","11/18","10/18"]
+        statuses: ["S","0","0","0","0","0","0","0","0","0","0","0"]
+        balances: ["0","0","120","260","180","95","210","340","410","520","280","195"]
+        limit_history: "Credit limit £2,500 from 06/2014 (unchanged to settlement)."
+      - chip: "C9"
+        company: "Harwood Energy"
+        company_address: "PO Box 884, Leeds LS99 4EF"
+        account_type: "Utility (electricity)"
+        started: "01/08/2025"
+        balance: "£99"
+        updated_to: "31/03/2026"
+        account_ref_note: "Supply account HW 4471 0925 at the current address."
+        months:   ["03/26","02/26","01/26","12/25","11/25","10/25","09/25","08/25","07/25","06/25","05/25","04/25"]
+        statuses: ["0","0","0","0","0","0","0","0","N","N","N","N"]
+        balances: ["99","111","102","89","78","68","68","66","—","—","—","—"]
+      - chip: "C10"
+        company: "Loopfibre"
+        company_address: "PO Box 3081, Manchester M95 8YD"
+        account_type: "Communications (broadband)"
+        started: "12/08/2025"
+        balance: "£31"
+        updated_to: "31/03/2026"
+        account_ref_note: "Service account LF3308127 at the current address."
+        months:   ["03/26","02/26","01/26","12/25","11/25","10/25","09/25","08/25","07/25","06/25","05/25","04/25"]
+        statuses: ["0","0","0","0","0","0","0","0","N","N","N","N"]
+        balances: ["31","31","31","31","31","31","31","31","—","—","—","—"]
+      - chip: "C11"
+        company: "Fernleaf Invest"
+        company_address: "1 Alderman Square, Bristol BS96 4HL"
+        account_type: "Basic account (ID-verified investment platform)"
+        started: "02/09/2025"
+        balance: "£0"
+        updated_to: "31/03/2026"
+        account_ref_note: "Account reference FL-88012993. Reported for identity purposes only; no credit facility."
+        months:   ["03/26","02/26","01/26","12/25","11/25","10/25","09/25","08/25","07/25","06/25","05/25","04/25"]
+        statuses: ["U","U","U","U","U","U","U","N","N","N","N","N"]
+        balances: ["0","0","0","0","0","0","0","—","—","—","—","—"]
+    searches:
+      - {chip: "P1", searched_by: "Veracity Score", searched_on: "18/04/2026", type: "Consumer report request (your own)", note: "Requests you make yourself are never visible to lenders."}
+      - {chip: "P2", searched_by: "Marrowgate Bank", searched_on: "02/03/2026", type: "Account review (existing customer)"}
+      - {chip: "P3", searched_by: "Skelbrook Cards", searched_on: "14/02/2026", type: "Quotation — credit card eligibility (soft search)", note: "Soft searches are never visible to lenders and do not affect your score."}
+      - {chip: "P4", searched_by: "Harwood Energy", searched_on: "05/01/2026", type: "Account review"}
+      - {chip: "P5", searched_by: "Ferrand Bank", searched_on: "12/11/2025", type: "Account review (existing customer)"}
+      - {chip: "P6", searched_by: "Penfold & Reach (via Merrowfield Rent Protection)", searched_on: "21/07/2025", type: "Tenant referencing", note: "Application ref REF-25-90218."}
+      - {chip: "P7", searched_by: "Ferrand Bank", searched_on: "04/08/2025", type: "Current account opening — identity and fraud checks"}
+      - {chip: "P8", searched_by: "Harwood Energy", searched_on: "01/08/2025", type: "Quotation / supply acceptance"}
+      - {chip: "P9", searched_by: "Loopfibre", searched_on: "10/08/2025", type: "Quotation"}
+      - {chip: "P10", searched_by: "Alderoak Insurance", searched_on: "05/08/2025", type: "Insurance quotation"}
+      - {chip: "P11", searched_by: "Fernleaf Invest", searched_on: "02/09/2025", type: "Identity verification"}
+      - {chip: "P12", searched_by: "Netherhale Borough Council", searched_on: "18/08/2025", type: "Identity check — council tax account"}
+    # Address text is rendered by the template from persona addresses
+    # (to_key/from_key name entries in addresses.*).
+    linked_addresses:
+      - {chip: "A1", to_key: "uk_current", from_key: "uk_previous",
+         source: "Lender address updates (Marrowgate Bank; Tornbeck Mobile)", date_info: "08/2025"}
+      - {chip: "A2", to_key: "uk_current", from_key: "us_former",
+         source: "Application data (Ferrand Bank account opening)", date_info: "08/2025"}
+      - {chip: "A3", to_key: "us_former", from_key: "uk_previous",
+         source: "Overseas correspondence address held by Bardley & Vale Building Society", date_info: "09/2023"}

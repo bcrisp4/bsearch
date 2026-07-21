@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  body { font-size: 9.5pt; line-height: 1.5; }
+  .vs-brand { font-size: 16pt; font-weight: bold; color: #123c6e; }
+  .vs-brand .tick { color: #2a9d5c; }
+  .printable { font-size: 10pt; color: #555; }
+  h2.sect {
+    background: #123c6e; color: #fff; font-size: 10pt; padding: 2.2mm 3mm;
+    margin: 7mm 0 2.5mm; letter-spacing: 0.4pt;
+  }
+  h2.newpage { page-break-before: always; }
+  .sect-intro { font-size: 8.5pt; color: #444; margin-bottom: 3mm; }
+  .nodata {
+    border: 0.5pt solid #999; background: #f5f7fa; padding: 2.5mm 3mm;
+    font-size: 8.5pt; color: #555; margin: 1.5mm 0 3mm;
+  }
+
+  /* Score gauge */
+  .gauge-wrap { border: 0.5pt solid #999; padding: 4mm 5mm; margin: 3mm 0;
+                display: flex; gap: 8mm; align-items: center; }
+  .score-big { text-align: center; width: 40mm; flex-shrink: 0; }
+  .score-big .n { font-size: 26pt; font-weight: bold; color: #123c6e; }
+  .score-big .of { font-size: 8pt; color: #777; }
+  .score-big .band { display: inline-block; background: #2a9d5c; color: #fff;
+                     font-weight: bold; font-size: 9pt; padding: 0.8mm 3mm;
+                     border-radius: 2mm; margin-top: 1mm; }
+  .gauge { flex-grow: 1; }
+  .gauge .bar { display: flex; height: 7mm; border-radius: 1mm; overflow: hidden; }
+  .gauge .seg { height: 100%; }
+  .gauge .labels { display: flex; font-size: 6.5pt; color: #555; margin-top: 0.8mm; }
+  .gauge .labels span { flex: 1; text-align: center; }
+  .gauge .pointer-row { position: relative; height: 4mm; }
+  .gauge .pointer { position: absolute; top: 0; width: 0; height: 0;
+    border-left: 1.8mm solid transparent; border-right: 1.8mm solid transparent;
+    border-bottom: 3.2mm solid #1a1a1a; margin-left: -1.8mm; }
+
+  /* Boxed records */
+  .rec { border: 0.7pt solid #666; margin: 0 0 5mm; page-break-inside: avoid; }
+  .rec.acct { page-break-before: always; }
+  .rec-head { background: #e8edf4; padding: 1.8mm 2.5mm; display: flex;
+              gap: 3mm; align-items: baseline; border-bottom: 0.5pt solid #999; }
+  .chip { background: #1a1a1a; color: #fff; font-weight: bold; font-size: 8.5pt;
+          padding: 0.6mm 2mm; }
+  .rec-head .who { font-size: 8pt; color: #333; }
+  .rec-body { padding: 2mm 2.5mm; }
+  table.kv { border-collapse: collapse; font-size: 8.5pt; width: 100%; margin-bottom: 2mm; }
+  table.kv td { padding: 1.2mm 2mm 1.2mm 0; vertical-align: top; }
+  table.kv td.k { color: #555; white-space: nowrap; font-weight: bold; }
+  table.grid12 { width: 100%; border-collapse: collapse; font-size: 7.4pt;
+                 margin: 2mm 0; table-layout: fixed; }
+  table.grid12 th, table.grid12 td {
+    border: 0.3pt solid #aaa; padding: 1.1mm 0.5mm; text-align: center;
+    overflow: hidden;
+  }
+  table.grid12 th.lab, table.grid12 td.lab {
+    width: 22mm; text-align: left; padding-left: 1mm; background: #f0f3f7;
+    font-weight: bold;
+  }
+  .grid-title { font-size: 8pt; font-weight: bold; margin-top: 2mm; }
+  .codes25 { font-family: "Doc Mono", monospace; font-size: 7.5pt;
+             background: #f5f7fa; border: 0.3pt solid #bbb; padding: 1.2mm 2mm;
+             margin: 1mm 0; }
+  .rec-note { font-size: 8pt; color: #444; margin-top: 1.5mm; }
+
+  .end-box { border: 1.2pt solid #123c6e; text-align: center; font-weight: bold;
+             padding: 3mm; margin-top: 5mm; letter-spacing: 1pt; }
+  .stat-row { display: flex; gap: 4mm; margin: 3mm 0; }
+  .stat { flex: 1; border: 0.7pt solid #123c6e; text-align: center; padding: 3mm 2mm; }
+  .stat .n { font-size: 16pt; font-weight: bold; color: #123c6e; }
+  .stat .l { font-size: 7.5pt; color: #555; text-transform: uppercase; letter-spacing: 0.5pt; }
+  .addr-block { font-size: 8pt; margin-bottom: 2.5mm; break-inside: avoid; }
+  .addr-block .co { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Report Generated On: {{ issue.report_date }} &middot; Reference
+  {{ issue.report_ref }} &middot; {{ vendor.name }} consumer credit report
+  (printable version)
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div style="display: flex; justify-content: space-between; align-items: baseline;">
+  <div class="vs-brand">veracity<span class="tick">&#10003;</span>score</div>
+  <div class="printable">Your Credit Report (printable version)</div>
+</div>
+<p style="font-size: 8pt; color: #555;">Prepared for
+{{ person.full_name | upper }} &middot; generated on {{ issue.report_date }}
+&middot; reference {{ issue.report_ref }}. This printable version contains
+the same data as your online report. Data is supplied to {{ vendor.name }}
+by lenders, the electoral roll and public records; it is updated when data
+providers report, usually monthly.</p>
+
+<h2 class="sect">Your Veracity Score</h2>
+<div class="gauge-wrap">
+  <div class="score-big">
+    <div class="n">{{ issue.score }}</div>
+    <div class="of">out of 999</div><br>
+    <span class="band">{{ issue.score_band }}</span>
+  </div>
+  <div class="gauge">
+    <div class="pointer-row"><div class="pointer" style="left: {{ issue.score_pct }}%;"></div></div>
+    <div class="bar">
+      <div class="seg" style="width: 22%; background: #d9534f;"></div>
+      <div class="seg" style="width: 20%; background: #ec971f;"></div>
+      <div class="seg" style="width: 20%; background: #f0d43a;"></div>
+      <div class="seg" style="width: 20%; background: #7bbf5e;"></div>
+      <div class="seg" style="width: 18%; background: #2a9d5c;"></div>
+    </div>
+    <div class="labels">
+      <span>Very Poor<br>0&ndash;480</span><span>Poor<br>481&ndash;600</span>
+      <span>Fair<br>601&ndash;720</span><span>Good<br>721&ndash;800</span>
+      <span>Very Good / Excellent<br>801&ndash;999</span>
+    </div>
+  </div>
+</div>
+<p class="sect-intro">{{ issue.score_note }}</p>
+
+<h2 class="sect newpage">Understanding Your Score</h2>
+<p class="sect-intro">The factors below have the largest effect on your
+score this month. Factors marked &ldquo;helping&rdquo; are raising your
+score; those marked &ldquo;holding back&rdquo; are lowering it.</p>
+<div class="rec"><div class="rec-body">
+  <table class="kv">
+    <tr><td class="k">Helping</td><td>No missed or late payments reported in
+        the last six years on any open account.</td></tr>
+    <tr><td class="k">Helping</td><td>Electoral roll registration confirmed
+        at your present address.</td></tr>
+    <tr><td class="k">Helping</td><td>Low use of available credit &mdash;
+        your reported card balances are a small proportion of your combined
+        credit limits.</td></tr>
+    <tr><td class="k">Holding back</td><td>Several accounts on your report
+        were opened recently, which lowers your average account age.</td></tr>
+    <tr><td class="k">Holding back</td><td>A change of address in the last
+        twelve months. Lenders see stability build over time at one
+        address.</td></tr>
+  </table>
+</div></div>
+<p class="sect-intro">Your score is calculated only from the data in this
+report. It is refreshed each time data providers report, usually monthly,
+and whenever you request a report. Lenders do not see this score; they see
+the underlying data and apply their own scoring.</p>
+
+<h2 class="sect newpage">How To Read This Report</h2>
+<p style="font-size: 8.5pt;">Each data item appears in a box with a black
+index chip (C1, C2&hellip; for credit accounts, P1&hellip; for searches,
+R1&hellip; for rental data, A1&hellip; for linked addresses). Empty
+sections say so explicitly &mdash; an empty section is good news more often
+than not. Monthly grids read left to right from the most recent month; the
+balance row shows the balance reported at each month end, and for revolving
+accounts the payment rows show what was paid against the previous
+statement. If anything in this report looks wrong, use the &ldquo;Query
+this entry&rdquo; link in your online report or write to Consumer Services
+at the address in the Useful Addresses section &mdash; disputes are
+answered within 28 days, and disputed entries are marked as disputed while
+the data supplier investigates.</p>
+
+<h2 class="sect newpage">Application Details</h2>
+<p class="sect-intro">The personal details we hold and use to match data to
+your report.</p>
+<div class="rec"><div class="rec-body">
+  <table class="kv">
+    <tr><td class="k">Name</td><td>{{ person.full_name | upper }}</td>
+        <td class="k">Date of birth</td><td>{{ person.date_of_birth }}</td></tr>
+    <tr><td class="k">Present address</td>
+        <td colspan="3">{{ addresses.uk_current.line1 }},
+        {{ addresses.uk_current.line2 }}, {{ addresses.uk_current.city }}
+        {{ addresses.uk_current.postcode }}</td></tr>
+    <tr><td class="k">Previous address</td>
+        <td colspan="3">{{ addresses.uk_previous.line1 }},
+        {{ addresses.uk_previous.city }}, {{ addresses.uk_previous.county }}
+        {{ addresses.uk_previous.postcode }}</td></tr>
+  </table>
+</div></div>
+
+<h2 class="sect">Electoral Roll Information</h2>
+<p class="sect-intro">Electoral roll registration at your present address,
+as supplied by the local authority.</p>
+<div class="rec"><div class="rec-body" style="font-size: 8.5pt;">
+  {{ person.full_name | upper }} is recorded on the electoral roll at
+  {{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }},
+  {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }} from
+  {{ issue.electoral_from }}.
+</div></div>
+
+<h2 class="sect newpage">Aliases</h2>
+<div class="nodata">No data is present for this section of your report.</div>
+
+<h2 class="sect">Financial Associations</h2>
+<p class="sect-intro">People you are financially connected to, for example
+through a joint account. Lenders may consider an associate&rsquo;s report
+when you apply for credit.</p>
+<div class="nodata">No data is present for this section of your report.</div>
+
+<h2 class="sect newpage">Public Record Information</h2>
+<p class="sect-intro">Court judgments, insolvencies and similar public
+records.</p>
+<div class="nodata">No data is present for this section of your report.</div>
+
+<h2 class="sect newpage">Report Summary</h2>
+<p class="sect-intro">A summary of the data on your report. Full details
+follow in the sections below.</p>
+<div class="stat-row">
+  <div class="stat"><div class="n">{{ issue.accounts | selectattr("settlement_date", "undefined") | list | length }}</div>
+    <div class="l">Open accounts</div></div>
+  <div class="stat"><div class="n">{{ issue.accounts | selectattr("settlement_date", "defined") | list | length }}</div>
+    <div class="l">Settled accounts</div></div>
+  <div class="stat"><div class="n">{{ issue.searches | length }}</div>
+    <div class="l">Searches (2 years)</div></div>
+  <div class="stat"><div class="n">{{ issue.linked_addresses | length }}</div>
+    <div class="l">Linked addresses</div></div>
+  <div class="stat"><div class="n">0</div>
+    <div class="l">Public records</div></div>
+</div>
+<div class="rec"><div class="rec-body">
+  <table class="kv">
+    <tr><td class="k">Ref</td><td class="k">Provider</td><td class="k">Account type</td>
+        <td class="k">Started</td><td class="k">Current balance</td></tr>
+    {% for a in issue.accounts %}
+    <tr><td>{{ a.chip }}</td><td>{{ a.company }}</td><td>{{ a.account_type }}</td>
+        <td>{{ a.started }}</td><td>{{ a.balance }}</td></tr>
+    {% endfor %}
+  </table>
+</div></div>
+
+<h2 class="sect newpage">Credit Account Information</h2>
+<p class="sect-intro">Accounts reported to us by lenders and service
+providers, including up to six years of history for settled accounts.
+Status codes: 0 &mdash; account up to date; 1, 2&hellip; &mdash; number of
+months in arrears; U &mdash; unclassified; S &mdash; settled; N &mdash; no
+data reported for that month. Grids read left to right from the most recent
+reported month.</p>
+
+{% for a in issue.accounts %}
+<div class="rec acct">
+  <div class="rec-head">
+    <span class="chip">{{ a.chip }}</span>
+    <span style="font-weight: bold;">{{ a.company }}</span>
+    <span class="who">{{ person.full_name | upper }} &middot;
+      {{ addresses.uk_current.postcode }} &middot; DOB {{ person.date_of_birth }}</span>
+  </div>
+  <div class="rec-body">
+    <table class="kv">
+      <tr><td class="k">Company</td><td>{{ a.company }}, {{ a.company_address }}</td>
+          <td class="k">Account type</td><td>{{ a.account_type }}</td></tr>
+      <tr><td class="k">Started</td><td>{{ a.started }}</td>
+          <td class="k">Current balance</td><td>{{ a.balance }}</td></tr>
+      <tr>
+        {% if a.settlement_date is defined %}
+        <td class="k">Settlement date</td><td>{{ a.settlement_date }}</td>
+        {% else %}
+        <td class="k">Credit limit</td><td>{{ a.credit_limit | default("Not applicable") }}</td>
+        {% endif %}
+        <td class="k">Updated to</td><td>{{ a.updated_to }}</td></tr>
+    </table>
+    {% if a.account_ref_note is defined %}
+    <div class="rec-note">{{ a.account_ref_note }}</div>
+    {% endif %}
+
+    <div class="grid-title">Account Status Details (1&ndash;12 months)</div>
+    <table class="grid12">
+      <tr><th class="lab">Month</th>
+        {% for m in a.months %}<th>{{ m }}</th>{% endfor %}</tr>
+      <tr><td class="lab">Status Code</td>
+        {% for s in a.statuses %}<td>{{ s }}</td>{% endfor %}</tr>
+      <tr><td class="lab">Balance (&pound;)</td>
+        {% for b in a.balances %}<td>{{ b }}</td>{% endfor %}</tr>
+      {% if a.payments is defined %}
+      <tr><td class="lab">Payment Amount (&pound;)</td>
+        {% for p in a.payments %}<td>{{ p }}</td>{% endfor %}</tr>
+      <tr><td class="lab">Prev Stmt Balance (&pound;)</td>
+        {% for b in a.balances %}<td>{% if loop.index < 12 %}{{ a.balances[loop.index] }}{% else %}&mdash;{% endif %}</td>{% endfor %}</tr>
+      <tr><td class="lab">Cash Advances (&pound;)</td>
+        {% for p in a.payments %}<td>0</td>{% endfor %}</tr>
+      <tr><td class="lab">Payment Code</td>
+        {% for p in a.payments %}<td>DD</td>{% endfor %}</tr>
+      <tr><td class="lab">Promotional Rate</td>
+        {% for p in a.payments %}<td>N</td>{% endfor %}</tr>
+      {% endif %}
+    </table>
+
+    {% if a.months2 is defined %}
+    <div class="grid-title">Account Status Details (13&ndash;24 months)</div>
+    <table class="grid12">
+      <tr><th class="lab">Month</th>
+        {% for m in a.months2 %}<th>{{ m }}</th>{% endfor %}</tr>
+      <tr><td class="lab">Status Code</td>
+        {% for s in a.statuses2 %}<td>{{ s }}</td>{% endfor %}</tr>
+      <tr><td class="lab">Balance (&pound;)</td>
+        {% for b in a.balances2 %}<td>{{ b }}</td>{% endfor %}</tr>
+    </table>
+    {% endif %}
+
+    {% if a.codes25 is defined %}
+    <div class="grid-title">Account Status Codes (25+ months, oldest last)</div>
+    <div class="codes25">{{ a.codes25 }}</div>
+    {% endif %}
+    {% if a.limit_history is defined %}
+    <div class="rec-note"><strong>Credit Limit History:</strong> {{ a.limit_history }}</div>
+    {% endif %}
+    {% if a.note is defined %}
+    <div class="rec-note">{{ a.note }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+<h2 class="sect newpage">Rental Information</h2>
+<p class="sect-intro">Rental payment data reported under tenant
+rent-reporting schemes.</p>
+{% for r in issue.rental %}
+<div class="rec">
+  <div class="rec-head"><span class="chip">{{ r.chip }}</span>
+    <span style="font-weight: bold;">{{ r.provider }}</span></div>
+  <div class="rec-body">
+    <table class="kv">
+      <tr><td class="k">Tenancy started</td><td>{{ r.started }}</td>
+          <td class="k">Reported rent</td><td>{{ r.amount }}</td></tr>
+      <tr><td class="k">Updated to</td><td>{{ r.updated_to }}</td>
+          <td class="k">Property</td><td>{{ addresses.uk_current.line1 }},
+          {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}</td></tr>
+    </table>
+    <div class="rec-note">{{ r.note }}</div>
+  </div>
+</div>
+{% endfor %}
+
+<h2 class="sect newpage">Previous Searches</h2>
+<p class="sect-intro">Searches of your report in the last two years. Hard
+searches (applications) are visible to other lenders; quotation, identity
+and your own searches are not.</p>
+{% for p in issue.searches %}
+<div class="rec">
+  <div class="rec-head"><span class="chip">{{ p.chip }}</span>
+    <span style="font-weight: bold;">{{ p.searched_by }}</span>
+    <span class="who">{{ person.full_name | upper }} &middot;
+    {{ addresses.uk_current.postcode }}</span></div>
+  <div class="rec-body">
+    <table class="kv">
+      <tr><td class="k">Searched on</td><td>{{ p.searched_on }}</td>
+          <td class="k">Application type</td><td>{{ p.type }}</td></tr>
+    </table>
+    {% if p.note is defined %}<div class="rec-note">{{ p.note }}</div>{% endif %}
+  </div>
+</div>
+{% endfor %}
+
+<h2 class="sect newpage">Financial Associate Searches</h2>
+<div class="nodata">No data is present for this section of your report.</div>
+
+<h2 class="sect newpage">Linked Addresses</h2>
+<p class="sect-intro">Addresses connected to you by lenders and application
+data. Links do not affect your score; they help match data to your
+report.</p>
+{% for la in issue.linked_addresses %}
+<div class="rec">
+  <div class="rec-head"><span class="chip">{{ la.chip }}</span></div>
+  <div class="rec-body">
+    <table class="kv">
+      {% set to_a = addresses[la.to_key] %}
+      {% set from_a = addresses[la.from_key] %}
+      <tr><td class="k">Linked to</td>
+          <td>{{ to_a.line1 }}{% if to_a.line2 is defined %}, {{ to_a.line2 }}{% endif %},
+              {{ to_a.city }}{% if to_a.county is defined %}, {{ to_a.county }}{% endif %}
+              {% if to_a.postcode is defined %}{{ to_a.postcode }}{% else %}{{ to_a.state }} {{ to_a.zip }}, United States{% endif %}</td></tr>
+      <tr><td class="k">Linked from</td>
+          <td>{{ from_a.line1 }}{% if from_a.line2 is defined %}, {{ from_a.line2 }}{% endif %},
+              {{ from_a.city }}{% if from_a.county is defined %}, {{ from_a.county }}{% endif %}
+              {% if from_a.postcode is defined %}{{ from_a.postcode }}{% else %}{{ from_a.state }} {{ from_a.zip }}, United States{% endif %}</td></tr>
+      <tr><td class="k">Source</td><td>{{ la.source }}</td>
+          <td class="k">Date of information</td><td>{{ la.date_info }}</td></tr>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+<h2 class="sect newpage">Fraud Prevention Information</h2>
+<p class="sect-intro">Records supplied by the national fraud-prevention
+membership scheme used by lenders to protect customers against identity
+fraud.</p>
+<div class="nodata">No data is present for this section of your report.</div>
+<p style="font-size: 8pt;">If you believe you have been a victim of identity
+fraud, you can ask us to place protective registration on your file. While
+registration is active, lenders will carry out extra identity checks before
+opening accounts in your name. Call 0113 496 0117 or visit
+veracityscore.example/protect.</p>
+
+<h2 class="sect newpage">Notice of Correction</h2>
+<div class="nodata">No notice of correction is recorded on your report.</div>
+<p style="font-size: 8pt;">A notice of correction is a statement of up to
+200 words that you may ask us to add to your report, for example to explain
+the circumstances behind an entry. Lenders must read it whenever they
+review your report manually.</p>
+
+<h2 class="sect newpage">Useful Addresses</h2>
+<p class="sect-intro">Contact addresses for the organisations that supplied
+data shown in this report. Contact the data supplier first if you believe
+an entry is wrong; you may also ask us to query it for you, and we will
+respond within 28 days.</p>
+{% set seen = namespace(names=[]) %}
+{% for a in issue.accounts %}
+  {% if a.company not in seen.names %}
+    {% set seen.names = seen.names + [a.company] %}
+<div class="addr-block"><span class="co">{{ a.company }}</span><br>
+{{ a.company_address }}</div>
+  {% endif %}
+{% endfor %}
+<div class="addr-block"><span class="co">{{ vendor.name }} &mdash; Consumer Services</span><br>
+PO Box 117, Leeds LS98 1VS &middot; help@veracityscore.example &middot; 0113 496 0117</div>
+
+<h2 class="sect newpage">Your Statutory Rights</h2>
+<p style="font-size: 8pt;">This report was provided under your statutory
+right of access to the data a credit reference agency holds about you. You
+have the right to have inaccurate personal data rectified, the right to add
+a notice of correction, and the right to complain to the supervisory
+authority for data protection if you are unhappy with how we handle your
+data. Your report is provided for your own information; it is not a
+guarantee that credit will be granted. Lenders use their own scoring
+systems and see a lender version of this data which excludes quotation
+searches, your own report requests, and any data more than six years
+old.</p>
+
+<div class="end-box">END OF REPORT &middot; {{ issue.report_ref }} &middot;
+Generated {{ issue.report_date }}</div>
+
+</body>
+</html>

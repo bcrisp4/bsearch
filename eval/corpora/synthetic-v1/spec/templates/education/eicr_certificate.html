@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  body { font-size: 8.5pt; }
+  .contractor-head { display: flex; justify-content: space-between; margin-bottom: 3mm; }
+  .contractor-logo {
+    border: 1.2pt solid #b3122e; color: #b3122e; font-weight: bold;
+    padding: 1.6mm 3mm; font-size: 10.5pt; letter-spacing: 0.6pt;
+  }
+  .report-title { text-align: right; font-size: 11pt; font-weight: bold; }
+  .report-title .sub { display: block; font-size: 7.5pt; font-weight: normal; color: #555; }
+  .banner {
+    background: #b3122e; color: #fff; font-weight: bold; font-size: 8.5pt;
+    padding: 1.4mm 2.5mm; margin: 3.5mm 0 1.5mm; letter-spacing: 0.4pt;
+  }
+  table.grid { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  table.grid td, table.grid th {
+    border: 0.4pt solid #888; padding: 1.2mm 1.8mm; vertical-align: top;
+  }
+  table.grid td.k { background: #f6e8ec; width: 40mm; font-weight: bold; }
+  .caps { text-transform: uppercase; }
+  .outcome-box {
+    border: 1.4pt solid #1a1a1a; padding: 2.5mm 3mm; margin: 2mm 0;
+    font-size: 10pt; font-weight: bold; text-align: center; letter-spacing: 1pt;
+  }
+  table.checklist { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-bottom: 2.5mm; }
+  table.checklist th { background: #f6e8ec; border: 0.4pt solid #888; padding: 1mm 1.6mm; text-align: left; }
+  table.checklist td { border: 0.4pt solid #aaa; padding: 0.9mm 1.6mm; }
+  table.checklist td.out { width: 14mm; text-align: center; font-weight: bold; }
+  .legend {
+    font-size: 6.5pt; color: #444; border: 0.4pt solid #999; padding: 1.4mm 2mm;
+    margin: 1mm 0 3mm; background: #fafafa;
+  }
+  .sig-row td { height: 12mm; }
+  .sig-script { font-style: italic; font-size: 11pt; }
+
+  @page landscape-sheet { size: A4 landscape; }
+  .landscape { page: landscape-sheet; }
+  table.circuits { width: 100%; border-collapse: collapse; font-size: 6.4pt; }
+  table.circuits th {
+    border: 0.4pt solid #888; background: #f6e8ec; padding: 0.8mm 0.8mm;
+    font-size: 6.2pt; text-align: center; vertical-align: bottom;
+  }
+  table.circuits td { border: 0.4pt solid #aaa; padding: 0.9mm 0.8mm; text-align: center; }
+  table.circuits td.desc { text-align: left; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Report ref {{ issue.report_ref }} &middot; Domestic Electrical Installation
+  Condition Report based on the model form of the national wiring regulations
+  (Appendix 6) &middot; {{ issue.contractor }}
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="contractor-head">
+  <div class="contractor-logo">ELMSWORTH<br>ELECTRICAL</div>
+  <div class="report-title">DOMESTIC ELECTRICAL INSTALLATION<br>CONDITION REPORT
+    <span class="sub">Report reference: {{ issue.report_ref }} &middot; Date of inspection: {{ issue.inspection_date }}</span>
+  </div>
+</div>
+
+<div class="banner">SECTION 1. DETAILS OF THE PERSON ORDERING THE REPORT</div>
+<table class="grid">
+  <tr><td class="k">Name</td><td class="caps">{{ vendors.letting_agency.name }} (as agent for {{ vendors.landlord }})</td></tr>
+  <tr><td class="k">Address</td><td class="caps">44 Chandlers Row, London SE10 9TF &mdash; ref {{ vendors.letting_agency.tenancy_ref }}</td></tr>
+</table>
+
+<div class="banner">SECTION 2. REASON FOR PRODUCING THIS REPORT</div>
+<table class="grid">
+  <tr><td class="k">Reason</td><td class="caps">Periodic inspection prior to new tenancy &mdash; landlord safety compliance</td></tr>
+  <tr><td class="k">Date(s) of inspection</td><td>{{ issue.inspection_date }}</td></tr>
+</table>
+
+<div class="banner">SECTION 3. DETAILS OF THE INSTALLATION WHICH IS THE SUBJECT OF THIS REPORT</div>
+<table class="grid">
+  <tr><td class="k">Occupier</td><td class="caps">Vacant at time of inspection</td></tr>
+  <tr><td class="k">Installation address</td><td class="caps">{{ addresses.uk_current.line1 }},
+      {{ addresses.uk_current.line2 }}, {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}</td></tr>
+  <tr><td class="k">Description of premises</td><td class="caps">Domestic flat, purpose built</td></tr>
+  <tr><td class="k">Estimated age of wiring system</td><td class="caps">{{ issue.wiring_age }}</td></tr>
+  <tr><td class="k">Evidence of additions / alterations</td><td class="caps">Yes &mdash; kitchen ring final circuit extended, estimated 2014</td></tr>
+  <tr><td class="k">Records of installation available</td><td class="caps">No</td></tr>
+</table>
+
+<div class="banner">SECTION 4. EXTENT AND LIMITATIONS OF INSPECTION AND TESTING</div>
+<table class="grid">
+  <tr><td class="k">Extent of the installation covered</td>
+      <td class="caps">100% of the fixed electrical installation within the flat. Sampling: 100% of accessible accessories inspected; concealed cable runs not inspected (LIM).</td></tr>
+  <tr><td class="k">Agreed limitations</td>
+      <td class="caps">No access to communal supply intake beyond meter position. Floor coverings and fitted furniture not lifted or moved. Concealed wiring within walls and above fixed ceilings not inspected.</td></tr>
+</table>
+
+<div class="banner">SECTION 5. SUMMARY OF THE CONDITION OF THE INSTALLATION</div>
+<table class="grid">
+  <tr><td class="k">General condition</td>
+      <td class="caps">The installation is in a generally good condition. Consumer unit fitted with 30 mA RCD protection to all final circuits. Two improvement recommendations (C3) recorded &mdash; see Section 7. No damage or deterioration impairing safety was found.</td></tr>
+</table>
+<div class="outcome-box">OVERALL ASSESSMENT OF THE INSTALLATION: {{ issue.overall }}</div>
+
+<div class="banner">SECTION 6. RECOMMENDATIONS</div>
+<table class="grid">
+  <tr><td class="k">Next inspection recommended by</td>
+      <td class="caps">{{ issue.next_inspection }} (5 years), or on change of occupancy, whichever is sooner, subject to continued satisfactory condition.</td></tr>
+</table>
+
+<div class="banner">SECTION 7. OBSERVATIONS AND RECOMMENDATIONS FOR ACTIONS TO BE TAKEN</div>
+<table class="checklist">
+  <tr><th style="width: 12mm;">Code</th><th style="width: 14mm;">Item no.</th><th>Observation</th></tr>
+  {% for o in issue.observations %}
+  <tr><td class="out">{{ o.code }}</td><td class="out">{{ o.item }}</td><td>{{ o.text }}</td></tr>
+  {% endfor %}
+</table>
+<div class="legend"><strong>Classification codes:</strong> C1 &mdash; Danger present, risk of
+injury, immediate remedial action required &middot; C2 &mdash; Potentially dangerous,
+urgent remedial action required &middot; C3 &mdash; Improvement recommended &middot;
+FI &mdash; Further investigation required without delay.</div>
+
+<div class="page-break"></div>
+
+<div class="banner">SECTION 8. DECLARATION</div>
+<p style="font-size: 8pt;">I, being the person responsible for the inspection and testing of the
+electrical installation (as indicated by my signature below), particulars of
+which are described above, having exercised reasonable skill and care when
+carrying out the inspection and testing, hereby declare that the information
+in this report provides an accurate assessment of the condition of the
+electrical installation taking into account the stated extent and
+limitations.</p>
+<table class="grid">
+  <tr><td class="k">Trading title</td><td class="caps">{{ issue.contractor }}</td></tr>
+  <tr><td class="k">Address</td><td class="caps">{{ issue.contractor_address }}</td></tr>
+  <tr><td class="k">Phone</td><td>{{ issue.contractor_phone }}</td><td class="k">Registration number</td><td>{{ issue.contractor_reg }}</td></tr>
+  <tr class="sig-row"><td class="k">Inspected and tested by</td>
+      <td><span class="sig-script">{{ issue.inspector }}</span><br>{{ issue.inspector }} &mdash; {{ issue.inspector_position }}<br>Date: {{ issue.inspection_date }}</td>
+      <td class="k">Report authorised by</td>
+      <td><span class="sig-script">{{ issue.qs_name }}</span><br>{{ issue.qs_name }} &mdash; {{ issue.qs_position }}<br>Date: {{ issue.inspection_date }}</td></tr>
+</table>
+
+<div class="banner">SECTION 9. SUPPLY CHARACTERISTICS AND EARTHING ARRANGEMENTS</div>
+<table class="grid">
+  <tr><td class="k">Earthing arrangement</td><td>{{ issue.supply_type }}</td>
+      <td class="k">Nominal voltage U0</td><td>{{ issue.nominal_voltage }}</td></tr>
+  <tr><td class="k">Nominal frequency</td><td>{{ issue.frequency }}</td>
+      <td class="k">Prospective fault current Ipf</td><td>{{ issue.pfc }}</td></tr>
+  <tr><td class="k">External loop impedance Ze</td><td>{{ issue.ze }}</td>
+      <td class="k">Number and type of live conductors</td><td>2 (AC, single-phase)</td></tr>
+</table>
+
+<div class="banner">SECTION 10. PARTICULARS OF INSTALLATION AT THE ORIGIN</div>
+<table class="grid">
+  <tr><td class="k">Main switch</td><td>{{ issue.main_switch }}</td>
+      <td class="k">Main protective bonding conductors</td><td>10 mm&sup2; to water and gas installation pipes</td></tr>
+  <tr><td class="k">Earthing conductor</td><td>16 mm&sup2; copper, connection verified</td>
+      <td class="k">Test instruments used</td><td>Multifunction tester, serial MFT-88213; proving unit PU-4417</td></tr>
+</table>
+
+<div class="banner">SECTION 11. SCHEDULE OF INSPECTIONS</div>
+{% for sec in issue.schedule %}
+<table class="checklist">
+  <tr><th colspan="3">{{ sec.section }}</th></tr>
+  <tr><th style="width: 12mm;">Item</th><th>Description</th><th style="width: 16mm;">Outcome</th></tr>
+  {% for it in sec.rows %}
+  <tr><td class="out">{{ it.no }}</td><td>{{ it.desc }}</td><td class="out">{{ it.outcome }}</td></tr>
+  {% endfor %}
+</table>
+{% endfor %}
+<div class="legend"><strong>Outcome codes:</strong> OK &mdash; acceptable condition &middot;
+C1 / C2 / C3 &mdash; classified observation recorded in Section 7 &middot;
+N/V &mdash; not verified &middot; LIM &mdash; limitation (see Section 4) &middot;
+N/A &mdash; not applicable.</div>
+
+<div class="landscape">
+<div class="banner">SECTION 12. SCHEDULE OF CIRCUIT DETAILS AND TEST RESULTS &mdash; DISTRIBUTION BOARD DB1 (HALLWAY CUPBOARD)</div>
+<table class="circuits">
+  <tr>
+    <th rowspan="2">Circuit no.</th><th rowspan="2">Circuit description</th>
+    <th rowspan="2">Type of wiring</th><th rowspan="2">Reference method</th>
+    <th rowspan="2">Points served</th>
+    <th colspan="2">Conductor csa (mm&sup2;)</th>
+    <th colspan="3">Overcurrent protective device</th>
+    <th rowspan="2">RCD I&Delta;n (mA)</th>
+    <th rowspan="2">R1+R2 (&Omega;)</th>
+    <th colspan="2">Insulation resistance (M&Omega;)</th>
+    <th rowspan="2">Polarity</th><th rowspan="2">Zs (&Omega;)</th>
+    <th rowspan="2">RCD op. time (ms)</th>
+  </tr>
+  <tr>
+    <th>Live</th><th>cpc</th>
+    <th>BS (EN)</th><th>Type</th><th>Rating (A)</th>
+    <th>L-L</th><th>L-E</th>
+  </tr>
+  {% for c in issue.circuits %}
+  <tr>
+    <td>{{ c.no }}</td><td class="desc">{{ c.desc }}</td><td>{{ c.wiring }}</td>
+    <td>{{ c.ref_method }}</td><td>{{ c.points }}</td>
+    <td>{{ c.live_csa }}</td><td>{{ c.cpc_csa }}</td>
+    <td>{{ c.ocpd_bs }}</td><td>{{ c.ocpd_type }}</td><td>{{ c.ocpd_rating }}</td>
+    <td>{{ c.rcd_rating }}</td><td>{{ c.r1r2 }}</td>
+    <td>{{ c.ins_ll }}</td><td>{{ c.ins_le }}</td>
+    <td>{{ c.polarity }}</td><td>{{ c.zs }}</td><td>{{ c.rcd_ms }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<div class="legend">T&amp;E &mdash; thermoplastic insulated and sheathed flat cable with
+protective conductor. Reference method C &mdash; clipped direct. Insulation
+resistance recorded as &gt;299 M&Omega; where the instrument reading exceeded
+its display range. All RCD operating times recorded at rated residual
+current I&Delta;n.</div>
+</div>
+
+<h2 style="font-size: 10pt;">Guidance for recipients of this report</h2>
+<p style="font-size: 8pt;">This report is an important and valuable document which should be
+retained for future reference. It describes the condition of the fixed
+electrical installation only; it does not cover portable appliances. The
+&ldquo;Overall assessment&rdquo; box in Section 5 states whether the
+installation is satisfactory or unsatisfactory for continued use. Where the
+assessment is unsatisfactory, items classified C1 or C2 should be remedied
+as a matter of urgency by a competent person, and FI items investigated
+without delay. C3 items are recommendations for improvement: the
+installation is safe for continued use, but the improvement would enhance
+protection. Landlords are reminded of their statutory duty to ensure that
+electrical safety standards are met throughout a tenancy, to provide a copy
+of this report to each tenant before occupation, and to any prospective
+tenant on request, and to carry out remedial work within the statutory
+period where required.</p>
+
+</body>
+</html>

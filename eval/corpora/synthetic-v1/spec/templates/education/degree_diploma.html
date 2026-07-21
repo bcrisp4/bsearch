@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Ceremonial parchment: decorative serif certificate, rendered as a scan. */
+  @font-face {
+    font-family: "Doc Serif";
+    font-style: italic;
+    src: url("../fonts/LiberationSerif-Italic.ttf");
+  }
+  body { font-family: "Doc Serif", serif; color: #26203d; }
+  .parchment {
+    border: 2.2pt double #6b5b2a;
+    outline: 0.6pt solid #6b5b2a;
+    outline-offset: -3mm;
+    padding: 14mm 16mm 12mm;
+    min-height: 232mm;
+    background: #fdfbf4;
+    text-align: center;
+  }
+  .crest { margin-bottom: 5mm; }
+  .crest .shield {
+    display: inline-block; width: 22mm; height: 25mm;
+    border: 1.6pt solid #3b2a6b; border-radius: 0 0 11mm 11mm;
+    background: linear-gradient(135deg, #efeaf9 0%, #cbbde8 100%);
+    color: #3b2a6b; font-weight: bold; font-size: 18pt;
+    line-height: 25mm; letter-spacing: 1.5pt;
+  }
+  .crest .scroll {
+    display: inline-block; margin-top: 2mm; padding: 0.8mm 6mm;
+    border: 0.6pt solid #6b5b2a; border-radius: 4mm;
+    font-style: italic; font-size: 8.5pt; color: #3b2a6b; letter-spacing: 1.5pt;
+  }
+  .uni {
+    font-size: 24pt; font-weight: bold; color: #3b2a6b;
+    letter-spacing: 3pt; text-transform: uppercase; margin: 2mm 0 6mm;
+  }
+  .line { font-size: 11pt; font-style: italic; margin: 4mm 0; }
+  .name { font-size: 21pt; font-weight: bold; letter-spacing: 1.5pt; margin: 5mm 0; }
+  .degree { font-size: 15pt; font-weight: bold; color: #3b2a6b; margin: 4mm 0 1mm; }
+  .classification { font-size: 12pt; font-style: italic; margin: 1mm 0 4mm; }
+  .field { font-size: 14pt; font-weight: bold; letter-spacing: 1pt; margin: 2mm 0 6mm; }
+  .dated { font-size: 10.5pt; font-style: italic; margin: 6mm 0 12mm; }
+  .sigs { display: flex; justify-content: space-between; margin: 0 6mm 8mm; }
+  .sig { width: 58mm; }
+  .sig .script {
+    font-style: italic; font-size: 15pt;
+    border-bottom: 0.5pt solid #26203d; padding-bottom: 1mm; margin-bottom: 1.5mm;
+  }
+  .sig .role { font-size: 8.5pt; letter-spacing: 1pt; text-transform: uppercase; }
+  .seal {
+    width: 30mm; height: 26mm;
+    border: 1.4pt solid #8a2a3b; border-radius: 2mm;
+    background: repeating-linear-gradient(45deg, #f3dbe0 0 1.4mm, #eccdd5 1.4mm 2.8mm);
+    color: #8a2a3b; font-size: 5.5pt; font-weight: bold;
+    display: inline-flex; align-items: center; justify-content: center;
+    text-align: center; letter-spacing: 0.4pt; line-height: 1.6;
+  }
+  .seal-caption { font-size: 6.5pt; color: #8a2a3b; margin-top: 1mm; letter-spacing: 0.8pt; }
+</style>
+</head>
+<body>
+
+<div class="parchment">
+
+  <div class="crest">
+    <div class="shield">UW</div><br>
+    <span class="scroll">Scientia Lumen Vitae</span>
+  </div>
+
+  <div class="uni">{{ vendor.name }}</div>
+
+  <div class="line">By authority of the Senate and Council of the University,<br>
+  this is to certify that</div>
+
+  <div class="name">{{ person.full_name }}</div>
+
+  <div class="line">having followed an approved programme of study and satisfied
+  the examiners,<br>has this day been admitted to the degree of</div>
+
+  <div class="degree">{{ issue.degree }}</div>
+  <div class="classification">with {{ issue.classification }}</div>
+
+  <div class="line">in</div>
+  <div class="field">{{ issue.field }}</div>
+
+  <div class="dated">Given under the seal of the University on
+  {{ issue.conferment_date }}</div>
+
+  <div class="sigs">
+    <div class="sig">
+      <div class="script">{{ issue.chancellor }}</div>
+      <div class="role">Chancellor</div>
+    </div>
+    <div class="sig">
+      <div class="script">{{ issue.vice_chancellor }}</div>
+      <div class="role">Vice-Chancellor</div>
+    </div>
+  </div>
+
+  <div>
+    <span class="seal">SEAL OF THE<br>UNIVERSITY OF<br>WEXCOMBE</span>
+    <div class="seal-caption">Security seal {{ issue.seal_ref }} &mdash; void if removed</div>
+  </div>
+
+</div>
+
+</body>
+</html>

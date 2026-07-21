@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .cert { border: 1.4pt solid #5a3d7a; padding: 7mm 8mm; }
+  .mrp-brand { text-align: center; font-size: 16pt; font-weight: bold;
+               color: #5a3d7a; letter-spacing: 1.5pt; }
+  .mrp-sub { text-align: center; font-size: 8.5pt; color: #555; margin-bottom: 5mm; }
+  h1.cert-title { text-align: center; font-size: 13.5pt; margin: 4mm 0 5mm; }
+  table.cert-data { width: 100%; border-collapse: collapse; margin: 4mm 0 5mm; }
+  table.cert-data td { padding: 1.8mm 2mm; border-bottom: 0.3pt solid #bbb; vertical-align: top; }
+  table.cert-data td.label { width: 48mm; font-weight: bold; color: #5a3d7a; font-size: 8.5pt; }
+  .cert-ref { text-align: center; font-family: "Doc Mono", monospace; font-size: 10pt; margin-bottom: 3mm; }
+  .attest { font-size: 9pt; }
+  .ref-panel { background: #f2eef7; border-left: 1.6mm solid #5a3d7a;
+               padding: 3mm 4mm; margin: 4mm 0; font-size: 8.5pt; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ issue.insurer }} is a trading name of Merrowfield Underwriting Ltd,
+  registered in England and Wales (company no. 09441822), {{ issue.insurer_address }}.
+  Cover is arranged through {{ vendor.name }} as the policyholder&rsquo;s
+  intermediary. <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="cert">
+
+  <div class="mrp-brand">MERROWFIELD</div>
+  <div class="mrp-sub">Rent Protection &amp; Legal Expenses</div>
+
+  <h1 class="cert-title">Certificate of Rent Guarantee Insurance</h1>
+  <div class="cert-ref">Certificate {{ issue.certificate_no }} &middot; issued {{ issue.issue_date }}</div>
+
+  <p class="attest">This certificate confirms that rent guarantee and legal
+  expenses cover is in force for the tenancy described below, subject to the
+  policy wording. The insured is the landlord; the tenant is named for
+  identification of the tenancy only and acquires no rights under the
+  policy.</p>
+
+  <table class="cert-data">
+    <tr><td class="label">Insured (landlord)</td>
+        <td>{{ vendors.landlord }}, c/o {{ vendor.name }} (agency ref {{ vendor.tenancy_ref }})</td></tr>
+    <tr><td class="label">Premises</td>
+        <td>{{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }},
+            {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}</td></tr>
+    <tr><td class="label">Tenant (for identification)</td>
+        <td>{{ person.title }} {{ person.full_name }}</td></tr>
+    <tr><td class="label">Period of insurance</td>
+        <td>{{ issue.period_start }} to {{ issue.period_end }} (both dates inclusive)</td></tr>
+    <tr><td class="label">Monthly rent insured</td>
+        <td>&pound;{{ issue.monthly_rent }} (annual rent &pound;{{ issue.annual_rent }})</td></tr>
+    <tr><td class="label">Cover</td>
+        <td>Arrears of rent up to 12 months per claim; legal costs of
+            possession proceedings up to &pound;50,000; 50% of rent for up
+            to two months after vacant possession while the premises are
+            re-let.</td></tr>
+    <tr><td class="label">Excess</td><td>{{ issue.excess }}</td></tr>
+    <tr><td class="label">Premium</td>
+        <td>&pound;{{ issue.premium }} plus Insurance Premium Tax of
+            &pound;{{ issue.ipt }} &mdash; total &pound;{{ issue.premium_total }},
+            paid by the insured</td></tr>
+  </table>
+
+  <div class="ref-panel">
+    <strong>Referencing on which cover is based (ref {{ issue.referencing_ref }}).</strong>
+    {{ issue.referencing_result }}
+  </div>
+
+  <p class="attest">Cover is conditional on the tenancy being an assured
+  shorthold tenancy with a deposit protected in an authorised scheme, on the
+  referencing summarised above remaining accurate at the start of the
+  tenancy, and on arrears procedures in the policy wording being followed.
+  A claim must be notified within 31 days of the second missed rent
+  payment.</p>
+
+  <p class="attest"><strong>No guarantor requirement.</strong> Because the
+  tenant met the affordability and referencing criteria in full, cover has
+  been granted without a guarantor and no deed of guarantee is attached to
+  the tenancy.</p>
+
+</div>
+
+</body>
+</html>

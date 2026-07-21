@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Brightpath Payroll (PEO) "Wage Statement" — clean fintech styling,
+     stacked full-width tables with grey title bars, Current/YTD pairs. */
+  body { page: us-letter; }
+  .wm { font-size: 15pt; font-weight: bold; letter-spacing: -0.3pt; }
+  .wm .dot { color: #d97a1f; }
+  .ws-title { font-size: 19pt; font-weight: bold; margin: 1mm 0 0; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; }
+  .dates { border: 0.5pt solid #999; border-collapse: collapse; font-size: 8pt; }
+  .dates th { background: #f0f0f0; padding: 1.4mm 3mm; border: 0.5pt solid #999;
+              font-weight: normal; color: #555; }
+  .dates td { padding: 1.4mm 3mm; border: 0.5pt solid #999;
+              text-align: center; font-weight: bold; }
+  .addrs { display: flex; gap: 10mm; margin: 6mm 0 4mm; font-size: 8.5pt; }
+  .addrs .blk { flex: 1; }
+  .addrs .who { font-size: 7pt; color: #777; text-transform: uppercase;
+                letter-spacing: 0.5pt; }
+  table.stub { width: 100%; border-collapse: collapse; font-size: 8.5pt;
+               margin-bottom: 4mm; border: 0.5pt solid #bbb; }
+  table.stub caption {
+    background: #e4e4e4; text-align: left; font-weight: bold; font-size: 8.5pt;
+    padding: 1.6mm 2.5mm; border: 0.5pt solid #bbb; border-bottom: none;
+  }
+  table.stub th { text-align: left; font-size: 7.2pt; color: #555;
+                  padding: 1.2mm 2.5mm; border-bottom: 0.6pt solid #bbb; }
+  table.stub td { padding: 1.3mm 2.5mm; border-bottom: 0.3pt solid #ddd; }
+  table.stub .num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.stub tr.grand td { font-weight: bold; border-top: 0.8pt solid #888; }
+  .stub-note { font-size: 7.5pt; color: #555; margin: -2.5mm 0 4mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Brightpath Payroll LLC, PO Box 9410, Albany, NY 12212 &nbsp;&middot;&nbsp;
+  Voucher ID: {{ issue.voucher_id }} &nbsp;&middot;&nbsp;
+  Employee ID: {{ issue.employee_id }}
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="head">
+  <div>
+    <div class="wm">brightpath<span class="dot">&#9679;</span>payroll</div>
+    <div class="ws-title">Wage Statement</div>
+  </div>
+  <table class="dates">
+    <tr><th>Pay Period Start</th><th>Pay Period End</th><th>Pay Date</th></tr>
+    <tr><td>{{ issue.period_start }}</td><td>{{ issue.period_end }}</td>
+        <td>{{ issue.pay_date }}</td></tr>
+  </table>
+</div>
+
+<div class="addrs">
+  <div class="blk">
+    <div class="who">Payroll Provider</div>
+    Brightpath Payroll LLC<br>
+    Professional Employer Organization for {{ employers.us_former.name }}<br>
+    EIN {{ employers.us_former.ein }} &middot; c/o Registered Agent Services<br>
+    PO Box 9410, Albany, NY 12212
+  </div>
+  <div class="blk">
+    <div class="who">Employee</div>
+    {{ person.full_name }}<br>
+    {{ addresses.us_former.line1 }}<br>
+    {{ addresses.us_former.city }}, {{ addresses.us_former.state }}
+    {{ addresses.us_former.zip }}<br>
+    Pay {{ issue.pay_number }} (biweekly)
+  </div>
+</div>
+
+<table class="stub">
+  <caption>Payment Summary</caption>
+  <tr><th>Description</th><th class="num">Amount</th></tr>
+  <tr><td>Gross pay</td><td class="num">{{ issue.gross }}</td></tr>
+  <tr><td>Total taxes and deductions</td><td class="num">&minus;{{ issue.total_withheld }}</td></tr>
+  <tr class="grand"><td>Net pay</td><td class="num">${{ issue.net }}</td></tr>
+</table>
+<p class="stub-note">Net pay of ${{ issue.net }} deposited to
+{{ banks.us_checking.institution }} checking account ending
+&times;&times;&times;{{ banks.us_checking.account_number[-4:] }}.</p>
+
+<table class="stub">
+  <caption>Gross Earnings</caption>
+  <tr><th>Description</th><th class="num">Rate</th><th class="num">Hours</th>
+      <th class="num">Current</th><th class="num">YTD</th></tr>
+  <tr><td>Regular salary (annual $85,800.00)</td><td class="num">&mdash;</td>
+      <td class="num">80.00</td><td class="num">{{ issue.gross }}</td>
+      <td class="num">{{ issue.gross_ytd }}</td></tr>
+  <tr class="grand"><td>Total gross earnings</td><td class="num"></td><td class="num"></td>
+      <td class="num">{{ issue.gross }}</td><td class="num">{{ issue.gross_ytd }}</td></tr>
+</table>
+
+<table class="stub">
+  <caption>Taxes Withheld</caption>
+  <tr><th>Description</th><th class="num">Current</th><th class="num">YTD</th></tr>
+  {% for t in issue.taxes %}
+  <tr><td>{{ t.desc }}</td><td class="num">{{ t.current }}</td>
+      <td class="num">{{ t.ytd }}</td></tr>
+  {% endfor %}
+</table>
+
+<table class="stub">
+  <caption>Pre-Tax Deductions</caption>
+  <tr><th>Description</th><th class="num">Current</th><th class="num">YTD</th></tr>
+  {% for d in issue.pretax %}
+  <tr><td>{{ d.desc }}</td><td class="num">{{ d.current }}</td>
+      <td class="num">{{ d.ytd }}</td></tr>
+  {% endfor %}
+</table>
+
+<div class="page-break"></div>
+
+<table class="stub">
+  <caption>After-Tax Deductions</caption>
+  <tr><th>Description</th><th class="num">Current</th><th class="num">YTD</th></tr>
+  {% for d in issue.aftertax %}
+  <tr><td>{{ d.desc }}</td><td class="num">{{ d.current }}</td>
+      <td class="num">{{ d.ytd }}</td></tr>
+  {% endfor %}
+</table>
+
+<table class="stub">
+  <caption>Employer Notes</caption>
+  <tr><td>{{ issue.memo }}</td></tr>
+</table>
+
+<div class="small-print">
+  <p>This wage statement is furnished by Brightpath Payroll LLC as the
+  professional employer organization of record for
+  {{ employers.us_former.name }}. Wages, taxes and deductions are reported
+  under the co-employment arrangement between Brightpath and your worksite
+  employer.</p>
+  <p>Report discrepancies within 30 days via the Brightpath portal at
+  brightpath-payroll.example or (212) 555-0134. Year-to-date columns reflect
+  amounts for the current calendar year through the pay date shown.</p>
+</div>
+
+</body>
+</html>

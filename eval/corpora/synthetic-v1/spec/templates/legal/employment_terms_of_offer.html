@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  @font-face {
+    font-family: "Doc Serif";
+    font-style: italic;
+    src: url("../fonts/LiberationSerif-Italic.ttf");
+  }
+  .hw-brand { font-size: 15pt; font-weight: bold; letter-spacing: 0.5pt; }
+  .hw-brand .mark { color: #b04a17; }
+  .esig { border: 0.6pt solid #888; padding: 6mm 7mm; }
+  .esig h1 { font-size: 13pt; }
+  .esig .kv { font-family: "Doc Mono", monospace; font-size: 8pt; color: #333; }
+  table.terms { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 3mm 0; }
+  table.terms td { border-bottom: 0.5pt solid #999; padding: 2mm 2.5mm; vertical-align: top; }
+  table.terms td.k { width: 44mm; font-weight: bold; }
+  h2 { color: #b04a17; }
+  .cursive { font-family: "Doc Serif", serif; font-style: italic; font-size: 14pt;
+             border-bottom: 0.4pt solid #333; display: inline-block;
+             min-width: 55mm; padding: 0 4mm 1mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ employers.uk_current.name }}, registered in England and Wales (company
+  no. 11208847). Registered office: {{ employers.uk_current.address }}.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<!-- e-signature certificate page -->
+<div class="esig">
+  <p style="font-size: 8pt; color: #555;">Offer of Employment and Statement of
+  Terms &mdash; {{ employers.uk_current.name }} &mdash; candidate:
+  {{ person.full_name }}</p>
+
+  <h1>This document has been signed electronically.</h1>
+  <p>This certificate is attached by the electronic signing service and forms
+  part of the executed document.</p>
+
+  <h2 style="font-size: 10.5pt; color: #1a1a1a;">Signature Log</h2>
+  <p><strong>{{ person.full_name }} &mdash; Candidate</strong><br>
+  <span class="kv">Date Agreed: {{ issue.candidate_signature.date_agreed }}</span><br>
+  <span class="kv">Logged IP Address: {{ issue.candidate_signature.ip }}</span><br>
+  <span class="kv">Signature Reference: {{ issue.candidate_signature.reference }}</span></p>
+
+  <h2 style="font-size: 10.5pt; color: #1a1a1a;">Document Execution</h2>
+  <p>The signatory confirmed their identity by responding from the email
+  address to which the offer was sent, reviewed the document in full, and
+  clicked &ldquo;Agree &amp; Sign&rdquo;. Verification:
+  {{ issue.esign_service }}/verify.</p>
+</div>
+
+<div class="page-break"></div>
+
+<div class="letterhead">
+  <div class="hw-brand">halewick<span class="mark">//</span>systems</div>
+  <div class="contact">
+    {{ employers.uk_current.name }}<br>
+    {{ employers.uk_current.address }}<br>
+    people@halewick.example &middot; 020 7946 0533
+  </div>
+</div>
+
+<div class="addr-window">
+  {{ person.full_name }}<br>
+  {{ addresses.uk_previous.line1 }}<br>
+  {{ addresses.uk_previous.city }}<br>
+  {{ addresses.uk_previous.county }}<br>
+  {{ addresses.uk_previous.postcode }}
+</div>
+
+<p>{{ issue.offer_date }}</p>
+
+<p>Dear {{ person.short_name }},</p>
+
+<h1 style="font-size: 13pt;">Offer of employment &mdash; {{ issue.job_title }}</h1>
+
+<p>Following your interviews, we are delighted to offer you the position of
+<strong>{{ issue.job_title }}</strong> in our {{ issue.department }} team,
+reporting to the {{ issue.reports_to }}. Everyone you met was impressed, and
+we think you will do excellent work here.</p>
+
+<p>This letter and the enclosed Statement of Principal Terms together form
+the contract of employment which will apply if you accept. The offer is
+conditional on: satisfactory references; evidence of your right to work in
+the UK, to be produced on or before your first day; and completion of our
+standard pre-employment checks.</p>
+
+<p>To accept, please sign electronically where indicated by
+<strong>{{ issue.acceptance_deadline }}</strong>. We would like your start
+date to be <strong>{{ issue.start_date }}</strong> &mdash; if that presents
+any difficulty, call me and we will find a date that works.</p>
+
+<p>We look forward to working with you.</p>
+
+<p>Yours sincerely,</p>
+<p><span class="cursive">{{ supporting_cast.hr_manager }}</span><br>
+<strong>{{ supporting_cast.hr_manager }}</strong><br>
+Head of People, {{ employers.uk_current.name }}</p>
+
+<div class="page-break"></div>
+
+<h1 style="font-size: 13pt;">Statement of Principal Terms of Employment</h1>
+<p style="font-size: 8.5pt; color: #555;">Issued in accordance with the
+employment-rights legislation. Employer: {{ employers.uk_current.name }}
+(&ldquo;the Company&rdquo;). Employee: {{ person.full_name }}. Payroll
+reference: {{ employers.uk_current.payroll_ref }}.</p>
+
+<table class="terms">
+  <tr><td class="k">Job title</td><td>{{ issue.job_title }}, {{ issue.department }}</td></tr>
+  <tr><td class="k">Start date</td><td>{{ issue.start_date }}. No employment
+      with a previous employer counts towards continuous employment.</td></tr>
+  <tr><td class="k">Salary</td><td>&pound;{{ issue.salary }}
+      ({{ issue.salary_words }}) per annum, payable monthly in arrears on or
+      around the 25th of each month by credit transfer, subject to
+      deductions for tax and National Insurance. Salaries are reviewed
+      annually in April; a review does not guarantee an increase.</td></tr>
+  <tr><td class="k">Hours of work</td><td>{{ issue.hours }}. The Company
+      operates hybrid working: you are expected to attend
+      {{ issue.hybrid }}. Occasional additional hours may be needed to meet
+      the needs of the business; no overtime is payable, but time off in
+      lieu may be agreed for sustained out-of-hours work, including
+      scheduled on-call participation which attracts the allowance set out
+      in the Platform Engineering on-call policy.</td></tr>
+  <tr><td class="k">Place of work</td><td>{{ employers.uk_current.address }},
+      and your home address when working remotely. You will not be required
+      to work outside the UK for more than one month at a time.</td></tr>
+  <tr><td class="k">Holiday</td><td>{{ issue.holiday_days }} days per holiday
+      year (January to December) plus public holidays, accruing pro rata in
+      your first year. Up to five unused days may be carried into the first
+      quarter of the following year.</td></tr>
+  <tr><td class="k">Sickness</td><td>Statutory sick pay is payable in
+      accordance with legislation. In addition, after probation the Company
+      pays full salary for up to four weeks of certified sickness absence in
+      any rolling twelve months, inclusive of statutory entitlement.</td></tr>
+  <tr><td class="k">Pension</td><td>You will be enrolled in the
+      Company&rsquo;s workplace pension scheme. The Company contributes
+      {{ issue.pension_employer }} of qualifying earnings, and the standard
+      employee contribution is {{ issue.pension_employee }}, which you may
+      vary within scheme rules.</td></tr>
+  <tr><td class="k">Probation</td><td>The first {{ issue.probation_months }}
+      months are a probationary period, during which either party may end
+      the employment on {{ issue.notice_probation }}&rsquo;s written notice.
+      The Company may extend probation once, by up to three months, where
+      performance or attendance needs further assessment.</td></tr>
+  <tr><td class="k">Notice</td><td>After probation, the notice required from
+      either party is {{ issue.notice_after }}&rsquo;s written notice,
+      rising by one week for each complete year of service after four
+      years, up to the statutory maximum. The Company may pay in lieu of
+      notice, and may place you on garden leave for all or part of any
+      notice period.</td></tr>
+  <tr><td class="k">Confidentiality</td><td>You must not, during or after
+      your employment, use or disclose any confidential information of the
+      Company or its customers except in the proper performance of your
+      duties or as required by law. Nothing in this clause prevents a
+      protected disclosure under whistleblowing legislation.</td></tr>
+  <tr><td class="k">Intellectual property</td><td>Inventions, software,
+      designs and other works created by you in the course of your duties
+      belong to the Company to the fullest extent permitted by law, and you
+      agree to do what is reasonably necessary (at the Company&rsquo;s
+      expense) to perfect its title. Personal open-source contributions made
+      outside your duties and without Company confidential information are
+      unaffected; the Engineering open-source policy explains the approvals
+      needed for contributions connected with your work.</td></tr>
+  <tr><td class="k">Collective agreements</td><td>None apply to this
+      employment.</td></tr>
+  <tr><td class="k">Grievance and discipline</td><td>The Company&rsquo;s
+      grievance and disciplinary procedures (which do not form part of your
+      contract) are in the Staff Handbook. Raise a grievance in writing
+      with the Head of People; appeals against disciplinary decisions go to
+      a director not previously involved.</td></tr>
+  <tr><td class="k">Benefits</td><td>Group life assurance of two times
+      salary; an annual personal-development budget administered by your
+      manager; and a cycle-purchase salary-sacrifice scheme. Benefits other
+      than salary and pension are discretionary and may be varied on
+      reasonable notice.</td></tr>
+</table>
+
+<p style="font-size: 8.5pt;">By signing you accept the offer on the terms
+above, confirm the information given in your application is true, and
+authorise the Company to take up references. This document is executed
+electronically &mdash; see the Signature Log at the front.</p>
+
+<p>Accepted by <strong>{{ person.full_name }}</strong> on
+{{ issue.accepted_date }}:&nbsp;&nbsp;
+<span class="cursive">{{ person.full_name }}</span></p>
+
+</body>
+</html>

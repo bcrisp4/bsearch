@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  body { page: us-letter; }
+  .org-head { display: flex; justify-content: space-between; margin-bottom: 6mm; }
+  .org-block { font-size: 8.5pt; }
+  .org-block .org-name { font-size: 12pt; font-weight: bold; color: #7a3413; }
+  .inv-block { text-align: right; }
+  .inv-block .inv-word { font-size: 16pt; font-weight: bold; letter-spacing: 2pt; }
+  .inv-block .event { font-size: 10pt; font-weight: bold; color: #7a3413; }
+  table.mini { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin: 2mm 0 4mm; }
+  table.mini th { background: #3d2417; color: #fff; text-align: left; padding: 1.5mm 2mm; font-size: 8pt; }
+  table.mini td { padding: 1.4mm 2mm; border-bottom: 0.3pt solid #ccc; }
+  table.mini td.num, table.mini th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.mini tr.total td { font-weight: bold; border-top: 0.8pt solid #3d2417; }
+  h2 { color: #7a3413; }
+  .badge-preview {
+    width: 82mm; border: 0.8pt dashed #999; border-radius: 2mm;
+    padding: 0; margin: 3mm 0 5mm; overflow: hidden;
+  }
+  .badge-preview .badge-top {
+    background: #3d2417; color: #fff; padding: 2.5mm 4mm; font-weight: bold; font-size: 10pt;
+  }
+  .badge-preview .badge-top .yr { color: #e8a33d; }
+  .badge-preview .badge-body { padding: 3.5mm 4mm; }
+  .badge-preview .attendee-name { font-size: 14pt; font-weight: bold; }
+  .badge-preview .attendee-org { font-size: 9.5pt; color: #444; }
+  .badge-preview .role-band {
+    background: #e8a33d; color: #3d2417; font-weight: bold; text-align: center;
+    letter-spacing: 3pt; padding: 1.5mm 0; font-size: 9pt;
+  }
+  .refund { font-size: 7.5pt; color: #555; margin-top: 5mm; }
+  .refund h3 { font-size: 8pt; letter-spacing: 1pt; }
+</style>
+</head>
+<body>
+
+<div class="org-head">
+  <div class="org-block">
+    <div class="org-name">{{ issue.organizer }}</div>
+    {{ issue.organizer_address }}<br>
+    {{ issue.organizer_email }}
+  </div>
+  <div class="inv-block">
+    <div class="inv-word">INVOICE</div>
+    <div class="event">{{ issue.event }}</div>
+    {{ issue.event_dates }} &middot; {{ issue.venue }}<br>
+    Invoice # {{ issue.invoice_no }}
+  </div>
+</div>
+
+<div class="two-col">
+  <div>
+    <h2>Billing Information</h2>
+    <p>{{ person.full_name }}<br>
+    {{ addresses.us_former.line1 }}<br>
+    {{ addresses.us_former.city }}, {{ addresses.us_former.state }} {{ addresses.us_former.zip }}<br>
+    {{ person.email }}</p>
+  </div>
+  <div>
+    <h2>Registrant</h2>
+    <p>Name: {{ person.full_name }}<br>
+    Organization: {{ employers.us_former.name }}<br>
+    Confirmation Number: {{ issue.confirmation_no }}<br>
+    Registration Date: {{ issue.order_date }}<br>
+    Registration Type: {{ issue.registration_type }}</p>
+  </div>
+</div>
+
+<h2>Badge Preview</h2>
+<div class="badge-preview">
+  <div class="badge-top">SysCon <span class="yr">NA &rsquo;24</span> &middot; Portland</div>
+  <div class="badge-body">
+    <div class="attendee-name">{{ person.full_name }}</div>
+    <div class="attendee-org">{{ employers.us_former.name }} &middot; New York, NY</div>
+  </div>
+  <div class="role-band">{{ issue.badge_role }}</div>
+</div>
+
+<h2>Transactions &amp; Payment Information</h2>
+<p style="font-size: 8.5pt;">Order {{ issue.order_no }} &middot; Invoice
+{{ issue.invoice_no }} &middot; Order Date {{ issue.order_date }}</p>
+
+<table class="mini">
+  <tr><th>Item</th><th class="num">Price</th><th class="num">Quantity</th><th class="num">Amount</th></tr>
+  {% for it in issue.line_items %}
+  <tr><td>{{ it.item }}</td><td class="num">${{ it.price }}</td>
+      <td class="num">{{ it.qty }}</td><td class="num">${{ it.amount }}</td></tr>
+  {% endfor %}
+  <tr class="total"><td>Order Total</td><td></td><td></td><td class="num">${{ issue.order_total }}</td></tr>
+</table>
+
+<table class="mini">
+  <tr><th>Date</th><th>Invoice #</th><th>Type</th><th class="num">Amt Ordered</th>
+      <th class="num">Amt Paid</th><th class="num">Amt Due</th></tr>
+  <tr><td>{{ issue.order_date }}</td><td>{{ issue.invoice_no }}</td><td>Registration</td>
+      <td class="num">${{ issue.order_total }}</td><td class="num">${{ issue.amt_paid }}</td>
+      <td class="num">${{ issue.amt_due }}</td></tr>
+</table>
+
+<table class="mini">
+  <tr><th>Date</th><th>Type</th><th>Reference #</th><th class="num">Amt Paid</th></tr>
+  <tr><td>{{ issue.payment_date }}</td><td>{{ issue.payment_type }}</td>
+      <td>{{ issue.payment_ref }}</td><td class="num">${{ issue.amt_paid }}</td></tr>
+</table>
+
+<p style="font-size: 8pt;">This charge will appear on your card statement as
+<strong>BEACONRIDGE*SYSCON</strong>.</p>
+
+<div class="refund">
+  <h3>REFUND POLICY</h3>
+  <p>Cancellations received in writing more than 30 days before the first day
+  of the event receive a full refund less a $50 processing fee. Cancellations
+  within 30 days receive a 50% refund. No refunds are issued after the event
+  begins or for no-shows. Registrations may be transferred to a colleague at
+  no charge until badge pickup; email {{ issue.organizer_email }} with the
+  original confirmation number.</p>
+  <p>Questions about this invoice? Reply to your confirmation email or write
+  to {{ issue.organizer_email }}. &mdash; The {{ issue.event }} events team</p>
+</div>
+
+</body>
+</html>

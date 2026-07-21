@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Preparer-firm branded US tax return package ("binder") — the corpus
+     length outlier and converter-stress centrepiece. The page stream is
+     data-driven: issue.pages is a list of page objects dispatched by
+     `kind` (cover / letter / checklist / divider / instructions / form /
+     statement / fbar_accounts / matrix / it2). Each object renders exactly
+     one PDF page; page count is tuned in the data file.
+     Furniture: brand top bars, dense box-grid form pages with monospace
+     fill, shaded cells, dotted leaders, vertical margin watermark on
+     signature pages, ASCII-ruled monospace statements, barcode-style state
+     pages with vertical margin text, landscape carryover matrix, and an
+     e-file control footer repeated on every page. */
+  body { page: us-letter; }
+  html { font-size: 8pt; line-height: 1.25; }
+  .brandbar { background: #0f4c5c; color: #fff; padding: 1.6mm 3mm;
+              display: flex; justify-content: space-between;
+              font-size: 8pt; margin-bottom: 4mm; }
+  .brandbar .fm { font-weight: bold; letter-spacing: 0.6pt; }
+
+  /* Cover */
+  .cover-top { height: 105mm; padding-top: 22mm; }
+  .cover-logo { font-size: 24pt; font-weight: bold; color: #0f4c5c;
+                letter-spacing: 1pt; }
+  .cover-logo .tick { color: #c98a2d; }
+  .cover-black { background: #101418; color: #fff; height: 118mm;
+                 padding: 14mm 10mm; margin: 0 -6mm; }
+  .cover-black .client { color: #c98a2d; font-size: 17pt; font-weight: bold; }
+  .cover-black h1 { color: #fff; font-size: 21pt; margin: 3mm 0 8mm; }
+  .skyline { font-family: "Doc Mono", monospace; color: #c98a2d;
+             font-size: 7.5pt; line-height: 1.05; white-space: pre; }
+
+  /* Divider */
+  .divider { padding-top: 70mm; }
+  .divider .t { font-size: 26pt; font-weight: bold; color: #0f4c5c; }
+  .divider .arrow { color: #c98a2d; }
+
+  /* Letters / checklist */
+  .letter h2 { color: #0f4c5c; }
+  .conf { font-weight: bold; letter-spacing: 1pt; font-size: 8.5pt; }
+  .checklist h1 { color: #c98a2d; font-size: 20pt; }
+  .checklist h2 { color: #0f4c5c; font-size: 11pt; margin-top: 5mm; }
+  .checklist li { margin-bottom: 1.6mm; }
+
+  /* Filing instruction sheets */
+  .instr h2 { text-align: center; font-size: 12pt; margin-bottom: 5mm; }
+  .instr .sec { border-top: 0.8pt solid #333; padding: 1.8mm 0 3mm;
+                margin-top: 2mm; }
+  .instr .seclabel { font-weight: bold; font-size: 8.5pt; }
+  .instr .seclabel.hl { background: #ffe36e; padding: 0.3mm 1mm; }
+  .leader { display: flex; align-items: baseline; margin: 1mm 0; }
+  .leader .dots { flex: 1; border-bottom: 0.6pt dotted #333;
+                  margin: 0 1.5mm 0.8mm; }
+  .leader .amt { font-family: "Doc Mono", monospace; }
+
+  /* Generic government-style box-grid form page */
+  .gform .fhead { display: flex; border-bottom: 1.6pt solid #000;
+                  padding-bottom: 1mm; margin-bottom: 1.5mm;
+                  justify-content: space-between; align-items: flex-end; }
+  .gform .fno { font-size: 13pt; font-weight: bold; width: 24mm; }
+  .gform .ftitle { flex: 1; text-align: center; }
+  .gform .ftitle b { font-size: 9.5pt; }
+  .gform .fomb { width: 30mm; text-align: right; font-size: 6.6pt; }
+  .gform .fyr { font-size: 13pt; font-weight: bold;
+                font-family: "Doc Mono", monospace; }
+  table.flines { width: 100%; border-collapse: collapse; font-size: 7.4pt; }
+  table.flines td { border: 0.35pt solid #444; padding: 0.7mm 1.2mm;
+                    vertical-align: top; }
+  table.flines td.ln { width: 8mm; font-weight: bold; text-align: center; }
+  table.flines td.amt { width: 26mm; text-align: right;
+                        font-family: "Doc Mono", monospace; font-size: 7.8pt; }
+  table.flines td.shade { background: #d9d9d9; }
+  table.flines tr.parthead td { background: #efefef; font-weight: bold;
+                                border-top: 1pt solid #000; }
+  .pinrow { display: flex; gap: 0.8mm; margin: 1mm 0; }
+  .pinrow .cell { border: 0.5pt solid #000; width: 4.6mm; height: 5.4mm;
+                  text-align: center; font-family: "Doc Mono", monospace;
+                  font-size: 8.5pt; padding-top: 0.6mm; }
+  .decl { font-size: 6.6pt; text-align: justify; margin: 1.5mm 0; }
+  .vwm { position: absolute; right: -11mm; top: 6mm; width: 3.4mm;
+         font-family: "Doc Mono", monospace; font-size: 6.6pt;
+         line-height: 1.28; color: #777; word-break: break-all;
+         text-align: center; }
+  .pagewrap { position: relative; }
+
+  /* Monospace supporting statements */
+  .stmt { font-family: "Doc Mono", monospace; font-size: 7.8pt;
+          white-space: pre-wrap; line-height: 1.3; }
+
+  /* FBAR account blocks */
+  .fblock { border: 0.6pt solid #000; margin-bottom: 3mm; }
+  .fblock h4 { margin: 0; background: #e3e3e3; padding: 1.2mm 2mm;
+               font-size: 7.6pt; border-bottom: 0.5pt solid #000; }
+  .fblock table { width: 100%; border-collapse: collapse; font-size: 7.2pt; }
+  .fblock td { border: 0.3pt solid #666; padding: 0.8mm 1.5mm; }
+  .fblock .n { font-size: 5.8pt; color: #333; display: block; }
+  .fblock .fill { font-family: "Doc Mono", monospace; }
+
+  /* State (IT-201-style) furniture */
+  .barcode { display: flex; gap: 1.4mm; margin-top: 4mm; }
+  .bc2d { width: 13mm; height: 13mm;
+          background:
+            repeating-linear-gradient(0deg, #000, #000 0.9mm, #fff 0.9mm, #fff 1.8mm),
+            repeating-linear-gradient(90deg, #000, #000 1.1mm, #fff 1.1mm, #fff 2.2mm);
+          background-blend-mode: difference; }
+  .bc1d { height: 13mm; flex: 0 0 34mm;
+          background: repeating-linear-gradient(90deg,
+            #000, #000 0.5mm, #fff 0.5mm, #fff 1.3mm, #000 1.3mm, #000 2.1mm,
+            #fff 2.1mm, #fff 2.5mm); }
+  .statewm { position: absolute; left: -12mm; top: 20mm; width: 3.4mm;
+             font-size: 6pt; font-weight: bold; word-break: break-all;
+             text-align: center; color: #333; }
+
+  /* Landscape carryover matrix */
+  @page matrixpage { size: letter landscape; }
+  .matrix { page: matrixpage; }
+  .matrix table { width: 100%; border-collapse: collapse; font-size: 6.8pt; }
+  .matrix th { background: #dcdcdc; border: 0.4pt solid #333;
+               padding: 1mm; font-size: 6.4pt; }
+  .matrix td { border: 0.35pt solid #555; padding: 0.9mm 1.2mm;
+               text-align: right; font-family: "Doc Mono", monospace; }
+  .matrix td.rowlbl { text-align: left; font-family: "Doc Sans"; }
+
+  /* IT-2 W-2 record blocks */
+  .wrec { border: 0.7pt solid #000; margin-bottom: 4mm; }
+  .wrec h4 { margin: 0; background: #e9e9e9; padding: 1.2mm 2mm;
+             font-size: 7.6pt; border-bottom: 0.5pt solid #000; }
+  .wrec table { width: 100%; border-collapse: collapse; font-size: 7pt; }
+  .wrec td { border: 0.3pt solid #555; padding: 0.8mm 1.2mm; }
+  .wrec .n { font-size: 5.8pt; display: block; color: #333; }
+  .wrec .fill { font-family: "Doc Mono", monospace; }
+</style>
+</head>
+<body>
+
+{# Persona-only values rule: the data file carries @TOKENS@, never literal
+   personal values; every token resolves here from the persona pack. #}
+{% macro fill(t) -%}
+{{- t | replace("@NAME@", person.full_name)
+      | replace("@NAMEUP@", person.full_name | upper)
+      | replace("@FIRST@", person.full_name.split(" ")[0])
+      | replace("@FIRSTUP@", person.full_name.split(" ")[0] | upper)
+      | replace("@LASTUP@", person.full_name.split(" ")[-1] | upper)
+      | replace("@SSN4@", person.ssn[-4:])
+      | replace("@DOBUS@", person.date_of_birth[5:7] ~ "/" ~ person.date_of_birth[8:] ~ "/" ~ person.date_of_birth[:4])
+      | replace("@UKADDR@", addresses.uk_current.line1 ~ ", " ~ addresses.uk_current.line2 ~ ", " ~ addresses.uk_current.city ~ " " ~ addresses.uk_current.postcode)
+      | replace("@UKADDR1UP@", (addresses.uk_current.line1 ~ ", " ~ addresses.uk_current.line2) | upper)
+      | replace("@UKCITYPCUP@", (addresses.uk_current.city ~ " " ~ addresses.uk_current.postcode) | upper)
+      | replace("@USEMP@", employers.us_former.name)
+      | replace("@USEMPUP@", employers.us_former.name | upper)
+      | replace("@USEMPADDR@", employers.us_former.address)
+      | replace("@USEIN@", employers.us_former.ein)
+      | replace("@UKEMPUP@", employers.uk_current.name | upper)
+      | replace("@UKBANK@", banks.uk_current_account.institution)
+      | replace("@UKBANKUP@", banks.uk_current_account.institution | upper)
+      | replace("@UKSORT@", banks.uk_current_account.sort_code)
+      | replace("@UKACCT@", banks.uk_current_account.account_number)
+      | replace("@UKSAVACCT@", banks.uk_savings.account_number)
+      | replace("@UKACCT4@", banks.uk_current_account.account_number[-4:])
+      | replace("@UKSAV4@", banks.uk_savings.account_number[-4:])
+      | replace("@USBANK@", banks.us_checking.institution)
+      | replace("@USBANKUP@", banks.us_checking.institution | upper)
+      | replace("@USACCT4@", banks.us_checking.account_number[-4:])
+      | replace("@USSAV4@", banks.us_savings.account_number[-4:])
+      | replace("@ISANAME@", banks.isa_platform.institution)
+      | replace("@ISANAMEUP@", banks.isa_platform.institution | upper)
+      | replace("@ISAREF@", banks.isa_platform.account_ref) -}}
+{%- endmacro %}
+
+<div class="page-footer">
+  {{ issue.efile_control }} &nbsp; {{ person.full_name | upper }} &nbsp;
+  {{ issue.software_code }} &nbsp;&middot;&nbsp; Prepared by
+  {{ issue.firm.name }} &nbsp;&middot;&nbsp; Created {{ issue.created_stamp }}
+  <span style="float: right" class="pageno"></span>
+</div>
+
+{% for page in issue.pages %}
+
+{% if page.kind == "cover" %}
+<div class="cover-top">
+  <div class="cover-logo">{{ issue.firm.logo_a }}<span class="tick">&#10003;</span>{{ issue.firm.logo_b }}</div>
+  <p style="font-size: 9pt; color: #555">{{ issue.firm.strapline }}</p>
+</div>
+<div class="cover-black">
+  <div class="client">{{ person.full_name }}</div>
+  <h1>{{ issue.tax_year }} United States Tax Return Package</h1>
+  <div class="skyline">{{ issue.skyline_art }}</div>
+  <p style="color: #9fb3bd; margin-top: 8mm; font-size: 7.5pt">
+    {{ issue.firm.name }} &middot; {{ issue.firm.address }} &middot;
+    {{ issue.firm.phone }}</p>
+</div>
+
+{% elif page.kind == "divider" %}
+<div class="brandbar"><span class="fm">{{ issue.firm.name }}</span>
+  <span>{{ issue.tax_year }} Tax Return Package</span></div>
+<div class="divider">
+  <div class="t"><span class="arrow">&#9656;</span> {{ page.title }}</div>
+</div>
+
+{% elif page.kind == "letter" %}
+<div class="brandbar"><span class="fm">{{ issue.firm.name }}</span>
+  <span>{{ issue.firm.phone }} &middot; {{ issue.firm.email }}</span></div>
+<div class="letter">
+  {% if page.show_address | default(false) %}
+  <p class="conf">PRIVATE &amp; CONFIDENTIAL</p>
+  <p>{{ issue.letter_date }}</p>
+  <div class="addr-window">
+    {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}<br>
+    United Kingdom
+  </div>
+  {% endif %}
+  {% for blk in page.content %}
+    {% if blk.h is defined %}<h2>{{ fill(blk.h) }}</h2>{% endif %}
+    {% if blk.p is defined %}<p>{{ fill(blk.p) }}</p>{% endif %}
+    {% if blk.bullets is defined %}
+    <ul>{% for b in blk.bullets %}<li>{{ fill(b) }}</li>{% endfor %}</ul>
+    {% endif %}
+  {% endfor %}
+  {% if page.signoff | default(false) %}
+  <p style="margin-top: 6mm">Yours sincerely,</p>
+  <p style="font-family: 'Doc Serif'; font-style: italic; font-size: 11pt">
+    {{ supporting_cast.accountant }}</p>
+  <p>{{ supporting_cast.accountant }}, Partner<br>
+  Private Client &amp; Expatriate Tax<br>{{ issue.firm.name }}</p>
+  {% endif %}
+</div>
+
+{% elif page.kind == "checklist" %}
+<div class="brandbar"><span class="fm">{{ issue.firm.name }}</span>
+  <span>{{ issue.tax_year }} Tax Return Package</span></div>
+<div class="checklist">
+  <h1>{{ page.title }}</h1>
+  {% for g in page.groups %}
+  <h2>{{ g.heading }}</h2>
+  {# g["items"]: attribute access would hit the dict .items method #}
+  <ul>{% for it in g["items"] %}<li>{{ fill(it) }}</li>{% endfor %}</ul>
+  {% endfor %}
+</div>
+
+{% elif page.kind == "instructions" %}
+<div class="instr">
+  <h2>{{ page.title }}</h2>
+  {% for sec in page.sections %}
+  <div class="sec">
+    <span class="seclabel {{ 'hl' if sec.highlight | default(false) else '' }}">{{ sec.label }}</span>
+    {% if sec.text is defined %}<p>{{ fill(sec.text) }}</p>{% endif %}
+    {% for row in sec.rows | default([]) %}
+    <div class="leader"><span>{{ fill(row.label) }}</span>
+      <span class="dots"></span><span class="amt">{{ row.amount }}</span></div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+{% elif page.kind == "form" %}
+<div class="pagewrap gform">
+  {% if page.vwm is defined %}<div class="vwm">{{ page.vwm }}</div>{% endif %}
+  {% if page.margin_text is defined %}
+  <div class="statewm">{{ page.margin_text }}</div>{% endif %}
+  <div class="fhead">
+    <div class="fno">{{ page.form_no }}</div>
+    <div class="ftitle"><b>{{ page.title }}</b><br>
+      <span style="font-size: 6.6pt">{{ page.subtitle | default("") }}</span></div>
+    <div class="fomb">{{ page.omb | default("") }}<br>
+      <span class="fyr">{{ page.year | default(issue.tax_year) }}</span></div>
+  </div>
+  {% if page.name_strip | default(true) %}
+  <table class="flines" style="margin-bottom: 1mm">
+    <tr><td>Name shown on return:
+      <span style="font-family: 'Doc Mono'">{{ person.full_name | upper }}</span></td>
+      <td class="amt">SSN: XXX-XX-{{ person.ssn[-4:] }}</td></tr>
+  </table>
+  {% endif %}
+  <table class="flines">
+    {% for part in page.parts %}
+    {% if part.heading is defined %}
+    <tr class="parthead"><td colspan="3">{{ part.heading }}</td></tr>
+    {% endif %}
+    {% for line in part.lines %}
+    <tr>
+      <td class="ln">{{ line.n | default("") }}</td>
+      <td>{{ fill(line.label) }}</td>
+      <td class="amt {{ 'shade' if line.shade | default(false) else '' }}">{{ fill(line.value | default("")) }}</td>
+    </tr>
+    {% endfor %}
+    {% endfor %}
+  </table>
+  {% if page.pin_label is defined %}
+  <p style="font-size: 7pt; margin-top: 2mm"><b>{{ page.pin_label }}</b></p>
+  <div class="pinrow">
+    {% for c in page.pin_digits %}<div class="cell">{{ c }}</div>{% endfor %}
+  </div>
+  {% endif %}
+  {% if page.declaration is defined %}
+  <p class="decl">{{ page.declaration }}</p>
+  {% endif %}
+  {% if page.sign_strip | default(false) %}
+  <table class="flines" style="margin-top: 1.5mm">
+    <tr><td>Your signature:
+      <span style="font-family: 'Doc Serif'; font-style: italic; font-size: 9.5pt">
+      {{ person.full_name }}</span></td>
+      <td class="amt">Date: {{ page.sign_date }}</td></tr>
+    <tr><td>Paid preparer: {{ supporting_cast.accountant }},
+      {{ issue.firm.name }} &middot; PTIN {{ issue.firm.ptin }}</td>
+      <td class="amt">Firm EIN: {{ issue.firm.ein }}</td></tr>
+  </table>
+  {% endif %}
+  {% if page.barcode | default(false) %}
+  <div class="barcode"><div class="bc2d"></div><div class="bc1d"></div>
+    <span style="font-size: 6pt; align-self: flex-end;
+    font-family: 'Doc Mono'">{{ page.barcode_text }}</span></div>
+  {% endif %}
+  <p style="font-size: 6pt; color: #444; margin-top: 2mm">
+    {{ page.rev_code | default("") }}</p>
+</div>
+
+{% elif page.kind == "statement" %}
+<div class="stmt">{{ fill(page.body) }}</div>
+
+{% elif page.kind == "fbar_accounts" %}
+<h2 style="font-size: 10.5pt">{{ page.title }}</h2>
+<p style="font-size: 7.2pt">{{ page.intro | default("") }}</p>
+{% for b in page.blocks %}
+<div class="fblock">
+  <h4>{{ b.heading }}</h4>
+  <table>
+    <tr>
+      <td style="width: 34%"><span class="n">15. Maximum value of account
+        during calendar year</span>
+        <span class="fill">{{ b.max_value }}</span></td>
+      <td style="width: 22%"><span class="n">16. Type of account</span>
+        <span class="fill">{{ b.type }}</span></td>
+      <td><span class="n">17. Name of financial institution</span>
+        <span class="fill">{{ fill(b.institution) }}</span></td>
+    </tr>
+    <tr>
+      <td><span class="n">18. Account number or other designation</span>
+        <span class="fill">{{ fill(b.account) }}</span></td>
+      <td colspan="2"><span class="n">19&ndash;23. Mailing address of
+        financial institution</span>
+        <span class="fill">{{ fill(b.address) }}</span></td>
+    </tr>
+  </table>
+</div>
+{% endfor %}
+
+{% elif page.kind == "matrix" %}
+<div class="matrix">
+  <h3 style="font-size: 9pt">{{ page.title }}</h3>
+  <p style="font-size: 6.8pt">{{ page.subtitle }}</p>
+  <table>
+    <tr><th style="text-align:left">{{ page.row_header }}</th>
+      {% for c in page.columns %}<th>{{ c }}</th>{% endfor %}</tr>
+    {% for r in page.rows %}
+    <tr><td class="rowlbl">{{ r.label }}</td>
+      {# r["values"]: attribute access would hit the dict .values method #}
+      {% for v in r["values"] %}<td>{{ v }}</td>{% endfor %}</tr>
+    {% endfor %}
+  </table>
+  <p style="font-size: 6.4pt; color: #444; margin-top: 2mm">{{ page.note }}</p>
+</div>
+
+{% elif page.kind == "it2" %}
+<div class="pagewrap">
+  {% if page.margin_text is defined %}
+  <div class="statewm">{{ page.margin_text }}</div>{% endif %}
+  <h2 style="font-size: 11pt">{{ page.title }}</h2>
+  <p style="font-size: 7.2pt">{{ page.intro }}</p>
+  {% for rec in page.records %}
+  <div class="wrec">
+    <h4>{{ rec.heading }}</h4>
+    <table>
+      <tr>
+        <td style="width: 40%"><span class="n">Box b &mdash; Employer
+          identification number (EIN)</span>
+          <span class="fill">{{ fill(rec.ein) }}</span></td>
+        <td colspan="2"><span class="n">Box c &mdash; Employer's name and
+          full address</span>
+          <span class="fill">{{ fill(rec.employer) }}</span></td>
+      </tr>
+      <tr>
+        <td><span class="n">Box 1 &mdash; Wages, tips, other compensation</span>
+          <span class="fill">{{ rec.box1 }}</span></td>
+        <td><span class="n">Box 16 &mdash; State wages</span>
+          <span class="fill">{{ rec.box16 }}</span></td>
+        <td><span class="n">Box 17 &mdash; State income tax withheld</span>
+          <span class="fill">{{ rec.box17 }}</span></td>
+      </tr>
+      <tr>
+        <td><span class="n">Box 12 &mdash; Amount / Code</span>
+          <span class="fill">{{ rec.box12 }}</span></td>
+        <td><span class="n">Box 18 &mdash; Local wages</span>
+          <span class="fill">{{ rec.box18 }}</span></td>
+        <td><span class="n">Box 19 / 20 &mdash; Local tax / Locality</span>
+          <span class="fill">{{ rec.box19 }} / NYC</span></td>
+      </tr>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# A matrix page uses a landscape named page; the named-page change itself
+   forces a break on both sides, so an explicit page-break before or after
+   one would leave a blank page. #}
+{% if not loop.last and page.kind != "matrix"
+      and issue.pages[loop.index].kind != "matrix" %}<div class="page-break"></div>{% endif %}
+{% endfor %}
+
+</body>
+</html>

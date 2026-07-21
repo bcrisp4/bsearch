@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  body { font-family: "Doc Serif", serif; }
+  .crest { text-align: center; margin-bottom: 3mm; }
+  .crest .shield {
+    display: inline-block; width: 16mm; height: 18mm;
+    border: 1.2pt solid #3b2a6b; border-radius: 0 0 8mm 8mm;
+    background: linear-gradient(135deg, #efeaf9 0%, #d9cef0 100%);
+    color: #3b2a6b; font-weight: bold; font-size: 13pt;
+    line-height: 18mm; letter-spacing: 1pt;
+  }
+  .crest .motto {
+    font-style: italic; font-size: 7.5pt; color: #3b2a6b;
+    letter-spacing: 1.2pt; margin-top: 1mm;
+  }
+  .uni-name {
+    text-align: center; font-size: 17pt; font-weight: bold;
+    color: #3b2a6b; letter-spacing: 2pt; text-transform: uppercase;
+  }
+  .doc-title {
+    text-align: center; font-size: 12pt; letter-spacing: 3pt;
+    text-transform: uppercase; margin: 2mm 0 5mm;
+    border-top: 0.6pt solid #3b2a6b; border-bottom: 0.6pt solid #3b2a6b;
+    padding: 1.5mm 0;
+  }
+  table.ident { width: 100%; border-collapse: collapse; margin-bottom: 4mm; font-size: 9pt; }
+  table.ident td { padding: 1.2mm 2mm; border-bottom: 0.3pt solid #cbc3e0; vertical-align: top; }
+  table.ident td.label { width: 42mm; font-weight: bold; color: #3b2a6b; }
+  h2 { color: #3b2a6b; font-size: 10.5pt; letter-spacing: 0.8pt; text-transform: uppercase; }
+  table.marks { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin: 1.5mm 0 4mm; }
+  table.marks th {
+    background: #3b2a6b; color: #fff; text-align: left;
+    padding: 1.5mm 2mm; font-size: 8pt;
+  }
+  table.marks td { padding: 1.3mm 2mm; border-bottom: 0.3pt solid #d8d2ea; }
+  table.marks td.num, table.marks th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.marks tr.level td {
+    background: #efeaf9; font-weight: bold; color: #3b2a6b;
+    border-top: 0.6pt solid #3b2a6b;
+  }
+  table.marks tr.sub td { font-weight: bold; border-top: 0.6pt solid #3b2a6b; background: #f7f4fd; }
+  .award-box {
+    border: 1pt solid #3b2a6b; background: #efeaf9;
+    padding: 3mm 4mm; margin: 4mm 0; font-size: 9.5pt;
+  }
+  .certify { margin-top: 6mm; font-size: 9pt; }
+  .sig-line { margin-top: 9mm; width: 62mm; border-top: 0.5pt solid #333; padding-top: 1mm; font-size: 8.5pt; }
+  .sig-script { font-family: "Doc Serif", serif; font-style: italic; font-size: 13pt; margin-bottom: -1mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} &middot; Academic Registry &middot; Transcript reference {{ issue.transcript_ref }}
+  &middot; This transcript is invalid if altered and may be verified with the Academic Registry,
+  registry@wexcombe.example, 0113 496 0208.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="crest">
+  <div class="shield">UW</div>
+  <div class="motto">Scientia Lumen Vitae</div>
+</div>
+<div class="uni-name">{{ vendor.name }}</div>
+<div class="doc-title">Academic Transcript</div>
+
+<table class="ident">
+  <tr><td class="label">Surname</td><td>{{ person.full_name.split(' ')[-1] }}</td>
+      <td class="label">Forenames</td><td>{{ person.full_name.split(' ')[0] }}</td></tr>
+  <tr><td class="label">Student identification number</td><td>{{ vendor.student_id }}</td>
+      <td class="label">Date of birth</td><td>{{ person.date_of_birth }}</td></tr>
+  <tr><td class="label">Programme of study</td><td>{{ issue.programme }}</td>
+      <td class="label">School</td><td>{{ issue.school }}</td></tr>
+  <tr><td class="label">Mode of study</td><td>{{ issue.mode }}</td>
+      <td class="label">Language of instruction</td><td>English</td></tr>
+  <tr><td class="label">Commencement of study</td><td>{{ issue.commencement }}</td>
+      <td class="label">Conferment of award</td><td>{{ issue.conferment }}</td></tr>
+</table>
+
+<h2>Assessment board decisions</h2>
+<table class="marks">
+  <tr><th>Academic year</th><th>Board result</th><th>Board date</th>
+      <th class="num">Credit awarded</th><th class="num">Weighted average (%)</th></tr>
+  {% for row in issue.board_rows %}
+  <tr><td>{{ row.year }}</td><td>{{ row.result }}</td><td>{{ row.board_date }}</td>
+      <td class="num">{{ row.credits }}</td><td class="num">{{ row.average }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Unit results</h2>
+<table class="marks">
+  <tr><th>Unit</th><th>Unit title</th><th class="num">Credits</th>
+      <th class="num">Mark (%)</th><th>Result</th></tr>
+  {% for level in issue.levels %}
+  <tr class="level"><td colspan="5">{{ level.name }}</td></tr>
+  {% for m in level.modules %}
+  <tr><td>{{ m.code }}</td><td>{{ m.title }}</td>
+      <td class="num">{{ m.credits }}</td><td class="num">{{ m.mark }}</td><td>{{ m.result }}</td></tr>
+  {% endfor %}
+  <tr class="sub"><td></td><td>Level total / credit-weighted average</td>
+      <td class="num">{{ level.credits }}</td><td class="num">{{ level.average }}</td><td></td></tr>
+  {% endfor %}
+</table>
+
+<div class="award-box">
+  <strong>Final award:</strong> {{ issue.programme }} &mdash;
+  <strong>{{ issue.classification }}</strong><br>
+  <strong>Overall award average:</strong> {{ issue.award_average }}%
+  (weighted 30% Level 5, 70% Level 6) &nbsp;&middot;&nbsp;
+  <strong>Date awarded:</strong> {{ issue.conferment }}
+</div>
+
+<h2>Grading scheme</h2>
+<p style="font-size: 8.5pt;">Units are marked on a percentage scale with a pass
+mark of 40. Honours classifications are awarded on the credit-weighted average
+of Levels 5 and 6: First-Class Honours 70% and above; Upper Second-Class
+Honours 60&ndash;69%; Lower Second-Class Honours 50&ndash;59%; Third-Class
+Honours 40&ndash;49%. One credit corresponds to ten notional hours of
+learning; 120 credits are studied at each level. Two ECTS credits correspond
+to one unit credit.</p>
+
+<div class="certify">
+  <p>Certified a true record of the student&rsquo;s results held by the
+  Academic Registry of {{ vendor.name }}. Issued on {{ issue.issue_date }}.</p>
+  <div class="sig-line">
+    <div class="sig-script">{{ issue.registrar }}</div>
+    {{ issue.registrar }}, {{ issue.registrar_title }}
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  body { font-size: 9pt; }
+  .cv-name { text-align: center; font-size: 19pt; font-weight: bold; letter-spacing: 1pt; }
+  .cv-contact { text-align: center; font-size: 8.5pt; color: #333; margin: 1.5mm 0 5mm; }
+  .cv-contact .sep { color: #146c43; padding: 0 1.5mm; }
+  h2.sect {
+    font-size: 10.5pt; text-transform: uppercase; letter-spacing: 1.2pt;
+    border-bottom: 0.8pt solid #146c43; padding-bottom: 0.8mm; margin: 5mm 0 2.5mm;
+  }
+  .role { display: flex; margin-bottom: 3mm; }
+  .role .dates { width: 34mm; flex-shrink: 0; font-size: 8pt; color: #555; padding-top: 0.4mm; }
+  .role .body { flex-grow: 1; }
+  .role .employer { font-weight: bold; }
+  .role .title { font-style: italic; }
+  .role ul { margin: 1mm 0 0; padding-left: 4.5mm; }
+  .role li { margin-bottom: 0.8mm; }
+  .skills p { margin-bottom: 1.2mm; }
+</style>
+</head>
+<body>
+
+<div class="cv-name">{{ person.full_name }}</div>
+<div class="cv-contact">
+  {{ person.email }}<span class="sep">&bull;</span>{{ person.phone_uk_mobile }}
+  <span class="sep">&bull;</span>{{ addresses.uk_current.city }}, UK
+  <span class="sep">&bull;</span>marchbank.example
+</div>
+
+<h2 class="sect">About Me</h2>
+<p>{{ issue.about }}</p>
+
+<h2 class="sect">Key Technical Skills and Interests</h2>
+<div class="skills">
+  {% for s in issue.skills %}
+  <p><strong>{{ s.name }}</strong> &mdash; {{ s.detail }}</p>
+  {% endfor %}
+</div>
+
+<h2 class="sect">Relevant Professional Experience</h2>
+{% for r in issue.experience %}
+<div class="role">
+  <div class="dates">{{ r.dates }}</div>
+  <div class="body">
+    <span class="employer">{{ r.employer }}</span>, {{ r.location }}<br>
+    <span class="title">{{ r.role }}</span>
+    <ul>
+      {% for b in r.bullets %}<li>{{ b }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endfor %}
+
+<h2 class="sect">Education</h2>
+{% for e in issue.education %}
+<div class="role">
+  <div class="dates">{{ e.dates }}</div>
+  <div class="body">
+    <span class="employer">{{ e.institution }}</span><br>
+    {{ e.detail }}
+  </div>
+</div>
+{% endfor %}
+
+<h2 class="sect">Professional Courses</h2>
+<ul>
+  {% for c in issue.courses %}<li>{{ c }}</li>{% endfor %}
+</ul>
+
+<h2 class="sect">Beyond Work</h2>
+<p>{{ issue.interests }}</p>
+
+<p style="font-size: 7.5pt; color: #666; margin-top: 5mm;">References available
+on request. Right to work: British citizen; previously held US work
+authorisation (2023&ndash;2025).</p>
+
+</body>
+</html>

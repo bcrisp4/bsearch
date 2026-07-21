@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Classic UK payroll-software payslip: dark header strip, two textured
+     panels, three rounded summary boxes, highlighted net-pay box. */
+  html { font-size: 8.5pt; }
+  .ps-header {
+    background: #1c3f6e; color: #fff;
+    display: flex; justify-content: space-between;
+    padding: 2.2mm 3mm; margin-bottom: 4mm;
+  }
+  .ps-header .cell { text-align: left; }
+  .ps-header .lbl { font-size: 6.5pt; color: #b9c9e0; display: block; }
+  .ps-header .val { font-weight: bold; font-size: 9pt; }
+  .panels { display: flex; gap: 5mm; }
+  /* display:block, not flex-column: WeasyPrint overlaps a bottom-stuck
+     footer with tall table rows under flex. */
+  .ps-panel {
+    flex: 1; border: 0.5pt solid #6d87a8; min-height: 62mm;
+    background: repeating-linear-gradient(
+      135deg, #eef3fa, #eef3fa 2.2mm, #e4ecf7 2.2mm, #e4ecf7 4.4mm);
+  }
+  .ps-panel h3 {
+    margin: 0; background: #d3dfef; padding: 1.6mm 2.5mm;
+    font-size: 8.5pt; letter-spacing: 0.5pt; text-transform: uppercase;
+    border-bottom: 0.5pt solid #6d87a8;
+  }
+  .ps-panel table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+  .ps-panel th {
+    text-align: left; font-size: 7pt; color: #37517a;
+    padding: 1.2mm 2.5mm 0.6mm; border-bottom: 0.4pt solid #9db1cc;
+  }
+  .ps-panel td { padding: 1.1mm 2.5mm; }
+  .ps-panel td.num, .ps-panel th.num {
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .panel-foot {
+    margin-top: 2mm; font-size: 7.5pt; color: #37517a;
+    padding: 1.6mm 2.5mm; border-top: 0.4pt solid #9db1cc;
+  }
+  .boxes { display: flex; gap: 4mm; margin-top: 5mm; }
+  .rbox {
+    flex: 1; border: 0.5pt solid #6d87a8; border-radius: 2.5mm;
+    padding: 2mm 2.5mm; font-size: 7.6pt;
+  }
+  .rbox h4 {
+    margin: 0 0 1.2mm; font-size: 7.6pt; text-transform: uppercase;
+    letter-spacing: 0.4pt; color: #1c3f6e;
+  }
+  .rbox table { width: 100%; border-collapse: collapse; }
+  .rbox td { padding: 0.5mm 0; vertical-align: top; }
+  .rbox td.v { text-align: right; font-variant-numeric: tabular-nums; font-weight: bold; }
+  .netpay {
+    margin: 5mm 0 0 auto; width: 62mm; border: 1pt solid #1c3f6e;
+    border-radius: 2.5mm; background: #dce8f8;
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 2.5mm 3.5mm; font-weight: bold;
+  }
+  .netpay .amount { font-size: 14pt; }
+  .msg {
+    margin-top: 5mm; border-top: 0.4pt dashed #6d87a8; padding-top: 1.6mm;
+    font-size: 7.5pt; color: #333;
+  }
+  .msg .t { font-weight: bold; color: #1c3f6e; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ employers.uk_current.name }} &middot; {{ employers.uk_current.address }} &middot;
+  Payroll queries: peopleops@halewick.example &middot; This payslip is generated
+  electronically and is valid without signature.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="ps-header">
+  <div class="cell"><span class="lbl">Ref</span>
+    <span class="val">{{ employers.uk_current.payroll_ref }}</span></div>
+  <div class="cell"><span class="lbl">Employee Name</span>
+    <span class="val">{{ person.full_name }}</span></div>
+  <div class="cell"><span class="lbl">Process Date</span>
+    <span class="val">{{ issue.process_date }}</span></div>
+  <div class="cell"><span class="lbl">N.I. Number</span>
+    <span class="val">{{ person.ni_number }}</span></div>
+</div>
+
+<div class="panels">
+  <div class="ps-panel">
+    <h3>Payments</h3>
+    <table>
+      <tr><th>Description</th><th class="num">Units</th>
+          <th class="num">Rate</th><th class="num">Amount</th></tr>
+      {% for p in issue.payments %}
+      <tr><td>{{ p.desc }}</td><td class="num">{{ p.units }}</td>
+          <td class="num">{{ p.rate }}</td><td class="num">{{ p.amount }}</td></tr>
+      {% endfor %}
+    </table>
+    <div class="panel-foot">Payment Period: {{ issue.period }}</div>
+  </div>
+  <div class="ps-panel">
+    <h3>Deductions</h3>
+    <table>
+      <tr><th>Description</th><th class="num">Amount</th></tr>
+      {% for d in issue.deductions %}
+      <tr><td>{{ d.desc }}</td><td class="num">{{ d.amount }}</td></tr>
+      {% endfor %}
+    </table>
+    <div class="panel-foot">
+      Holidays Taken: {{ issue.holidays_taken }} &nbsp;
+      Remaining: {{ issue.holidays_remaining }}
+    </div>
+  </div>
+</div>
+
+<div class="boxes">
+  <div class="rbox">
+    <h4>{{ employers.uk_current.name }}</h4>
+    <table>
+      <tr><td>Tax Period</td><td class="v">{{ issue.tax_period }}</td></tr>
+      <tr><td>Tax Year</td><td class="v">{{ issue.tax_year }}</td></tr>
+      <tr><td>Tax Code</td><td class="v">{{ issue.tax_code }}</td></tr>
+      <tr><td>Department</td><td class="v">{{ issue.department }}</td></tr>
+      <tr><td>Payment Method</td><td class="v">{{ issue.payment_method }}</td></tr>
+    </table>
+  </div>
+  <div class="rbox">
+    <h4>This Period</h4>
+    <table>
+      <tr><td>Total Gross Pay</td><td class="v">{{ issue.this_period.gross }}</td></tr>
+      <tr><td>Gross for Tax</td><td class="v">{{ issue.this_period.gross_for_tax }}</td></tr>
+      <tr><td>Tax Paid</td><td class="v">{{ issue.this_period.tax }}</td></tr>
+      <tr><td>Earnings for NI</td><td class="v">{{ issue.this_period.earnings_for_ni }}</td></tr>
+      <tr><td>National Insurance</td><td class="v">{{ issue.this_period.ni }}</td></tr>
+      <tr><td>Pension</td><td class="v">{{ issue.this_period.pension }}</td></tr>
+      <tr><td>Employer NI</td><td class="v">{{ issue.this_period.er_ni }}</td></tr>
+      <tr><td>Employer Pension</td><td class="v">{{ issue.this_period.er_pension }}</td></tr>
+    </table>
+  </div>
+  <div class="rbox">
+    <h4>Year To Date</h4>
+    <table>
+      <tr><td>Gross Pay TD</td><td class="v">{{ issue.ytd.gross }}</td></tr>
+      <tr><td>Gross for Tax TD</td><td class="v">{{ issue.ytd.gross_for_tax }}</td></tr>
+      <tr><td>Tax Paid TD</td><td class="v">{{ issue.ytd.tax }}</td></tr>
+      <tr><td>Earnings for NI TD</td><td class="v">{{ issue.ytd.earnings_for_ni }}</td></tr>
+      <tr><td>National Insurance TD</td><td class="v">{{ issue.ytd.ni }}</td></tr>
+      <tr><td>Pension TD</td><td class="v">{{ issue.ytd.pension }}</td></tr>
+      <tr><td>Student Loan TD</td><td class="v">{{ issue.ytd.student_loan }}</td></tr>
+      <tr><td>Employer NI TD</td><td class="v">{{ issue.ytd.er_ni }}</td></tr>
+      <tr><td>Employer Pension TD</td><td class="v">{{ issue.ytd.er_pension }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="netpay">
+  <span>NET PAY</span>
+  <span class="amount">&pound;{{ issue.net_pay }}</span>
+</div>
+
+{% if issue.message is defined %}
+<div class="msg"><span class="t">Messages:</span> {{ issue.message }}</div>
+{% endif %}
+
+</body>
+</html>

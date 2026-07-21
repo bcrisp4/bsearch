@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* P60 End of Year Certificate — single-page teal certificate grid. */
+  html { font-size: 8pt; }
+  .p60-head { display: flex; justify-content: space-between;
+              align-items: flex-end; border-bottom: 2pt solid #00655f;
+              padding-bottom: 2mm; margin-bottom: 4mm; }
+  .p60-head h1 { color: #00655f; margin: 0; font-size: 17pt; }
+  .p60-head .yr { text-align: right; font-size: 9pt; }
+  .p60-head .yr b { font-size: 12pt; color: #00655f; }
+  .sect { border: 0.6pt solid #00655f; margin-bottom: 3.5mm; }
+  .sect h3 { margin: 0; background: #d5e8e6; color: #00443f;
+             padding: 1.4mm 2.5mm; font-size: 8pt;
+             border-bottom: 0.6pt solid #00655f; }
+  .sect table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  .sect td, .sect th { padding: 1.3mm 2.5mm; border-bottom: 0.3pt solid #9ec4c1;
+                       vertical-align: top; }
+  .sect tr:last-child td { border-bottom: none; }
+  .sect .num { text-align: right; font-family: "Doc Mono", monospace; }
+  .sect th { background: #eef6f5; text-align: left; font-size: 7.2pt;
+             color: #00443f; }
+  .figbox { display: inline-block; border: 0.5pt solid #00655f;
+            background: #fff; padding: 0.8mm 1.6mm; min-width: 24mm;
+            font-family: "Doc Mono", monospace; text-align: right; }
+  .note { font-size: 7pt; color: #333; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  P60 (Single sheet) {{ issue.tax_year }} &middot; Do not destroy &middot;
+  Issued by {{ employers.uk_current.name }} under PAYE reference
+  {{ issue.paye_ref }}.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="p60-head">
+  <div>
+    <h1>P60 End of Year Certificate</h1>
+    <p class="note" style="margin: 1mm 0 0">Keep this certificate safe. You
+    will need it if you have to fill in a tax return, claim back overpaid tax,
+    or apply for tax credits or a loan. Copies are not available.</p>
+  </div>
+  <div class="yr">Tax year to 5 April<br><b>{{ issue.year_end }}</b></div>
+</div>
+
+<div class="sect">
+  <h3>Employee's details</h3>
+  <table>
+    <tr><td style="width: 34%">Surname / Forenames</td>
+        <td class="num">{{ person.full_name.split(" ")[-1] | upper }},
+            {{ person.full_name.split(" ")[0] | upper }}</td>
+        <td style="width: 22%">National Insurance number</td>
+        <td class="num">{{ person.ni_number }}</td></tr>
+    <tr><td>Works/payroll number</td>
+        <td class="num">{{ employers.uk_current.payroll_ref }}</td>
+        <td>Final tax code</td>
+        <td class="num">{{ issue.tax_code }}</td></tr>
+  </table>
+</div>
+
+<div class="sect">
+  <h3>Pay and Income Tax details</h3>
+  <table>
+    <tr><th></th><th class="num">Pay</th><th class="num">Tax deducted</th></tr>
+    <tr><td>In previous employment(s)</td>
+        <td class="num">{{ issue.prev_pay }}</td>
+        <td class="num">{{ issue.prev_tax }}</td></tr>
+    <tr><td>In this employment</td>
+        <td class="num"><span class="figbox">&pound; {{ issue.pay }}</span></td>
+        <td class="num"><span class="figbox">&pound; {{ issue.tax }}</span></td></tr>
+    <tr><td><strong>Total for year</strong></td>
+        <td class="num"><strong>{{ issue.total_pay }}</strong></td>
+        <td class="num"><strong>{{ issue.total_tax }}</strong></td></tr>
+  </table>
+</div>
+
+<div class="sect">
+  <h3>National Insurance contributions in this employment</h3>
+  <table>
+    <tr>
+      <th>NIC table letter</th>
+      <th class="num">Earnings at the Lower Earnings Limit (where earnings reach or exceed the LEL)</th>
+      <th class="num">Earnings above the LEL, up to and including the Primary Threshold</th>
+      <th class="num">Earnings above the PT, up to and including the Upper Earnings Limit</th>
+      <th class="num">Employee's contributions due on all earnings above the PT</th>
+    </tr>
+    <tr>
+      <td class="num">A</td>
+      <td class="num">{{ issue.ni_lel }}</td>
+      <td class="num">{{ issue.ni_lel_pt }}</td>
+      <td class="num">{{ issue.ni_pt_uel }}</td>
+      <td class="num">{{ issue.ni_employee }}</td>
+    </tr>
+  </table>
+</div>
+
+<div class="sect">
+  <h3>Statutory payments and Student Loan deductions</h3>
+  <table>
+    <tr><td>Statutory Maternity / Paternity / Adoption Pay</td>
+        <td class="num">0.00</td>
+        <td>Student Loan deductions in this employment
+            (whole &pound;s only) &mdash; Plan 1</td>
+        <td class="num"><span class="figbox">&pound; {{ issue.student_loan }}</span></td></tr>
+  </table>
+</div>
+
+<div class="sect">
+  <h3>Other details / Employer's details</h3>
+  <table>
+    <tr><td style="width: 34%">Pension contributions deducted under a net pay
+        arrangement (included in Pay above? No &mdash; already deducted)</td>
+        <td class="num">{{ issue.pension }}</td>
+        <td style="width: 22%">Employer PAYE reference</td>
+        <td class="num">{{ issue.paye_ref }}</td></tr>
+    <tr><td colspan="2" class="note">{{ issue.footnote }}</td>
+        <td>Employer name and address</td>
+        <td class="num" style="text-align: left; font-family: 'Doc Sans'">
+          {{ employers.uk_current.name }}<br>
+          {{ employers.uk_current.address }}</td></tr>
+  </table>
+</div>
+
+<p class="note">The figures marked &pound; above should be used for your tax
+return, if you get one. This form shows your total pay for Income Tax purposes
+in this employment for the year. Any overtime, bonus, commission, Statutory
+Sick Pay, Statutory Maternity Pay or Statutory Paternity Pay is included.</p>
+
+<p class="note" style="margin-top: 3mm">Certificate by Employer: this
+certifies that the details entered above for the year to 5 April
+{{ issue.year_end }} are those recorded on the employer's payroll for
+{{ person.full_name }}.</p>
+
+</body>
+</html>

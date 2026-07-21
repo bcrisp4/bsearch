@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .instruction { text-align: center; font-style: italic; font-size: 9pt; margin-bottom: 4mm; }
+  .ticket {
+    background: #0d2b45; color: #fff; border-radius: 4mm;
+    padding: 6mm; display: flex; gap: 5mm; margin-bottom: 6mm;
+  }
+  .ticket .stub { flex-grow: 1; }
+  .ticket .museum-name { font-size: 15pt; font-weight: bold; letter-spacing: 1pt; }
+  .ticket .museum-sub { font-size: 7.5pt; color: #a9c2d8; margin-bottom: 3mm; }
+  .wbox { background: #fff; color: #1a1a1a; border-radius: 1.5mm; padding: 2mm 3mm; margin-top: 2.5mm; }
+  .wbox .k { font-size: 6.5pt; color: #666; text-transform: uppercase; letter-spacing: 0.8pt; }
+  .wbox .v { font-size: 11pt; font-weight: bold; }
+  .wbox-grid { display: flex; gap: 2.5mm; }
+  .wbox-grid .wbox { flex: 1; margin-top: 2.5mm; }
+  .barcode-strip {
+    width: 22mm; background: #fff; border-radius: 1.5mm;
+    display: flex; align-items: center; justify-content: space-around; padding: 2mm 1mm;
+  }
+  .barcode-vert {
+    width: 12mm; height: 70mm;
+    background: repeating-linear-gradient(
+      to bottom, #111 0 0.7mm, #fff 0.7mm 1.3mm, #111 1.3mm 2.6mm,
+      #fff 2.6mm 3.1mm, #111 3.1mm 3.5mm, #fff 3.5mm 4.7mm);
+  }
+  .barcode-digits {
+    color: #1a1a1a; font-family: "Doc Mono", monospace; font-size: 7.5pt;
+    transform: rotate(90deg); white-space: nowrap; width: 4mm;
+  }
+  h2 { font-size: 10.5pt; color: #0d2b45; }
+  .barcode-small {
+    width: 42mm; height: 9mm; margin-top: 1mm;
+    background: repeating-linear-gradient(
+      to right, #111 0 0.6mm, #fff 0.6mm 1.4mm, #111 1.4mm 2.7mm,
+      #fff 2.7mm 3.2mm, #111 3.2mm 3.6mm, #fff 3.6mm 4.5mm);
+  }
+  .tpl-id { font-size: 6pt; color: #999; margin-top: 6mm; }
+</style>
+</head>
+<body>
+
+<p class="instruction">Please have this ticket ready to present on arrival
+&mdash; on your phone is fine.</p>
+
+<div class="ticket">
+  <div class="stub">
+    <div class="museum-name">{{ issue.museum | upper }}</div>
+    <div class="museum-sub">{{ issue.museum_address }}</div>
+    <div class="wbox">
+      <div class="k">Name</div>
+      <div class="v">{{ person.full_name.split(' ')[-1] | upper }}</div>
+    </div>
+    <div class="wbox-grid">
+      <div class="wbox"><div class="k">Product</div><div class="v" style="font-size: 9pt;">{{ issue.product }}</div></div>
+      <div class="wbox"><div class="k">Date</div><div class="v" style="font-size: 9pt;">{{ issue.visit_date }}</div></div>
+    </div>
+    <div class="wbox-grid">
+      <div class="wbox"><div class="k">Time</div><div class="v">{{ issue.entry_time }}</div></div>
+      <div class="wbox"><div class="k">Ticket type</div><div class="v" style="font-size: 9pt;">{{ issue.ticket_type }}</div></div>
+      <div class="wbox"><div class="k">Price</div><div class="v">&pound;{{ issue.price }}</div></div>
+      <div class="wbox"><div class="k">Booking ref</div><div class="v" style="font-size: 9pt;">{{ issue.booking_ref }}</div></div>
+    </div>
+  </div>
+  <div class="barcode-strip">
+    <div class="barcode-vert"></div>
+    <div class="barcode-digits">{{ issue.barcode_digits }}</div>
+  </div>
+</div>
+
+<p>Thank you for booking with us, {{ person.short_name }} &mdash; we look
+forward to seeing you. Your order was placed on {{ issue.order_date }}.</p>
+
+<h2>Allocated entry time</h2>
+<p>Your ticket admits you in the 30-minute window beginning at
+{{ issue.entry_time }} on {{ issue.visit_date }}. Once inside you may stay as
+long as you like. If you miss your window, come to the welcome desk and we
+will fit you into the next available slot.</p>
+
+<h2>On arrival</h2>
+<p>Head to the e-ticket lane at the main entrance on Quayside Walk and show
+this ticket &mdash; there is no need to print it. Bags larger than cabin size
+must be checked into the free cloakroom. Last entry is 90 minutes before
+closing.</p>
+
+<h2>Photography</h2>
+<p>Photography without flash is welcome in the permanent galleries. Flash,
+tripods and photography in special exhibitions are not permitted.</p>
+
+<h2>Getting here</h2>
+<p>{{ issue.museum }}, {{ issue.museum_address }}</p>
+<ul>
+  {% for s in issue.nearest_stations %}<li>{{ s }}</li>{% endfor %}
+</ul>
+<p>There is no visitor parking at the museum; blue-badge spaces can be booked
+in advance on 020 7946 0688.</p>
+
+<p>Questions about your booking? Email tickets@wardleymaritime.example or
+call 020 7946 0688 (daily 9am&ndash;5pm), quoting booking reference
+{{ issue.booking_ref }}.</p>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-end;">
+  <div class="tpl-id">tpl:eticket-v3.1/wmm &middot; {{ issue.booking_ref }}</div>
+  <div>
+    <div style="font-size: 6.5pt; color: #666;">Recall booking at the welcome desk:</div>
+    <div class="barcode-small"></div>
+  </div>
+</div>
+
+</body>
+</html>

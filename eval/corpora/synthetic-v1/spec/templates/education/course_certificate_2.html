@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Aldergate Academy: modern dark-banner sans certificate with badge disc. */
+  .banner {
+    background: #241d4f; color: #fff; padding: 10mm 12mm 8mm;
+    margin: -6mm -4mm 8mm;
+  }
+  .banner .brand { font-size: 16pt; font-weight: bold; letter-spacing: 1pt; }
+  .banner .brand .dot { color: #f2a341; }
+  .banner .tag { font-size: 8pt; color: #cfc9ef; margin-top: 1mm; letter-spacing: 0.8pt; }
+  .cert-body { text-align: center; padding: 0 10mm; }
+  .badge {
+    width: 30mm; height: 30mm; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #3d3382, #241d4f);
+    color: #f2a341; font-weight: bold; font-size: 11pt;
+    display: flex; align-items: center; justify-content: center;
+    margin: 2mm auto 6mm; border: 1.6pt solid #f2a341;
+  }
+  .earned { font-size: 9.5pt; color: #555; text-transform: uppercase; letter-spacing: 2pt; }
+  .holder { font-size: 20pt; font-weight: bold; margin: 3mm 0; color: #241d4f; }
+  .course { font-size: 13.5pt; font-weight: bold; margin: 3mm 0 2mm; }
+  .detail { font-size: 9pt; color: #444; max-width: 128mm; margin: 0 auto 6mm; }
+  table.facts {
+    margin: 6mm auto; border-collapse: collapse; font-size: 9pt;
+  }
+  table.facts td { padding: 1.6mm 5mm; border-bottom: 0.3pt solid #ddd; }
+  table.facts td.k { color: #241d4f; font-weight: bold; text-align: right; }
+  .sig { margin-top: 12mm; display: inline-block; }
+  .sig .script { font-style: italic; font-size: 13pt; border-bottom: 0.5pt solid #241d4f; padding: 0 8mm 1mm; }
+  .sig .who { font-size: 8pt; margin-top: 1.5mm; }
+  .verify-strip {
+    margin-top: 12mm; background: #f1effa; border-left: 1.6mm solid #241d4f;
+    padding: 3mm 4mm; font-size: 8pt; text-align: left;
+  }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <div class="brand">aldergate<span class="dot">&#9679;</span>academy</div>
+  <div class="tag">CERTIFIED CLOUD INFRASTRUCTURE PROGRAMMES &middot; ONLINE, PROCTORED, ASSESSED</div>
+</div>
+
+<div class="cert-body">
+  <div class="badge">CIP-2</div>
+
+  <div class="earned">This credential is awarded to</div>
+  <div class="holder">{{ person.full_name }}</div>
+
+  <div class="earned" style="letter-spacing: 1pt;">for successful completion of</div>
+  <div class="course">{{ issue.course_title }}</div>
+  <div class="detail">{{ issue.course_detail }}</div>
+
+  <table class="facts">
+    <tr><td class="k">Date earned</td><td>{{ issue.completion_date }}</td></tr>
+    <tr><td class="k">Final assessment score</td><td>{{ issue.score }} (pass mark 70%)</td></tr>
+    <tr><td class="k">Credential ID</td><td>{{ issue.certificate_no }}</td></tr>
+    <tr><td class="k">Valid until</td><td>{{ issue.valid_until }}</td></tr>
+  </table>
+
+  <div class="sig">
+    <div class="script">{{ issue.signatory }}</div>
+    <div class="who">{{ issue.signatory }}, {{ issue.signatory_title }}</div>
+  </div>
+
+  <div class="verify-strip">
+    <strong>Verify this credential:</strong> {{ issue.credential_url }} &mdash;
+    employers can confirm the holder&rsquo;s name, score band and expiry date.
+    Aldergate Academy certifications are renewed by continuing-education
+    credits or re-assessment before the expiry date shown above.
+  </div>
+</div>
+
+</body>
+</html>
