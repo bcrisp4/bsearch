@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from corpusgen.check import scan_tree
+from corpusgen.convert import convert
 from corpusgen.denylist import Denylist
 from corpusgen.generate import generate
 
@@ -49,9 +50,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     gen.add_argument("corpus_dir", type=Path, help="corpus directory (holds spec/)")
 
+    conv = sub.add_parser(
+        "convert", help="convert corpus-src through bscribe into corpus/ + manifest"
+    )
+    conv.add_argument("corpus_dir", type=Path, help="corpus directory")
+    conv.add_argument("--endpoint", default="http://localhost:18000")
+    conv.add_argument(
+        "--token-file",
+        type=Path,
+        default=Path.home() / ".config" / "bsearch" / "bscribe-token",
+        help="file holding the bscribe bearer token",
+    )
+
     args = parser.parse_args(argv)
     if args.command == "check":
         return _cmd_check(args.denylist, args.roots)
+    if args.command == "convert":
+        token = args.token_file.read_text(encoding="utf-8").strip()
+        records = convert(args.corpus_dir, endpoint=args.endpoint, token=token)
+        print(f"converted/copied {len(records)} files")  # noqa: T201
+        return 0
     if args.command == "generate":
         results = generate(args.corpus_dir)
         scanned = sum(1 for r in results if r.scanned)
