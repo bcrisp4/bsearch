@@ -10,12 +10,13 @@
 #     deposit £1,850 held by Tenancy Deposit Safeguard under scheme ref
 #     SG-25-4471820 — all matching the deposit_scheme_certificate entry in
 #     letters.yaml.
-#   - Employment: Halewick Systems offer — salary £58,000 (matches the
+#   - Employment: Halewick Systems offer — salary £37,554 (payslip canon:
 #     payslip series), start 4 Aug 2025, payroll ref HAL/2214, signed by
 #     Elena Vasquez-Reid. Job title matches the CV (education_certs.yaml).
-#   - Referencing: annual rent £19,240 (52 × £370); income £58,000 =
-#     3.0× annual rent, so no guarantor was required — hence the
-#     guarantor_deed entry is actually the rent-guarantee insurance
+#   - Referencing: annual rent £19,240 (52 × £370); income £37,554 =
+#     2.0× annual rent, below the 2.5× referencing threshold, so the
+#     agency required rent-guarantee insurance in lieu of a guarantor —
+#     hence the guarantor_deed entry is the rent-guarantee insurance
 #     certificate issued to the landlord after referencing (deliberate
 #     filename/content mismatch, a realistic corpus wart).
 #   - Inventory check-in electricity reading 31,844 matches the opening
@@ -89,8 +90,8 @@ entries:
     department: "Platform Engineering"
     reports_to: "Head of Infrastructure"
     start_date: "4 August 2025"
-    salary: "58,000"
-    salary_words: "fifty-eight thousand pounds"
+    salary: "37,554"
+    salary_words: "thirty-seven thousand five hundred and fifty-four pounds"
     holiday_days: "25"
     pension_employer: "5%"
     pension_employee: "4%"
@@ -181,10 +182,10 @@ entries:
     referencing_result: >-
       Full reference completed 21 July 2025: identity and right-to-rent
       verified; employer confirmed permanent employment at a gross annual
-      salary of £58,000, equal to 3.0 times the annual rent (minimum
-      requirement 2.5 times); previous landlord reference satisfactory;
-      no adverse credit records located. Outcome: ACCEPTED WITHOUT
-      GUARANTOR.
+      salary of £37,554, equal to 2.0 times the annual rent (below the
+      2.5 times minimum requirement); previous landlord reference
+      satisfactory; no adverse credit records located. Outcome: ACCEPTED
+      SUBJECT TO RENT GUARANTEE INSURANCE (this policy).
     premium: "312.00"
     ipt: "37.44"
     premium_total: "349.44"
