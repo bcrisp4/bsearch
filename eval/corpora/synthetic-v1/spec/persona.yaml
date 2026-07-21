@@ -1,0 +1,142 @@
+# Persona pack for synthetic-v1 — the single source of truth for every value
+# appearing in generated documents (spec: Corpus design / Persona pack).
+#
+# EVERYTHING in this file is fictional. Where a documented-safe fake range
+# exists it is used (UK 07700 900xxx / 020 7946 0xxx Ofcom drama numbers,
+# US 555-01xx numbers, SSA-reserved advertising SSNs, ZZ NI prefix, the
+# reserved .example TLD). Everything else is invented and guarded by the
+# denylist gate (corpusgen check). Templates must reference these values via
+# Jinja2 — a literal name/number in a template is a bug.
+
+person:
+  full_name: "Theo Marchbank"
+  short_name: "Theo"
+  title: "Mr"
+  date_of_birth: "1994-03-12"
+  email: "theo@marchbank.example"
+  phone_uk_mobile: "07700 900418"
+  phone_us: "(212) 555-0147"
+  # ZZ is not allocated for real NI numbers.
+  ni_number: "ZZ 47 92 15 C"
+  utr: "4813097521"
+  # SSA-reserved advertising range (987-65-4320..4329) — never issued.
+  ssn: "987-65-4324"
+
+addresses:
+  uk_current:
+    line1: "Flat 12, Redecombe House"
+    line2: "34 Calverley Grove"
+    city: "London"
+    postcode: "SE28 4QT"
+  uk_previous:
+    line1: "7 Millbeck Road"
+    city: "Ottersley"
+    county: "Hampshire"
+    postcode: "SO98 3FD"
+  us_former:
+    line1: "Apt 3B, 412 Calver Street"
+    city: "Brooklyn"
+    state: "NY"
+    zip: "11205"
+
+employers:
+  uk_current:
+    name: "Halewick Systems Ltd"
+    payroll_ref: "HAL/2214"
+    address: "6 Farrier Court, London EC2Y 9QX"
+  us_former:
+    name: "Meridian Loft Inc."
+    ein: "98-7654321"
+    payroll_provider: "Brightpath Payroll"
+    address: "580 Vanguard Street, New York, NY 10013"
+
+banks:
+  uk_current_account:
+    institution: "Ferrand Bank"
+    sort_code: "12-98-76"
+    account_number: "00918274"
+    iban: "GB29 FERR 1298 7600 9182 74"
+    bic: "FERRGB2L"
+  uk_savings:
+    institution: "Ferrand Bank"
+    sort_code: "12-98-76"
+    account_number: "00918282"
+  us_checking:
+    institution: "Commonwealth Harbor Bank"
+    account_number: "000004417209"
+    routing_number: "021999997"
+  us_savings:
+    institution: "Commonwealth Harbor Bank"
+    account_number: "000004417217"
+  isa_platform:
+    institution: "Fernleaf Invest"
+    account_ref: "FL-88012993"
+
+vendors:
+  energy:
+    name: "Harwood Energy"
+    account_number: "HW 4471 0925"
+    tariff: "Fair Deal Flex"
+  water:
+    name: "Brackenwater"
+    account_number: "BW-2210553"
+  broadband:
+    name: "Loopfibre"
+    account_number: "LF3308127"
+  council:
+    name: "Netherhale Borough Council"
+    council_tax_ref: "55018837B"
+    band: "C"
+  renters_insurance_us:
+    name: "Umbrella Row Insurance"
+    policy_number: "UR7734902A"
+  disability_insurance_us:
+    name: "Stonecroft Mutual"
+    policy_number: "SM-D 2201-4478"
+  home_insurance_uk:
+    name: "Alderoak Insurance"
+    policy_number: "AO/HH/9915522"
+  letting_agency:
+    name: "Penfold & Reach"
+    tenancy_ref: "PR/RED/1207"
+  landlord: "Wrenmoor Estates Ltd"
+  university:
+    name: "University of Wexcombe"
+    student_id: "w7811042"
+    course: "BSc Computer Networks"
+  hospital_us:
+    name: "Riverside Otolaryngology Associates"
+    mrn: "RV-2214087"
+  gp_uk:
+    name: "Calverley Park Surgery"
+  charity:
+    name: "Hartfield Heart Trust"
+    supporter_ref: "HH0428871"
+  student_loans:
+    name: "Student Finance Agency"
+    customer_ref: "44810922077"
+  credit_agency:
+    name: "Veracity Score"
+  heating_engineer:
+    name: "Harwood Heating"          # deliberately similar to Harwood Energy:
+    gas_safe_ref: "884472"           # near-miss vendor names are a retrieval
+                                     # distractor by design
+  boiler_make: "Calorix"
+  car: none                          # persona has no car — plausible Londoner;
+                                     # no motor-insurance documents in v1
+
+# Recurring fictional people (letters, clinical notes, signatures).
+supporting_cast:
+  gp: "Dr Priya Ravensworth"
+  consultant_us: "Dr Miriam Okafor-Stein"
+  letting_agent: "Sophie Trelawny"
+  landlord_signatory: "Marcus Wrenmoor"
+  hr_manager: "Elena Vasquez-Reid"
+  accountant: "Gordon Applethwaite"
+
+# Timeline anchors (documents must stay consistent with these).
+timeline:
+  us_residency: "2023-09 to 2025-06"    # W-2s, US bank, renters policy era
+  uk_return: "2025-07"
+  tenancy_start: "2025-08-01"
+  university_years: "2012 to 2015"
