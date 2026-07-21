@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Aurellon Renewables: polished green-tech proposal — dark header band,
+     leaf-green accents, salesy register. One half of the competing-quote
+     golden pair (vs the plainer Fenwick & Dray quotation). */
+  .head-band {
+    background: #17323b;
+    color: #fff;
+    padding: 5mm 6mm;
+    margin: 0 0 5mm;
+  }
+  .head-band .brand { font-size: 17pt; font-weight: bold; }
+  .head-band .brand .accent { color: #7ed48a; }
+  .head-band .strap { font-size: 8.5pt; color: #b7d9bd; margin-top: 1mm; }
+  .head-band .contact { font-size: 7.5pt; color: #b7d9bd; margin-top: 2mm; }
+  h1 { color: #17323b; }
+  h2 { color: #1e7a3c; }
+  table.data th { background: #e3f2e6; }
+  .panel { background: #edf7ef; border-left-color: #1e7a3c; }
+  .total-banner { background: #1e7a3c; }
+  .grant-box {
+    border: 1.2pt solid #1e7a3c;
+    padding: 3mm 4mm;
+    margin: 4mm 0;
+    font-size: 9.5pt;
+  }
+  .grant-box .net { font-size: 14pt; font-weight: bold; color: #1e7a3c; }
+  dl.sysgrid { display: flex; flex-wrap: wrap; margin: 2mm 0 4mm; }
+  dl.sysgrid > div { width: 33%; margin-bottom: 2.5mm; }
+  dl.sysgrid dt { font-size: 7.5pt; color: #555; text-transform: uppercase; letter-spacing: 0.4pt; }
+  dl.sysgrid dd { margin: 0.4mm 0 0; font-weight: bold; font-size: 9.5pt; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Aurellon Renewables Ltd is registered in England and Wales, company
+  no. 12689903, registered office 18 Dyer's Field, Croydon CR90 2ZX. VAT
+  no. GB 771 2093 44. Accredited installer under the national
+  microgeneration certification scheme for heat pumps.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="head-band">
+  <div class="brand">aurellon<span class="accent">renewables</span></div>
+  <div class="strap">Design &middot; install &middot; monitor — low-carbon heating done properly</div>
+  <div class="contact">18 Dyer's Field, Croydon CR90 2ZX &middot; hello@aurellon.example &middot; 020 7946 0662 &middot; aurellon.example</div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Proposal reference</td><td class="value">{{ issue.quote_ref }}</td></tr>
+      <tr><td class="label">Date</td><td class="value">{{ issue.quote_date }}</td></tr>
+      <tr><td class="label">Survey visit</td><td class="value">{{ issue.survey_date }}</td></tr>
+      <tr><td class="label">Designer</td><td class="value">{{ issue.designer }}</td></tr>
+      <tr><td class="label">Valid until</td><td class="value">{{ issue.valid_until }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<h1>Your air source heat pump proposal</h1>
+
+<p>Hi {{ person.short_name }} — thank you for having us round. Based on our
+survey of {{ addresses.uk_current.line1 }}, here's a complete, no-surprises
+design for replacing your gas combi boiler with an air source heat pump.
+Everything below is fixed-price: design, equipment, installation,
+commissioning and handover, with monitoring included for the first year.</p>
+
+<h2>The system we've designed for your home</h2>
+<dl class="sysgrid">
+  <div><dt>Heat pump</dt><dd>{{ issue.unit_model }}</dd></div>
+  <div><dt>Output at design point</dt><dd>{{ issue.design_output }}</dd></div>
+  <div><dt>Hot water cylinder</dt><dd>{{ issue.cylinder }}</dd></div>
+  <div><dt>Calculated heat loss</dt><dd>{{ issue.heat_loss }}</dd></div>
+  <div><dt>Estimated efficiency (SCOP)</dt><dd>{{ issue.scop }}</dd></div>
+  <div><dt>Radiator changes</dt><dd>{{ issue.radiator_changes }}</dd></div>
+</dl>
+
+<h2>Your investment</h2>
+<table class="data">
+  <tr><th>Item</th><th class="num">Amount</th></tr>
+  {% for line in issue.lines %}
+  <tr>
+    <td>{{ line.description }}</td>
+    <td class="num">{% if line.credit | default(false) %}&minus;{% endif %}&pound;{{ line.amount }}</td>
+  </tr>
+  {% endfor %}
+  <tr>
+    <td>VAT — zero-rated (qualifying energy-saving installation)</td>
+    <td class="num">&pound;0.00</td>
+  </tr>
+</table>
+
+<div class="total-banner">
+  <span>Total installed price</span>
+  <span class="amount">&pound;{{ issue.total }}</span>
+</div>
+
+<div class="grant-box">
+  <strong>Government grant support.</strong> Your property qualifies for the
+  government low-carbon heating grant of &pound;{{ issue.grant }}. We claim
+  it for you and knock it straight off the bill — you'd pay
+  <span class="net">&pound;{{ issue.net_after_grant }}</span> in total.
+</div>
+
+<h2>What your heating could cost to run</h2>
+<table class="data">
+  <tr><th></th><th class="num">Current gas combi</th><th class="num">Proposed heat pump</th></tr>
+  <tr><td>Estimated annual heating &amp; hot water cost</td>
+    <td class="num">&pound;{{ issue.running_cost_gas }}</td>
+    <td class="num">&pound;{{ issue.running_cost_hp }}</td></tr>
+  <tr><td>Estimated annual CO&#8322; saving</td><td class="num">&mdash;</td>
+    <td class="num">{{ issue.co2_saving }}</td></tr>
+</table>
+<p style="font-size: 8pt; color: #555;">Estimates use your last twelve
+months of energy bills and current unit prices; real costs vary with tariff
+and weather.</p>
+
+<div class="panel">
+  <h3>Everything included, nothing extra on the day</h3>
+  <p>Ten-year warranty on the heat pump, five years on the cylinder, and
+  our two-year whole-installation workmanship guarantee. The Aurellon app
+  shows live performance and flags problems before you'd notice them —
+  first year of monitoring free, &pound;4/month after.</p>
+  <p>We handle permitted-development checks, building-control notification
+  and the grant paperwork. Installation typically takes three days; we
+  leave your old boiler removed and the system fully commissioned with a
+  full handover session.</p>
+</div>
+
+<h2>Next steps</h2>
+<p>Reply to this proposal or call {{ issue.designer }} on 020 7946 0662 to
+book. We take a &pound;500 deposit to schedule installation (fully
+refundable until survey sign-off), the balance on commissioning day. This
+proposal is valid until {{ issue.valid_until }}.</p>
+
+<div class="small-print">
+  <p><strong>Assumptions.</strong> Price assumes clear access to the
+  external wall agreed at survey, existing electrical supply adequate for
+  the unit specified, and no asbestos-containing materials disturbed.
+  Anything outside these assumptions is quoted before work begins — never
+  invoiced after the fact.</p>
+  <p><strong>Grant eligibility</strong> was checked against your property
+  details at survey and is subject to final approval by the scheme
+  administrator; if a claim were declined we'd contact you before
+  proceeding rather than pass the cost on.</p>
+  <p><strong>Cancellation.</strong> You have a 14-day cooling-off period
+  from accepting this proposal, with a full refund of any deposit.</p>
+</div>
+
+</body>
+</html>

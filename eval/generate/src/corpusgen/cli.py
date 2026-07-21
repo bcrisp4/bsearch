@@ -8,6 +8,7 @@ from pathlib import Path
 
 from corpusgen.check import scan_tree
 from corpusgen.denylist import Denylist
+from corpusgen.generate import generate
 
 
 def _cmd_check(denylist_path: Path, roots: list[Path]) -> int:
@@ -43,9 +44,19 @@ def main(argv: list[str] | None = None) -> int:
         "roots", nargs="+", type=Path, help="directories to scan recursively"
     )
 
+    gen = sub.add_parser(
+        "generate", help="render a corpus spec into corpus-src/ documents"
+    )
+    gen.add_argument("corpus_dir", type=Path, help="corpus directory (holds spec/)")
+
     args = parser.parse_args(argv)
     if args.command == "check":
         return _cmd_check(args.denylist, args.roots)
+    if args.command == "generate":
+        results = generate(args.corpus_dir)
+        scanned = sum(1 for r in results if r.scanned)
+        print(f"rendered {len(results)} documents ({scanned} scanned)")  # noqa: T201
+        return 0
     raise AssertionError("unreachable: subparser is required")
 
 

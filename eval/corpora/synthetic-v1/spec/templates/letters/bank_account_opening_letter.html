@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand { color: #14395c; letter-spacing: 1.2pt; }
+  .letter-date { text-align: right; margin: 2mm 0 4mm; }
+  .acct-panel { background: #eef2f7; border-left: 1.6mm solid #14395c; }
+  .acct-panel table { border-collapse: collapse; }
+  .acct-panel td { padding: 0.8mm 0; vertical-align: top; }
+  .acct-panel td.label { font-weight: bold; padding-right: 6mm; }
+  .acct-panel td.value { font-family: "Doc Mono", monospace; font-size: 9pt; }
+  .sig { margin-top: 8mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ banks.uk_current_account.institution }} plc is registered in England and
+  Wales (company no. 01984407). Registered office: 1 Ferrand Court, London
+  EC2V 9AA. Authorised and regulated by the UK&rsquo;s statutory financial
+  regulators. <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">FERRAND BANK</div>
+  <div class="contact">
+    1 Ferrand Court, London EC2V 9AA<br>
+    Telephone banking 020 7946 0700 (24 hours)<br>
+    ferrandbank.example
+  </div>
+</div>
+
+<p class="letter-date">{{ issue.letter_date }}</p>
+
+<div class="addr-window">
+  {{ person.title }} {{ person.full_name }}<br>
+  {{ addresses.uk_current.line1 }}<br>
+  {{ addresses.uk_current.line2 }}<br>
+  {{ addresses.uk_current.city }}<br>
+  {{ addresses.uk_current.postcode }}
+</div>
+
+<h1>Welcome to your new Ferrand current account</h1>
+
+<p>Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},</p>
+
+<p>Thank you for choosing {{ banks.uk_current_account.institution }}. Your
+Everyday Current Account was opened on {{ issue.opened_date }} and is ready
+to use. Your account details are below &mdash; you will need them to receive
+your salary and set up Direct Debits, so please keep this letter safe.</p>
+
+<div class="panel acct-panel">
+  <table>
+    <tr><td class="label">Account name</td><td class="value">{{ person.full_name }}</td></tr>
+    <tr><td class="label">Sort code</td><td class="value">{{ banks.uk_current_account.sort_code }}</td></tr>
+    <tr><td class="label">Account number</td><td class="value">{{ banks.uk_current_account.account_number }}</td></tr>
+    <tr><td class="label">IBAN</td><td class="value">{{ banks.uk_current_account.iban }}</td></tr>
+    <tr><td class="label">BIC</td><td class="value">{{ banks.uk_current_account.bic }}</td></tr>
+  </table>
+</div>
+
+<h2>What happens next</h2>
+
+<p><strong>Your debit card</strong> will arrive within five working days,
+with your PIN following separately a day or two later for security. You can
+change the PIN at any of our cash machines. We will never call, text or
+email you to ask for your PIN, your full password, or to move money to a
+&ldquo;safe account&rdquo; &mdash; anyone who does is a fraudster.</p>
+
+<p><strong>The Ferrand Mobile app</strong> lets you check your balance,
+pay people, and pay in cheques by photographing them. Download it from
+ferrandbank.example/app and register with your sort code and account
+number.</p>
+
+<p><strong>Moving payments over?</strong> If you would like us to bring
+Direct Debits and standing orders across from another bank, our switching
+team can arrange everything for you in seven working days &mdash; call us or
+apply in the app.</p>
+
+<p>If you have any questions, call us any time on 020 7946 0700.</p>
+
+<p>Yours sincerely,</p>
+
+<div class="sig">
+  <p><strong>{{ issue.signatory }}</strong><br>
+  Head of Everyday Banking</p>
+</div>
+
+<div class="small-print">
+  <p><strong>Protecting your money.</strong> Your eligible deposits with
+  {{ banks.uk_current_account.institution }} are protected up to &pound;85,000
+  by the UK&rsquo;s statutory deposit guarantee scheme. Further details are
+  available at ferrandbank.example/protection.</p>
+  <p><strong>If things go wrong.</strong> Tell us first and we will do our
+  best to put it right. If you remain unhappy eight weeks after complaining,
+  you can refer the matter to the statutory financial ombudsman free of
+  charge.</p>
+</div>
+
+</body>
+</html>

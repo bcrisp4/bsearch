@@ -1,0 +1,106 @@
+# Per-issue data for the Alderoak "changes to your policy" notices
+# (corpus.yaml: insurance → policy_change_notice_1/2/3). A pure-prose
+# distractor series: one template, identical skeleton, and a wholly
+# different bullet list each renewal year (spec prose-variation rule).
+# The remaining `insurance` entries (full policy documents) are authored
+# in a separate pass and will get their own data file.
+#
+# Timeline: these notices belong to the persona's pre-US Alderoak contents
+# policy at the Ottersley address (uk_previous), renewing 1 July each year
+# — the persona lived there until the US move in September 2023.
+template: letters/policy_change_notice.html
+vendor_key: home_insurance_uk
+entries:
+  - id: policy_change_notice_1
+    letter_date: "24 May 2021"
+    effective_date: "1 July 2021"
+    form_code: "AO/NC/2021 v1.2"
+    changes:
+      - >-
+        We have increased the excess for escape of water claims from £250
+        to £450. This reflects the rising cost of tracing and repairing
+        leaks; all other excesses on your schedule are unchanged.
+      - >-
+        We have added a requirement to maintain your home's water system:
+        where a claim arises from a leak at a pipe joint that shows
+        long-standing corrosion, we may reduce or decline the claim.
+      - >-
+        We have clarified the definition of "storm" to mean wind speeds of
+        at least 55mph, hail severe enough to damage hard surfaces, or
+        extraordinary rainfall or snowfall.
+      - >-
+        We have removed cover for theft of contents from outbuildings
+        unless the outbuilding was locked and shows signs of forced entry.
+      - >-
+        We have updated the "matching sets" wording: where an item forming
+        part of a matching set is damaged, we pay only for the damaged
+        item, not for undamaged items that no longer match.
+      - >-
+        Our claims line has a new number, 0113 496 0344, available 24 hours
+        a day. The old number will continue to redirect for twelve months.
+  - id: policy_change_notice_2
+    letter_date: "23 May 2022"
+    effective_date: "1 July 2022"
+    form_code: "AO/NC/2022 v1.0"
+    changes:
+      - >-
+        We have increased the single-article limit for pedal cycles kept at
+        home from £350 to £600, and you can now add away-from-home pedal
+        cycle cover as an optional extension — call us before your renewal
+        if you would like a quote.
+      - >-
+        We have launched the Alderoak app, where you can view your policy
+        documents, report a claim and track its progress. Paper documents
+        continue unless you opt out.
+      - >-
+        We have increased the limit for personal money kept in the home
+        from £300 to £500, and clarified that gift vouchers and prepaid
+        cards count as personal money.
+      - >-
+        We have clarified that damage arising gradually — including wear
+        and tear, rot and gradual water damage — is not covered. This has
+        always been our position; the new wording makes it explicit.
+      - >-
+        We have updated the automatic renewal wording: we will write to you
+        at least 21 days before renewal, and if your premium rises by more
+        than 10% we will ask you to confirm rather than renewing
+        automatically.
+      - >-
+        We have added a new "home emergency assist" helpline for all
+        contents customers, giving telephone advice on urgent domestic
+        emergencies. Call-out costs remain covered only where you hold the
+        optional home emergency extension.
+  - id: policy_change_notice_3
+    letter_date: "22 May 2023"
+    effective_date: "1 July 2023"
+    form_code: "AO/NC/2023 v1.1"
+    changes:
+      - >-
+        Why premiums are rising this year: the cost of replacing furniture,
+        electronics and building materials has risen sharply, and so has
+        the average cost of claims. Your renewal invitation will show your
+        own premium; this note explains the market-wide pressure behind it.
+      - >-
+        Please check you are not underinsured. Your contents sum insured
+        should reflect the full cost of replacing everything in your home
+        as new. If your sum insured is too low, any claim payment may be
+        reduced in proportion — for example, cover for two-thirds of the
+        true value pays two-thirds of a claim.
+      - >-
+        We have introduced index-linking: your contents sum insured will
+        now increase automatically each month in line with a published
+        replacement-cost index, so inflation does not erode your cover
+        between renewals. You pay nothing extra until renewal.
+      - >-
+        Following a flood or escape of water claim, you can now choose
+        resilient repairs — such as water-resistant materials — where they
+        cost no more than a like-for-like reinstatement.
+      - >-
+        We have strengthened our fraud wording: if any part of a claim is
+        deliberately exaggerated or supported by false documents, the whole
+        claim is forfeit and the policy may be cancelled from the date of
+        the fraud.
+      - >-
+        We have simplified our complaints process to a single point of
+        contact, with a promise of acknowledgement within two working days.
+        Details are in the updated policy booklet.

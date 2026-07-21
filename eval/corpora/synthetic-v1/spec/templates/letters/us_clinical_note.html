@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  body { page: us-letter; }
+  html { font-size: 9pt; }
+  .pt-banner {
+    font-size: 7.5pt; color: #333; border-bottom: 0.4pt solid #999;
+    padding-bottom: 1mm; margin-bottom: 4mm;
+  }
+  h1.visit { font-size: 14pt; margin: 0 0 1mm; }
+  .visit-sub { color: #555; margin-bottom: 3mm; }
+  .widget {
+    border: 0.5pt solid #b9c4cc; border-radius: 2.5mm; background: #f4f7f9;
+    padding: 2mm 3mm; font-weight: bold; color: #1a5d9e; margin: 3mm 0;
+  }
+  .widget .chev { float: right; color: #7a8a94; }
+  h2.ehr {
+    color: #1a5d9e; border-bottom: 1.2pt solid #1a5d9e;
+    font-size: 11pt; padding-bottom: 0.8mm;
+  }
+  .author-line { color: #1a5d9e; font-size: 8pt; margin-bottom: 4mm; }
+  .clinic-head { text-align: center; font-weight: bold; margin: 4mm 0; }
+  .fl { font-weight: bold; }
+  .exam-region { margin: 0 0 1.4mm 6mm; }
+  ol.problems > li { font-weight: bold; margin-bottom: 1.2mm; }
+  ol.problems .detail { font-weight: normal; }
+  ol.plan > li { margin-bottom: 1.6mm; }
+  .quote { font-style: italic; margin-left: 6mm; }
+  .ehr-footer { text-align: center; font-size: 7pt; color: #777; margin-top: 10mm; }
+</style>
+</head>
+<body>
+
+<div class="pt-banner">
+  Name: {{ person.full_name }} | DOB: {{ person.date_of_birth }} |
+  MRN: {{ vendor.mrn }} | PCP: {{ issue.pcp }} |
+  Legal Name: {{ person.full_name }}
+</div>
+
+<h1 class="visit">Office Visit &mdash; {{ issue.visit_date }}</h1>
+<p class="visit-sub">with {{ supporting_cast.consultant_us.replace('Dr ', '') }}, MD at
+{{ vendor.name }}, 88 Deverell Avenue, Suite 410, Brooklyn, NY 11205 &middot;
+(718) 555-0164</p>
+
+<div class="widget">Notes from Care Team <span class="chev">&#9662;</span></div>
+
+<h2 class="ehr">Progress Notes</h2>
+<p class="author-line">{{ supporting_cast.consultant_us.replace('Dr ', '') }}, MD &middot;
+Otolaryngology &middot; Electronically signed {{ issue.signed }}</p>
+
+<div class="clinic-head">
+  RIVERSIDE OTOLARYNGOLOGY ASSOCIATES<br>
+  DIVISION OF RHINOLOGY &amp; SINUS SURGERY
+</div>
+
+<p>
+  <span class="fl">DOS:</span> {{ issue.visit_date }}<br>
+  <span class="fl">Name:</span> {{ person.full_name }}<br>
+  <span class="fl">DOB:</span> {{ person.date_of_birth }}<br>
+  <span class="fl">Address:</span> {{ addresses.us_former.line1 }},
+    {{ addresses.us_former.city }}, {{ addresses.us_former.state }}
+    {{ addresses.us_former.zip }}<br>
+  <span class="fl">Phone:</span> {{ person.phone_us }}
+</p>
+
+<p>
+  <span class="fl">Visit Type:</span> {{ issue.visit_type }}<br>
+  <span class="fl">Referring Provider:</span> {{ issue.referring }}
+</p>
+
+<p><span class="fl">Reason for Visit:</span></p>
+<ul>
+  {% for r in issue.reasons %}<li>{{ r }}</li>{% endfor %}
+</ul>
+<p class="quote">&ldquo;{{ issue.chief_complaint }}&rdquo;</p>
+
+<p><span class="fl">History of Present Illness:</span></p>
+{% for para in issue.hpi %}<p>{{ para }}</p>{% endfor %}
+
+<p>
+  {% for s in issue.symptoms %}Symptom &mdash; {{ s.name }}: {{ s.answer }}<br>{% endfor %}
+</p>
+
+<p><span class="fl">ALLERGIES:</span> {{ issue.allergies }}</p>
+
+<p><span class="fl">MEDICATIONS:</span></p>
+<ul>
+  {% for m in issue.medications %}<li>{{ m }}</li>{% endfor %}
+</ul>
+
+<p><span class="fl">VITALS:</span><br>
+  {% for v in issue.vitals %}{{ v.label }}: {{ v.value }}<br>{% endfor %}
+</p>
+
+<p><span class="fl">PHYSICAL EXAMINATION:</span></p>
+{% for e in issue.exam %}
+<div class="exam-region"><span class="fl">{{ e.region }}:</span> {{ e.findings }}</div>
+{% endfor %}
+
+<p><span class="fl">Impression/Summary:</span></p>
+<ol class="problems">
+  {% for p in issue.assessment %}
+  <li>{{ p.title }} <span class="detail">&mdash; {{ p.note }}</span></li>
+  {% endfor %}
+</ol>
+
+<p><span class="fl">Plan/Recommendations:</span></p>
+<ol class="plan">
+  {% for item in issue.plan %}<li>{{ item }}</li>{% endfor %}
+</ol>
+
+<p><span class="fl">Follow up:</span> {{ issue.follow_up }}</p>
+
+<div class="ehr-footer">
+  Produced by LumenChart&reg; ambulatory EHR &mdash; licensed to
+  {{ vendor.name }}. Unauthorized disclosure prohibited.
+</div>
+
+</body>
+</html>

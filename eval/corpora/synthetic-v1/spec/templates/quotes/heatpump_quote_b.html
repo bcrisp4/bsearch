@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Fenwick & Dray: long-established local heating firm — serif, navy rules,
+     terse "QUOTATION" register. The plainer half of the competing-quote
+     golden pair (vs the Aurellon proposal). */
+  html { font-family: "Doc Serif", serif; }
+  h1, h2 { font-family: "Doc Serif", serif; color: #24356b; }
+  .brand { font-family: "Doc Serif", serif; color: #24356b; }
+  .brand .accent { color: #1a1a1a; }
+  .letterhead { border-bottom: 0.8pt solid #24356b; padding-bottom: 2mm; }
+  .quote-title {
+    font-size: 15pt;
+    font-weight: bold;
+    letter-spacing: 3pt;
+    color: #24356b;
+    margin: 5mm 0 3mm;
+  }
+  table.data { font-family: "Doc Sans", sans-serif; }
+  table.data th { background: #e7eaf3; }
+  .totals { width: 74mm; margin-left: auto; border-collapse: collapse; font-family: "Doc Sans", sans-serif; }
+  .totals td { padding: 1.4mm 2mm; border-bottom: 0.3pt solid #ddd; }
+  .totals td.amount { text-align: right; font-variant-numeric: tabular-nums; }
+  .totals tr.grand td {
+    font-weight: bold;
+    font-size: 11pt;
+    color: #24356b;
+    border-top: 1pt solid #24356b;
+    border-bottom: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Fenwick &amp; Dray Heating Services Ltd, 3 Pargetter's Row, London SE99 1HD.
+  Established 1987. Registered in England and Wales, company no. 02214809.
+  VAT no. GB 518 6620 71. Accredited heat pump installer; registered gas
+  engineers.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">Fenwick &amp; Dray<span class="accent"> Heating Services</span></div>
+  <div class="contact">
+    3 Pargetter's Row, London SE99 1HD<br>
+    office@fenwickdray.example &middot; 020 7946 0871<br>
+    Mon&ndash;Fri 8am&ndash;5pm
+  </div>
+</div>
+
+<div class="quote-title">QUOTATION</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.title }} {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Our reference</td><td class="value">{{ issue.quote_ref }}</td></tr>
+      <tr><td class="label">Date</td><td class="value">{{ issue.quote_date }}</td></tr>
+      <tr><td class="label">Surveyed</td><td class="value">{{ issue.survey_date }}</td></tr>
+      <tr><td class="label">Prepared by</td><td class="value">{{ issue.surveyor }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<p>Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},</p>
+
+<p>Further to our survey on {{ issue.survey_date }}, we are pleased to quote
+for the supply and installation of an air source heat pump at the above
+address, to replace the existing gas combination boiler. The system
+proposed is a {{ issue.unit_model }} with a {{ issue.cylinder }}, sized
+against our measured heat loss of {{ issue.heat_loss }}.</p>
+
+<table class="data">
+  <tr><th>Item</th><th class="num">Amount</th></tr>
+  {% for line in issue.lines %}
+  <tr>
+    <td>{{ line.description }}</td>
+    <td class="num">&pound;{{ line.amount }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<table class="totals">
+  <tr><td>Total (materials and labour)</td><td class="amount">&pound;{{ issue.total }}</td></tr>
+  <tr><td>VAT &mdash; zero-rated installation</td><td class="amount">&pound;0.00</td></tr>
+  <tr class="grand"><td>Total payable</td><td class="amount">&pound;{{ issue.total }}</td></tr>
+</table>
+
+<p>The installation qualifies for the government low-carbon heating grant
+of &pound;{{ issue.grant }}, which we administer on your behalf and deduct
+from the final invoice, bringing the amount payable by you to
+<strong>&pound;{{ issue.net_after_grant }}</strong>.</p>
+
+<h2>Terms</h2>
+<p>This quotation is valid for 30 days from the date above. Works to be
+scheduled on acceptance; allow four days on site. Payment: 40&#37; deposit
+with order, balance on completion and commissioning. Workmanship guaranteed
+for 12 months; the heat pump carries the manufacturer's 5-year warranty and
+the cylinder 10 years, subject to annual servicing (&pound;95 per visit if
+carried out by ourselves).</p>
+
+<h2>Exclusions</h2>
+<p>Making good of decoration; upgrade of the electrical consumer unit
+should the district network operator require it; scaffolding (not
+anticipated); disposal of any asbestos-containing material; alterations to
+pipework buried in solid floors. Any such works would be quoted separately
+before proceeding.</p>
+
+<p>We thank you for the opportunity to quote and would be pleased to answer
+any questions.</p>
+
+<p>Yours sincerely,<br><br>
+{{ issue.surveyor }}<br>
+Fenwick &amp; Dray Heating Services Ltd</p>
+
+<div class="small-print">
+  <p>All work is carried out in accordance with current building
+  regulations and manufacturer instructions, and notified to building
+  control on your behalf. Grant funding is subject to approval by the
+  scheme administrator. You may cancel within 14 days of acceptance
+  without charge.</p>
+</div>
+
+</body>
+</html>

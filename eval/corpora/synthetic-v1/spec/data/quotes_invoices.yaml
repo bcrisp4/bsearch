@@ -1,0 +1,94 @@
+# Entry data for the quotes_invoices set (corpus.yaml: quotes_invoices).
+# Singles, not a series, so each entry names its own template; none of these
+# vendors is a recurring persona vendor, so vendor identity (all fictional)
+# is baked into each template's brand block and `vendor_key` is null.
+# mattress_invoice (docx) is deferred to the docx-builder pass.
+#
+# The two heat pump quotes are the competing-quote golden pair: same job
+# (replace the flat's gas combi with an air source heat pump, June 2026 —
+# prompted by the Harwood Heating safety advisory earlier that month),
+# different vendors, totals, line items and tone. Arithmetic: line items sum
+# to totals; VAT zero-rated on the heat pump installs, 20% on the
+# electrician's works, included-in-price on retail furniture.
+template: null # per-entry `template`
+vendor_key: null # fictional one-off vendors, identity in-template
+entries:
+  - id: heatpump-quote-aurellon
+    template: quotes/heatpump_quote_a.html
+    quote_ref: "AR-Q-8827"
+    quote_date: "22 June 2026"
+    survey_date: "16 June 2026"
+    designer: "Maya Brenchley"
+    valid_until: "21 August 2026"
+    unit_model: "Caldera Aero 6 monobloc"
+    design_output: "5.8 kW at −2 °C"
+    cylinder: "Caldera 180 L slimline cylinder"
+    heat_loss: "4.9 kW (room-by-room)"
+    scop: "4.1"
+    radiator_changes: "3 radiators upsized"
+    lines:
+      - {description: "Caldera Aero 6 air source heat pump (monobloc)", amount: "5,240.00"}
+      - {description: "Caldera 180 L slimline hot water cylinder", amount: "1,380.00"}
+      - {description: "Installation labour, plumbing and controls (3 days, 2 engineers)", amount: "3,450.00"}
+      - {description: "Radiator upgrades — 3 radiators supplied and fitted", amount: "940.00"}
+      - {description: "Full system flush and magnetic filter", amount: "420.00"}
+      - {description: "Commissioning, handover and first-year monitoring", amount: "350.00"}
+      - {description: "External wall mounting bracket and anti-vibration kit", amount: "310.00"}
+      - {description: "Survey fee credited on acceptance", amount: "150.00", credit: true}
+    total: "11,940.00"
+    grant: "7,500"
+    net_after_grant: "4,440.00"
+    running_cost_gas: "742"
+    running_cost_hp: "618"
+    co2_saving: "1.1 tonnes"
+  - id: heatpump-quote-fenwick-dray
+    template: quotes/heatpump_quote_b.html
+    quote_ref: "FD/2643"
+    quote_date: "29 June 2026"
+    survey_date: "24 June 2026"
+    surveyor: "R. Dray"
+    unit_model: "Thermik T60 air source heat pump"
+    cylinder: "170 L unvented cylinder"
+    heat_loss: "5.1 kW"
+    lines:
+      - {description: "Thermik T60 6 kW air source heat pump unit", amount: "3,890.00"}
+      - {description: "170 L unvented hot water cylinder and fittings", amount: "1,120.00"}
+      - {description: "Installation labour including removal of existing boiler and making good of pipework", amount: "2,760.00"}
+      - {description: "Radiator upgrades — 2 radiators supplied and fitted", amount: "620.00"}
+      - {description: "Chemical system flush", amount: "290.00"}
+      - {description: "Heating controls and room thermostat", amount: "340.00"}
+      - {description: "Commissioning and building-control notification", amount: "210.00"}
+      - {description: "Waste removal and disposal of old boiler", amount: "250.00"}
+    total: "9,480.00"
+    grant: "7,500"
+    net_after_grant: "1,980.00"
+  - id: furniture-invoice-calder-roe
+    template: invoices/furniture_invoice.html
+    order_number: "CR-118427"
+    order_date: "23 August 2025"
+    delivery_date: "14 September 2025"
+    payment_method: "Card, paid in full"
+    lines:
+      - {description: "Askern 2.5-seater sofa, moss green velvet, oak legs", qty: "1", amount: "749.00"}
+      - {description: "Weld side table, natural oak", qty: "1", amount: "129.00"}
+      - {description: "Two-person room-of-choice delivery", qty: "1", amount: "45.00"}
+    total: "923.00"
+    vat_included: "153.83"
+  - id: electrician-invoice-brayfield
+    template: invoices/electrician_invoice.html
+    invoice_number: "BE-4471"
+    invoice_date: "21 November 2025"
+    works_date: "18 November 2025"
+    electrician: "P. Brayfield"
+    certificate_ref: "BE/MW/2511-084"
+    work_summary: >-
+      Supply and install one additional switched double socket outlet on a
+      new spur in the second bedroom (home office wall), and replace the
+      pendant light fitting in the hallway with the customer-supplied
+      fitting. Circuits tested on completion; all readings satisfactory.
+    lines:
+      - {description: "Labour — 3 hours at £55.00", qty: "3", unit_price: "55.00", amount: "165.00"}
+      - {description: "Materials — twin socket, back box, 2.5 mm² cable and sundries", qty: "1", unit_price: "24.60", amount: "24.60"}
+    subtotal: "189.60"
+    vat: "37.92"
+    total: "227.52"

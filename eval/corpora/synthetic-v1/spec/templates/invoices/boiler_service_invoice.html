@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Harwood Heating: trade-invoice look — flame-orange rule, big INVOICE
+     wordmark, line items with a right-aligned totals stack. Deliberately a
+     different composition from the Harwood Energy bill despite the near-miss
+     vendor name. */
+  .brand { color: #b3541e; }
+  .brand .accent { color: #1a1a1a; }
+  .letterhead { border-bottom: 1.6pt solid #b3541e; padding-bottom: 2mm; }
+  .invoice-title {
+    font-size: 21pt;
+    font-weight: bold;
+    letter-spacing: 2pt;
+    color: #b3541e;
+    margin: 4mm 0 3mm;
+  }
+  table.data th { background: #f5e6db; }
+  .panel { background: #faf1e9; border-left-color: #b3541e; }
+  .totals { width: 70mm; margin-left: auto; border-collapse: collapse; }
+  .totals td { padding: 1.4mm 2mm; border-bottom: 0.3pt solid #ddd; }
+  .totals td.amount { text-align: right; font-variant-numeric: tabular-nums; }
+  .totals tr.grand td {
+    font-weight: bold;
+    font-size: 11pt;
+    color: #b3541e;
+    border-top: 1pt solid #b3541e;
+    border-bottom: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} Ltd, Unit 9 Sorrel Trading Estate, London SE99 6JJ.
+  Registered in England and Wales, company no. 11209476. VAT no. GB 380 4471 22.
+  Registered gas engineer &mdash; gas-safety register no. {{ vendor.gas_safe_ref }}.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">{{ vendor.name }}<span class="accent"> Ltd</span></div>
+  <div class="contact">
+    Unit 9, Sorrel Trading Estate, London SE99 6JJ<br>
+    bookings@harwood-heating.example &middot; 020 7946 0512<br>
+    Gas-safety register no. {{ vendor.gas_safe_ref }}
+  </div>
+</div>
+
+<div class="invoice-title">INVOICE</div>
+
+{% set addr = addresses[issue.address_key] %}
+<div class="two-col">
+  <div class="addr-window">
+    <strong>Invoice to</strong><br>
+    {{ person.full_name }}<br>
+    {{ addr.line1 }}<br>
+    {% if addr.line2 is defined %}{{ addr.line2 }}<br>{% endif %}
+    {{ addr.city }}{% if addr.county is defined %}, {{ addr.county }}{% endif %}<br>
+    {{ addr.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Invoice number</td><td class="value">{{ issue.invoice_number }}</td></tr>
+      <tr><td class="label">Invoice date</td><td class="value">{{ issue.invoice_date }}</td></tr>
+      <tr><td class="label">Date of works</td><td class="value">{{ issue.service_date }}</td></tr>
+      <tr><td class="label">Engineer</td><td class="value">{{ issue.engineer }}</td></tr>
+      <tr><td class="label">Job reference</td><td class="value">{{ issue.job_ref }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<h2>Work carried out</h2>
+<p>{{ issue.work_summary }}</p>
+<p style="font-size: 8pt; color: #555;">Appliance: {{ vendors.boiler_make }}
+{{ issue.appliance_model }} &mdash; site address as above.</p>
+
+<table class="data">
+  <tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th></tr>
+  {% for line in issue.lines %}
+  <tr>
+    <td>{{ line.description }}</td>
+    <td class="num">{{ line.qty }}</td>
+    <td class="num">&pound;{{ line.unit_price }}</td>
+    <td class="num">&pound;{{ line.amount }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<table class="totals">
+  <tr><td>Subtotal</td><td class="amount">&pound;{{ issue.subtotal }}</td></tr>
+  <tr><td>VAT at 20%</td><td class="amount">&pound;{{ issue.vat }}</td></tr>
+  <tr class="grand"><td>Total due</td><td class="amount">&pound;{{ issue.total }}</td></tr>
+</table>
+
+{% if issue.advisory is defined %}
+<div class="panel">
+  <h3>{{ issue.advisory.title }}</h3>
+  {% for para in issue.advisory.body %}<p>{{ para }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<h2>Payment</h2>
+<p>Payment is due within 14 days of the invoice date. Pay online by card at
+harwood-heating.example/pay quoting invoice {{ issue.invoice_number }}, or
+call 020 7946 0512. A receipt is emailed automatically once payment clears.</p>
+
+<div class="small-print">
+  <p><strong>Guarantee.</strong> Our workmanship is guaranteed for 12 months.
+  Parts carry the manufacturer's warranty from the date of fitting; keep this
+  invoice as your proof.</p>
+  <p><strong>Service records.</strong> A copy of the appliance service record
+  has been left with you and is stored against your job reference — we'll
+  send a reminder when the next annual service is due.</p>
+  <p><strong>Safety.</strong> If you ever smell gas, call the 24-hour gas
+  emergency line immediately — the number is on your meter box. Do not use
+  electrical switches or naked flames.</p>
+  <p><strong>Complaints.</strong> If you're unhappy with our work, contact us
+  within 30 days and we'll re-inspect free of charge.</p>
+</div>
+
+</body>
+</html>

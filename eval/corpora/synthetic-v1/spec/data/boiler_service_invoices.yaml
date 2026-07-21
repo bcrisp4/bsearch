@@ -1,0 +1,94 @@
+# Per-issue data for the Harwood Heating annual boiler service invoice series
+# (3 issues, corpus.yaml: boiler_service_invoices). Vendor is the deliberate
+# near-miss name against Harwood Energy. Timeline: the 2024 service is at the
+# previous (retained, unoccupied) Hampshire address during the US era; 2025
+# and 2026 are at the current flat. The 2026 invoice is the golden target:
+# expansion vessel replacement plus a safety advisory paragraph. VAT 20%;
+# line items sum to subtotal; subtotal + VAT = total.
+template: invoices/boiler_service_invoice.html
+vendor_key: heating_engineer
+issues:
+  - id: boiler-service-2024
+    invoice_number: "HH-1447"
+    invoice_date: "19 September 2024"
+    service_date: "17 September 2024"
+    engineer: "D. Okonkwo"
+    job_ref: "JB-24-0883"
+    address_key: uk_previous
+    appliance_model: "C24i combi (2018)"
+    work_summary: >-
+      Annual service of the gas combination boiler. Casing removed and
+      cleaned, burner and heat exchanger inspected, flue gas analysis
+      completed with readings within manufacturer tolerances, gas tightness
+      test passed, condensate trap cleaned and refilled. Magnetic system
+      filter opened and cleaned. Appliance left in safe working order.
+    lines:
+      - {description: "Annual boiler service — labour", qty: "1", unit_price: "78.00", amount: "78.00"}
+      - {description: "Magnetic filter clean and inhibitor check", qty: "1", unit_price: "12.50", amount: "12.50"}
+    subtotal: "90.50"
+    vat: "18.10"
+    total: "108.60"
+  - id: boiler-service-2025
+    invoice_number: "HH-1892"
+    invoice_date: "8 October 2025"
+    service_date: "6 October 2025"
+    engineer: "D. Okonkwo"
+    job_ref: "JB-25-1121"
+    address_key: uk_current
+    appliance_model: "C28 Eco combi (2021)"
+    work_summary: >-
+      First annual service of the gas combination boiler at this address.
+      Full strip-down inspection: burner pressures checked and adjusted,
+      flue gas analysis within tolerances, gas tightness test passed,
+      expansion vessel charge checked, system pressure restored to 1.3 bar.
+      Central heating inhibitor level found low and topped up. Appliance
+      left in safe working order.
+    lines:
+      - {description: "Annual boiler service — labour", qty: "1", unit_price: "82.00", amount: "82.00"}
+      - {description: "Central heating inhibitor (1 L) supplied and dosed", qty: "1", unit_price: "18.00", amount: "18.00"}
+    subtotal: "100.00"
+    vat: "20.00"
+    total: "120.00"
+  - id: boiler-service-2026
+    invoice_number: "HH-2306"
+    invoice_date: "10 June 2026"
+    service_date: "8 June 2026"
+    engineer: "S. Varga"
+    job_ref: "JB-26-0452"
+    address_key: uk_current
+    appliance_model: "C28 Eco combi (2021)"
+    work_summary: >-
+      Annual service of the gas combination boiler, attending also to the
+      pressure-loss fault reported by the customer. Service completed as
+      standard (flue gas analysis within tolerances, gas tightness test
+      passed). The expansion vessel diaphragm was found ruptured — the
+      cause of the repeated pressure drops — and the vessel was replaced,
+      recharged to 1.0 bar and the system re-pressurised and inhibitor
+      re-dosed. Appliance left in safe working order.
+    lines:
+      - {description: "Annual boiler service — labour", qty: "1", unit_price: "85.00", amount: "85.00"}
+      - {description: "Expansion vessel, 18 L (Calorix part EV-18)", qty: "1", unit_price: "96.40", amount: "96.40"}
+      - {description: "Additional labour — expansion vessel replacement", qty: "1", unit_price: "45.00", amount: "45.00"}
+      - {description: "Central heating inhibitor (1 L) supplied and dosed", qty: "1", unit_price: "19.50", amount: "19.50"}
+    subtotal: "245.90"
+    vat: "49.18"
+    total: "295.08"
+    advisory:
+      title: "Safety advisory — please read"
+      body:
+        - >-
+          During the service the engineer noted that the flue terminal sits
+          at the minimum permitted clearance from the adjacent openable
+          window. This is not immediately dangerous and no action is
+          required now, but if the window frame is ever replaced or
+          extended the clearance must be re-measured, and we recommend
+          keeping the window closed while the boiler is running for long
+          periods.
+        - >-
+          The appliance is approaching five years in service. The heat
+          exchanger shows early scale deposits typical for the local water
+          hardness; fitting an in-line scale reducer at the next service
+          (approx. £60 fitted) would extend its life. A carbon monoxide
+          alarm was present and tested — replace its battery when the
+          alarm's low-battery chirp begins, and replace the alarm itself
+          by the expiry date printed on its case.

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Brackenwater identity: teal, serif brand, full-width meta strip, outlined
+     (not reversed) amount box — composition distinct from energy/broadband. */
+  .brand { font-family: "Doc Serif", serif; letter-spacing: 1.5pt; color: #0b6e8a; }
+  .brand .accent { color: #1a1a1a; }
+  table.data th { background: #e2eef2; }
+  .panel { background: #eaf3f6; border-left-color: #0b6e8a; }
+  .meta-strip {
+    width: 100%;
+    border-top: 1pt solid #0b6e8a;
+    border-bottom: 1pt solid #0b6e8a;
+    border-collapse: collapse;
+    font-size: 8.5pt;
+    margin: 2mm 0 5mm;
+  }
+  .meta-strip td { padding: 1.8mm 2mm; }
+  .meta-strip .label { color: #555; display: block; font-size: 7.5pt; }
+  .meta-strip .value { font-weight: bold; }
+  .amount-box {
+    border: 1.2pt solid #0b6e8a;
+    padding: 3mm 4mm;
+    margin: 4mm 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 11pt;
+    font-weight: bold;
+    color: #0b6e8a;
+  }
+  .amount-box .amount { font-size: 15pt; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Brackenwater Services Ltd is registered in England and Wales (company
+  no. 07733941), registered office 1 Weirfield House, Ottersley SO98 1BQ.
+  Appointed water and sewerage undertaker for the Brackenwater supply area.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">BRACKEN<span class="accent">WATER</span></div>
+  <div class="contact">
+    Brackenwater, PO Box 210, Ottersley SO98 1BQ<br>
+    customers@brackenwater.example &middot; 0113 496 0208<br>
+    brackenwater.example/account
+  </div>
+</div>
+
+<div class="addr-window">
+  {{ person.full_name }}<br>
+  {{ addresses.uk_current.line1 }}<br>
+  {{ addresses.uk_current.line2 }}<br>
+  {{ addresses.uk_current.city }}<br>
+  {{ addresses.uk_current.postcode }}
+</div>
+
+<h1>Your water and wastewater bill</h1>
+
+<table class="meta-strip">
+  <tr>
+    <td><span class="label">Account number</span><span class="value">{{ vendor.account_number }}</span></td>
+    <td><span class="label">Bill reference</span><span class="value">{{ issue.bill_ref }}</span></td>
+    <td><span class="label">Bill date</span><span class="value">{{ issue.bill_date }}</span></td>
+    <td><span class="label">Charging period</span><span class="value">{{ issue.period }}</span></td>
+    <td><span class="label">Supply address</span><span class="value">{{ addresses.uk_current.line1 }}, {{ addresses.uk_current.postcode }}</span></td>
+  </tr>
+</table>
+
+<h2>Your water use</h2>
+<table class="data">
+  <tr>
+    <th>Meter</th><th class="num">Previous reading</th><th class="num">Latest reading</th>
+    <th>Reading type</th><th class="num">Water used (m&sup3;)</th>
+  </tr>
+  <tr>
+    <td>{{ issue.meter_serial }}</td>
+    <td class="num">{{ issue.reading_previous }}</td>
+    <td class="num">{{ issue.reading_latest }}</td>
+    <td>{{ issue.reading_type }}</td>
+    <td class="num">{{ issue.m3_used }}</td>
+  </tr>
+</table>
+<p style="font-size: 8pt; color: #555;">{{ issue.reading_note }}</p>
+
+<h2>Your charges this period</h2>
+<table class="data">
+  <tr><th>Charge</th><th>Detail</th><th class="num">Amount</th></tr>
+  {% for line in issue.lines %}
+  <tr>
+    <td>{{ line.label }}</td>
+    <td>{{ line.detail }}</td>
+    <td class="num">&pound;{{ line.amount }}</td>
+  </tr>
+  {% endfor %}
+  <tr class="subtotal">
+    <td>Total charges this period</td><td></td>
+    <td class="num">&pound;{{ issue.charges_total }}</td>
+  </tr>
+</table>
+<p style="font-size: 8pt; color: #555;">No VAT is charged on household water
+and wastewater services.</p>
+
+<h2>Account summary</h2>
+<table class="summary">
+  <tr><td>Balance from your last bill</td><td class="amount">&pound;{{ issue.previous_balance }}</td></tr>
+  <tr><td>Payments received &mdash; thank you</td><td class="amount">&minus;&pound;{{ issue.payments_received }}</td></tr>
+  <tr><td>Charges this period</td><td class="amount">&pound;{{ issue.charges_total }}</td></tr>
+  <tr class="total"><td>Balance to pay</td><td class="amount">&pound;{{ issue.total_due }}</td></tr>
+</table>
+
+<div class="amount-box">
+  <span>Please pay by {{ issue.due_date }}</span>
+  <span class="amount">&pound;{{ issue.total_due }}</span>
+</div>
+
+{% if issue.notice is defined %}
+<div class="panel">
+  <h3>{{ issue.notice.title }}</h3>
+  {% for para in issue.notice.body %}<p>{{ para }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<div class="page-break"></div>
+
+<h2>Ways to pay</h2>
+<table class="data">
+  <tr><th>Method</th><th>How</th></tr>
+  <tr><td>Direct Debit</td><td>Spread charges monthly or pay each bill in
+    full — set up at brackenwater.example/account in about two minutes.</td></tr>
+  <tr><td>Online by card</td><td>brackenwater.example/pay, quoting your
+    account number {{ vendor.account_number }}.</td></tr>
+  <tr><td>Phone</td><td>Automated card line, 24 hours: 0113 496 0209.</td></tr>
+  <tr><td>Bank transfer</td><td>Use the payee details printed on your payment
+    slip and quote your account number as the reference.</td></tr>
+</table>
+
+<h2>About your charges</h2>
+<p>Your home has a water meter, so you pay for what you use: a charge per
+cubic metre (1 m&sup3; = 1,000 litres) for the clean water we supply and for
+the wastewater we take away and treat, plus a fixed daily charge for each
+service that covers meter reading, billing and maintaining the network.
+Charges are set each April for the charging year.</p>
+
+<h2>Help when you need it</h2>
+<p>If you're finding bills hard to manage, our reduced-rate support tariff
+can cap charges for eligible households, and our payment-plan team can
+spread arrears without fees — call 0113 496 0208. If you or someone in your
+home relies on water for medical reasons, join our priority services
+register for free extra support during supply interruptions.</p>
+
+<div class="small-print">
+  <p><strong>If you have a complaint</strong>, contact us first and we'll
+  aim to put things right within ten working days. If you're not happy with
+  our final answer you can take your complaint, free of charge, to the
+  independent consumer body for the water sector.</p>
+  <p><strong>Leaks.</strong> We repair leaks on our pipes; the pipe between
+  the boundary and your home is the property's responsibility. If a hidden
+  leak inflates your bill you may qualify for a one-off leak allowance —
+  ask us.</p>
+  <p><strong>Water quality.</strong> Your supply is tested throughout the
+  year. For the latest quality report for your postcode visit
+  brackenwater.example/quality.</p>
+  <p><strong>Supply interruptions.</strong> Planned work is notified in
+  advance by card; live updates during incidents are at
+  brackenwater.example/updates.</p>
+</div>
+
+</body>
+</html>

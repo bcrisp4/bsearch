@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand { color: #1a5d9e; font-size: 14pt; }
+  .brand .sub { display: block; font-size: 9pt; font-weight: normal; color: #444; }
+  .letter-date { text-align: right; margin: 2mm 0 4mm; }
+  .meta-box td.value { font-variant-numeric: tabular-nums; }
+  .appt-panel { background: #eaf1f8; border-left: 1.6mm solid #1a5d9e; }
+  .appt-panel table { border-collapse: collapse; }
+  .appt-panel td { padding: 0.8mm 0; vertical-align: top; }
+  .appt-panel td.label { color: #333; padding-right: 5mm; font-weight: bold; }
+  ul.bring li { margin-bottom: 1mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Thamesmoor &amp; Netherhale Hospitals Trust &middot; Trust headquarters:
+  Southmere Park Hospital, Lakeview Road, London SE28 8WD &middot; All our
+  sites are smoke-free. <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">Thamesmoor &amp; Netherhale Hospitals Trust
+    <span class="sub">Southmere Park Hospital, Lakeview Road, London SE28 8WD</span>
+  </div>
+  <div class="contact">
+    Appointments line 020 7946 0512 (Mon&ndash;Fri 8am&ndash;6pm)<br>
+    Switchboard 020 7946 0500<br>
+    thamesmoor-hospitals.example
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.title }} {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Hospital number</td><td class="value">{{ issue.hospital_number }}</td></tr>
+      <tr><td class="label">Date of letter</td><td class="value">{{ issue.letter_date }}</td></tr>
+      <tr><td class="label">Clinic</td><td class="value">{{ issue.clinic }}</td></tr>
+      <tr><td class="label">Consultant</td><td class="value">{{ issue.consultant }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<h1>Your outpatient appointment</h1>
+
+<p>Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},</p>
+
+<p>Following your referral by {{ supporting_cast.gp }} of
+{{ vendors.gp_uk.name }}, an appointment has been made for you as follows.</p>
+
+<div class="panel appt-panel">
+  <table>
+    <tr><td class="label">Date</td><td>{{ issue.appointment_date }}</td></tr>
+    <tr><td class="label">Time</td><td>{{ issue.appointment_time }}</td></tr>
+    <tr><td class="label">Clinic</td><td>{{ issue.clinic }}</td></tr>
+    <tr><td class="label">Seeing</td><td>{{ issue.consultant }}, Consultant ENT Surgeon (or a member of his team)</td></tr>
+    <tr><td class="label">Where</td><td>{{ issue.location }}</td></tr>
+  </table>
+</div>
+
+<p>Please arrive ten minutes early and check in at the East Wing Outpatients
+reception desk on Level 2.</p>
+
+<h2>What to bring with you</h2>
+<ul class="bring">
+  <li>This letter, and your appointment card if you have one.</li>
+  <li>A list of all medicines you currently take, including anything you buy
+      over the counter, with doses if possible.</li>
+  <li>Any relevant letters or test results you hold, including
+      correspondence from clinicians who treated you abroad.</li>
+  <li>Glasses or hearing aids, if you use them.</li>
+  <li>A note of any questions you want to ask &mdash; appointments go
+      quickly and it is easy to forget.</li>
+</ul>
+
+<h2>Getting here and parking</h2>
+<p>Pay-and-display patient parking at the Lakeview Road entrance is limited
+and fills early; please allow extra time or use public transport if you can.
+Local buses stop directly outside the main entrance on Lakeview Road, and
+the nearest rail station is around a fifteen-minute walk. Accessible parking
+bays for blue badge holders are beside the East Wing entrance. If a medical
+condition means you cannot travel by private or public transport, you may
+qualify for non-emergency patient transport: call 020 7946 0518 at least two
+working days before your appointment.</p>
+
+<h2>If you cannot attend</h2>
+<p>If this appointment is not convenient, or you no longer need it, please
+call the appointments line on 020 7946 0512 as soon as possible, quoting
+your hospital number, so we can offer the slot to another patient. If you do
+not attend and have not told us, we may return your care to your GP.</p>
+
+<p>If you need an interpreter, a signer, or this letter in large print,
+braille or audio, call the appointments line and we will arrange it free of
+charge.</p>
+
+<p>Yours sincerely,</p>
+
+<p><strong>Outpatient Booking Team</strong><br>
+on behalf of {{ issue.consultant }}</p>
+
+<div class="small-print">
+  <p><strong>Your information.</strong> We keep records of your care to
+  support treatment, and share them with your GP unless you ask us not to.
+  Our full privacy notice is at thamesmoor-hospitals.example/privacy.</p>
+  <p><strong>Smoke-free site.</strong> Smoking and vaping are not permitted
+  anywhere on hospital grounds.</p>
+</div>
+
+</body>
+</html>

@@ -13,9 +13,14 @@ Read before authoring any template. The exemplar is
 - Fonts: only the vendored Liberation families via base.css. Never name a
   system font.
 - Context = the whole persona pack (keys `person`, `addresses`, `banks`,
-  `vendors`, `supporting_cast`, `timeline`) plus `vendor` (the resolved
-  vendor entry) and `issue` (one entry from the data file). Jinja runs
-  StrictUndefined: referencing a missing key fails the build — on purpose.
+  `vendors`, `employers`, `supporting_cast`, `timeline`) plus `vendor`
+  (the resolved vendor entry — only when the data entry names a
+  `vendor_key`; entries with `vendor_key: null` carry their own fields and
+  their templates never reference `vendor`) and `issue` (one entry from
+  the data file). Jinja runs StrictUndefined: referencing a missing key
+  fails the build — on purpose. For *optional* issue keys use
+  `{% if issue.x is defined %}` or `{{ issue.x | default("...") }}` —
+  a bare `{% if issue.x %}` raises under StrictUndefined.
 - **Every personal value comes from persona.yaml via the context.** A
   literal name, address, account number, or personal date in a template or
   data file is a bug. Invented incidental values (meter serials, clerk

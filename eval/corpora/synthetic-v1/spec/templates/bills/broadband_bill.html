@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Loopfibre identity: violet, rail-driven layout (distinct from energy). */
+  .brand { font-family: "Doc Sans", sans-serif; letter-spacing: -0.3pt; }
+  .brand .accent { color: #5b2d86; }
+  .total-banner { background: #5b2d86; }
+  table.data th { background: #ece4f4; }
+  .panel { background: #f4eef9; border-left-color: #5b2d86; }
+  .rail h3 {
+    border-bottom: 0.8pt solid #5b2d86;
+    padding-bottom: 0.8mm;
+    margin: 3mm 0 1.2mm;
+    font-size: 8.5pt;
+  }
+  .rail .kv { display: flex; justify-content: space-between; margin: 0.6mm 0; }
+  .rail .kv .v { font-weight: bold; text-align: right; }
+  .hello {
+    background: #f2f2f2;
+    padding: 3mm 4mm;
+    margin: 4mm 0;
+    font-size: 9pt;
+  }
+  .dd-box {
+    border: 0.6pt solid #5b2d86;
+    padding: 2.5mm 3.5mm;
+    margin: 4mm 0;
+    font-size: 9pt;
+  }
+  .tiles { display: flex; gap: 5mm; margin: 4mm 0; }
+  .tile {
+    background: #f2f2f2;
+    padding: 3mm 4mm;
+    flex: 1;
+    font-size: 8.5pt;
+  }
+  .tile h3 { margin-top: 0; }
+  .main-rail { display: flex; gap: 8mm; }
+  .main-rail .main { flex: 1; }
+  .main-rail .rail { width: 52mm; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} Ltd is registered in England and Wales (company no. 10442817),
+  registered office 45 Weavers Yard, London E99 4TL. VAT no. GB 442 887 106.
+  We follow our published complaints code: loopfibre.example/complaints.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">loop<span class="accent">fibre</span></div>
+  <div class="contact">
+    {{ vendor.name }} Ltd, 45 Weavers Yard, London E99 4TL<br>
+    help@loopfibre.example &middot; 0113 496 0552<br>
+    loopfibre.example/myaccount
+  </div>
+</div>
+
+<div class="main-rail">
+  <div class="main">
+    <div class="addr-window">
+      {{ person.full_name }}<br>
+      {{ addresses.uk_current.line1 }}<br>
+      {{ addresses.uk_current.line2 }}<br>
+      {{ addresses.uk_current.city }}<br>
+      {{ addresses.uk_current.postcode }}
+    </div>
+
+    <h1>Your Loopfibre bill</h1>
+
+    <div class="hello">
+      <p><strong>Hello {{ person.short_name }},</strong></p>
+      <p>Here's your bill for {{ issue.period }}. Everything you need is below;
+      the full breakdown is on page 2. You can see this bill, check your usage
+      and manage your package any time at loopfibre.example/myaccount.</p>
+    </div>
+
+    <h2>Your bill</h2>
+    <table class="summary">
+      <tr><td>Your package: <strong>{{ issue.package }}</strong></td><td class="amount"></td></tr>
+      {% for line in issue.charges %}
+      <tr><td>{{ line.label }}</td><td class="amount">&pound;{{ line.amount }}</td></tr>
+      {% endfor %}
+      <tr class="total"><td>Total new charges (incl. VAT)</td><td class="amount">&pound;{{ issue.total_new }}</td></tr>
+    </table>
+
+    <h2>Account summary</h2>
+    <table class="summary">
+      <tr><td>Balance from your previous bill</td><td class="amount">&pound;{{ issue.previous_balance }}</td></tr>
+      <tr><td>Payment received &mdash; thank you</td><td class="amount">&minus;&pound;{{ issue.payment_received }}</td></tr>
+      <tr><td>Account balance brought forward</td><td class="amount">&pound;{{ issue.balance_forward }}</td></tr>
+    </table>
+
+    <div class="total-banner">
+      <span>Total amount due</span>
+      <span class="amount">&pound;{{ issue.total_due }}</span>
+    </div>
+
+    <div class="dd-box">
+      <strong>Paying by Direct Debit.</strong> We'll collect
+      &pound;{{ issue.total_due }} from your account ending
+      {{ banks.uk_current_account.account_number[-4:] }} on or just after
+      {{ issue.payment_date }}. Your payments are protected by the Direct
+      Debit Guarantee.
+    </div>
+  </div>
+
+  <div class="rail">
+    <h3>Your dates</h3>
+    <div class="kv"><span>Bill date</span><span class="v">{{ issue.bill_date }}</span></div>
+    <div class="kv"><span>Payment date</span><span class="v">{{ issue.payment_date }}</span></div>
+    <h3>Your account details</h3>
+    <div class="kv"><span>Account number</span><span class="v">{{ vendor.account_number }}</span></div>
+    <div class="kv"><span>Bill number</span><span class="v">{{ issue.bill_number }}</span></div>
+    <h3>Our details</h3>
+    <div class="kv"><span>Company no.</span><span class="v">10442817</span></div>
+    <div class="kv"><span>VAT no.</span><span class="v">GB 442 887 106</span></div>
+  </div>
+</div>
+
+{% if issue.notice is defined %}
+<div class="panel">
+  <h3>{{ issue.notice.title }}</h3>
+  {% for para in issue.notice.body %}<p>{{ para }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h3>Did you know?</h3>
+  <p>{{ issue.did_you_know }}</p>
+</div>
+
+<div class="page-break"></div>
+
+<h2>Charges in detail &mdash; {{ issue.period }}</h2>
+<table class="data">
+  <tr><th>Item</th><th>Detail</th><th class="num">Amount</th></tr>
+  {% for line in issue.charges %}
+  <tr>
+    <td>{{ line.label }}</td>
+    <td>{{ line.detail }}</td>
+    <td class="num">&pound;{{ line.amount }}</td>
+  </tr>
+  {% endfor %}
+  <tr class="subtotal">
+    <td>Total (incl. VAT at 20%)</td><td></td>
+    <td class="num">&pound;{{ issue.total_new }}</td>
+  </tr>
+</table>
+<p style="font-size: 8pt; color: #555;">Your contract: {{ issue.contract_note }}</p>
+
+<h2>How do I get in touch?</h2>
+<div class="tiles">
+  <div class="tile">
+    <h3>Message us</h3>
+    <p>help@loopfibre.example or live chat in the Loopfibre app.
+    We reply within one working day.</p>
+  </div>
+  <div class="tile">
+    <h3>Call us</h3>
+    <p>0113 496 0552<br>Monday&ndash;Friday 8am&ndash;8pm,
+    Saturday 9am&ndash;5pm.</p>
+  </div>
+</div>
+
+<div class="small-print">
+  <p><strong>If something's wrong</strong>, tell us and we'll put it right —
+  our complaints code is at loopfibre.example/complaints. If we haven't
+  resolved a complaint after eight weeks, or we send you a deadlock letter,
+  you can take it to the statutory ombudsman for the telecoms sector, whose
+  service is free to use.</p>
+  <p><strong>Service status.</strong> Check for outages in your area at
+  loopfibre.example/status before reporting a fault — if it's on our side,
+  you don't need to do anything.</p>
+  <p><strong>Need your bill in another format?</strong> We can provide bills
+  in large print, braille or audio — call us or ask in the app.</p>
+  <p><strong>Moving home?</strong> Give us 14 days' notice and we'll move
+  your service or arrange an early exit — loopfibre.example/moving.</p>
+</div>
+
+</body>
+</html>

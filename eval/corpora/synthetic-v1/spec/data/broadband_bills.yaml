@@ -1,0 +1,340 @@
+# Per-issue data for the Loopfibre monthly broadband bill series (12 issues,
+# corpus.yaml: broadband_bills), Sep 2025 – Aug 2026. Bills are issued on the
+# 1st covering the month ahead; Direct Debit collects on the 14th. Prose
+# variation: `did_you_know` rotates every issue; `notice` carries the specials
+# — mid-contract price rise letter panel (Mar + Apr, effective 1 May), one-off
+# engineer visit charge (Feb bill, golden target: £65 fault-repair visit on
+# 21 January), router upgrade offer (Jun). Price rise: Loop Fibre 150
+# £29.99 → £32.99 from 1 May 2026. All amounts include VAT at 20%.
+template: bills/broadband_bill.html
+vendor_key: broadband
+issues:
+  - id: broadband-2025-09
+    bill_number: "0912273"
+    bill_date: "1 September 2025"
+    payment_date: "14 September 2025"
+    period: "1–30 September 2025"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "29.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "34.99"
+    previous_balance: "34.99"
+    payment_received: "34.99"
+    balance_forward: "0.00"
+    total_due: "34.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    did_you_know: >-
+      The Loopfibre app shows your hub's live status, lets you reboot it
+      remotely, and pings you if your connection drops while you're out.
+  - id: broadband-2025-10
+    bill_number: "0912274"
+    bill_date: "1 October 2025"
+    payment_date: "14 October 2025"
+    period: "1–31 October 2025"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "29.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "34.99"
+    previous_balance: "34.99"
+    payment_received: "34.99"
+    balance_forward: "0.00"
+    total_due: "34.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    did_you_know: >-
+      Where you put your hub matters more than you'd think: out in the open
+      and off the floor beats hidden in the TV cabinet by a wide margin.
+  - id: broadband-2025-11
+    bill_number: "0912275"
+    bill_date: "1 November 2025"
+    payment_date: "14 November 2025"
+    period: "1–30 November 2025"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "29.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "34.99"
+    previous_balance: "34.99"
+    payment_received: "34.99"
+    balance_forward: "0.00"
+    total_due: "34.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    did_you_know: >-
+      Free parental controls are built into every Loopfibre package — set
+      bedtimes, filter content per device, and pause the wifi at dinner,
+      all from the app.
+  - id: broadband-2025-12
+    bill_number: "0912276"
+    bill_date: "1 December 2025"
+    payment_date: "14 December 2025"
+    period: "1–31 December 2025"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "29.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "34.99"
+    previous_balance: "34.99"
+    payment_received: "34.99"
+    balance_forward: "0.00"
+    total_due: "34.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    did_you_know: >-
+      Before reporting a fault, check loopfibre.example/status — if there's
+      a problem in your area we'll already be on it, and you can sign up
+      for text updates until it's fixed.
+  - id: broadband-2026-01
+    bill_number: "0912277"
+    bill_date: "1 January 2026"
+    payment_date: "14 January 2026"
+    period: "1–31 January 2026"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "29.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "34.99"
+    previous_balance: "34.99"
+    payment_received: "34.99"
+    balance_forward: "0.00"
+    total_due: "34.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    did_you_know: >-
+      The speed test built into the Loopfibre app measures the line right
+      at your hub, so it tells you whether a slowdown is on our network or
+      inside your home wifi.
+  - id: broadband-2026-02
+    bill_number: "0912278"
+    bill_date: "1 February 2026"
+    payment_date: "14 February 2026"
+    period: "1–28 February 2026"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "29.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+      - label: "Engineer visit — fault repair"
+        detail: "Chargeable visit on 21 January 2026 (see notice)"
+        amount: "65.00"
+    total_new: "99.99"
+    previous_balance: "34.99"
+    payment_received: "34.99"
+    balance_forward: "0.00"
+    total_due: "99.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    notice:
+      title: "About your engineer visit charge"
+      body:
+        - >-
+          Our engineer visited on 21 January 2026 to repair the fault you
+          reported on 18 January (no connection, hub light flashing red).
+          The engineer traced the fault to a damaged internal socket
+          faceplate, replaced it, and retested the line at full speed
+          before leaving.
+        - >-
+          Because the fault was with wiring inside your home rather than on
+          the Loopfibre network, the visit is chargeable at our standard
+          rate of £65, which appears on this bill as a one-off charge. If
+          you believe this charge is wrong, contact us within 30 days.
+    did_you_know: >-
+      Most "no connection" problems fix themselves with a 30-second hub
+      restart — but if the hub light is flashing red after a restart,
+      that's when to report a fault.
+  - id: broadband-2026-03
+    bill_number: "0912279"
+    bill_date: "1 March 2026"
+    payment_date: "14 March 2026"
+    period: "1–31 March 2026"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "29.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "34.99"
+    previous_balance: "99.99"
+    payment_received: "99.99"
+    balance_forward: "0.00"
+    total_due: "34.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    notice:
+      title: "Important: your monthly price is changing on 1 May 2026"
+      body:
+        - >-
+          From 1 May 2026 the monthly price of Loop Fibre 150 will rise
+          from £29.99 to £32.99 — an increase of £3.00 a month. Your
+          static IP add-on price is not changing. This is the annual price
+          adjustment set out in the terms you agreed when you joined.
+        - >-
+          Because this change is part of your contract terms, it doesn't
+          give a right to leave without an early-exit fee. If you'd like
+          to review your package before the change takes effect, call us
+          or visit loopfibre.example/myaccount — we'll always tell you if
+          a cheaper package would suit your usage.
+    did_you_know: >-
+      You can set a monthly spend cap on your account so one-off charges
+      are never a surprise — switch it on under Billing in the app.
+  - id: broadband-2026-04
+    bill_number: "0912280"
+    bill_date: "1 April 2026"
+    payment_date: "14 April 2026"
+    period: "1–30 April 2026"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "29.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "34.99"
+    previous_balance: "34.99"
+    payment_received: "34.99"
+    balance_forward: "0.00"
+    total_due: "34.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    notice:
+      title: "Reminder: your new price starts next month"
+      body:
+        - >-
+          As we let you know on your March bill, the monthly price of Loop
+          Fibre 150 rises from £29.99 to £32.99 on 1 May 2026. This is the
+          last bill at your current price; your May bill will show the new
+          amount. You don't need to do anything.
+    did_you_know: >-
+      Guest wifi keeps visitors off your main network — create a separate
+      guest name and password in two taps from the app.
+  - id: broadband-2026-05
+    bill_number: "0912281"
+    bill_date: "1 May 2026"
+    payment_date: "14 May 2026"
+    period: "1–31 May 2026"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s (new price from 1 May)"
+        amount: "32.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "37.99"
+    previous_balance: "34.99"
+    payment_received: "34.99"
+    balance_forward: "0.00"
+    total_due: "37.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    notice:
+      title: "Your new price applies from this bill"
+      body:
+        - >-
+          This is your first bill at the new Loop Fibre 150 price of
+          £32.99 a month, following the change we wrote to you about in
+          March and April. Your Direct Debit amount updates automatically.
+    did_you_know: >-
+      Loopfibre hubs get security updates automatically overnight — no
+      need to do anything, but a hub that's occasionally offline at 3am is
+      usually just updating.
+  - id: broadband-2026-06
+    bill_number: "0912282"
+    bill_date: "1 June 2026"
+    payment_date: "14 June 2026"
+    period: "1–30 June 2026"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "32.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "37.99"
+    previous_balance: "37.99"
+    payment_received: "37.99"
+    balance_forward: "0.00"
+    total_due: "37.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    notice:
+      title: "Upgrade offer: the new Loop Hub 3"
+      body:
+        - >-
+          As a thank-you for being with us, you can upgrade to the new
+          Loop Hub 3 for a one-off £20 instead of £75. It adds the latest
+          wifi standard, roughly doubles wireless range in a typical flat,
+          and supports our whole-home mesh discs.
+        - >-
+          Your current hub keeps working fine if you'd rather not — this
+          offer is optional and runs until 31 July 2026. Claim it under
+          Offers in the app and we'll post the new hub with a prepaid
+          returns bag for the old one.
+    did_you_know: >-
+      Old hubs don't go to landfill — every returned Loopfibre hub is
+      refurbished for reuse or responsibly recycled.
+  - id: broadband-2026-07
+    bill_number: "0912283"
+    bill_date: "1 July 2026"
+    payment_date: "14 July 2026"
+    period: "1–31 July 2026"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "32.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "37.99"
+    previous_balance: "37.99"
+    payment_received: "37.99"
+    balance_forward: "0.00"
+    total_due: "37.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    did_you_know: >-
+      Refer a friend to Loopfibre and you'll each get a £25 credit on your
+      bill once their service goes live — your referral link is in the app.
+  - id: broadband-2026-08
+    bill_number: "0912284"
+    bill_date: "1 August 2026"
+    payment_date: "14 August 2026"
+    period: "1–31 August 2026"
+    package: "Loop Fibre 150"
+    charges:
+      - label: "Loop Fibre 150 — monthly service"
+        detail: "Full-fibre broadband, average speed 150 Mb/s"
+        amount: "32.99"
+      - label: "Static IP add-on"
+        detail: "One static IPv4 address"
+        amount: "5.00"
+    total_new: "37.99"
+    previous_balance: "37.99"
+    payment_received: "37.99"
+    balance_forward: "0.00"
+    total_due: "37.99"
+    contract_note: "Loop Fibre 150, 18-month minimum term started 18 August 2025."
+    did_you_know: >-
+      Watch out for texts and emails claiming your "bill payment failed"
+      with a link to re-enter card details — we never ask for payment that
+      way. Forward anything suspicious to reportscam@loopfibre.example.

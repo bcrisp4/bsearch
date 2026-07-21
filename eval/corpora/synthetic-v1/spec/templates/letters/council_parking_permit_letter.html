@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand { color: #4a2a6b; }
+  .letter-date { text-align: right; margin: 2mm 0 4mm; }
+  .permit-panel { background: #f0ecf5; border-left: 1.6mm solid #4a2a6b; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} &middot; Parking Services, Civic Centre, 1 Netherhale
+  Way, London SE28 9BB &middot; netherhale-borough.example/parking
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">{{ vendor.name }}</div>
+  <div class="contact">
+    Parking Services, Civic Centre<br>
+    1 Netherhale Way, London SE28 9BB<br>
+    020 7946 0433 &middot; netherhale-borough.example/parking
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.title }} {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Permit reference</td><td class="value">{{ issue.permit_ref }}</td></tr>
+      <tr><td class="label">Controlled zone</td><td class="value">{{ issue.zone }}</td></tr>
+      <tr><td class="label">Valid from</td><td class="value">{{ issue.valid_from }}</td></tr>
+      <tr><td class="label">Valid to</td><td class="value">{{ issue.valid_to }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<h1>Resident visitor parking &mdash; application approved</h1>
+
+<p>Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},</p>
+
+<p>Thank you for your application. We have approved resident visitor
+parking permits for {{ addresses.uk_current.line1 }},
+{{ addresses.uk_current.line2 }}, and your account is now active.</p>
+
+<div class="panel permit-panel">
+  <h3>What you&rsquo;ve been issued</h3>
+  <p>An annual allowance of <strong>{{ issue.allowance }}</strong> of visitor
+  parking in <strong>{{ issue.zone }}</strong>, issued as electronic
+  vouchers. The allowance is valid from {{ issue.valid_from }} to
+  {{ issue.valid_to }} and cannot be carried over.</p>
+</div>
+
+<p>{{ issue.zone }} covers Calverley Grove and the surrounding streets.
+Controlled hours are Monday to Saturday, 9am to 6.30pm; outside these hours
+visitors may park in resident bays without a voucher.</p>
+
+<h2>How your visitors park</h2>
+
+<p>When a visitor arrives, log in to the parking portal at
+netherhale-borough.example/parking (or the council parking app), enter the
+visitor&rsquo;s vehicle registration, and start a session. Time is deducted
+from your allowance in 30-minute steps and civil enforcement officers check
+sessions electronically &mdash; there is nothing to display in the
+vehicle.</p>
+
+<p>Vouchers are for genuine visitors to your household. They must not be
+used for commuter parking, sold, or transferred to another address; misuse
+can lead to the allowance being withdrawn.</p>
+
+<p>We will write to you before {{ issue.valid_to }} to invite you to renew.
+If any of your details change in the meantime, please tell us at
+netherhale-borough.example/parking or on 020 7946 0433.</p>
+
+<p>Yours sincerely,</p>
+
+<p><strong>Parking Services</strong><br>
+{{ vendor.name }}</p>
+
+<div class="small-print">
+  <p><strong>Proof of residency.</strong> Permits are issued on the basis of
+  the evidence you supplied. We may ask you to re-confirm residency at any
+  time; providing false information is grounds for cancellation.</p>
+</div>
+
+</body>
+</html>

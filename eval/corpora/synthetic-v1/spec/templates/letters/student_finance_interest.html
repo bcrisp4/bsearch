@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand { color: #0b5e63; }
+  .letter-date { text-align: right; margin: 2mm 0 4mm; }
+  .rate-panel { background: #eef4f4; border-left: 1.6mm solid #0b5e63; }
+  .rate-panel .big { font-size: 13pt; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} &middot; PO Box 210, Millbrook DL98 6ZZ &middot;
+  sfagency.example &middot; Please quote your customer reference number in
+  all correspondence. <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">{{ vendor.name }}</div>
+  <div class="contact">
+    PO Box 210, Millbrook DL98 6ZZ<br>
+    0113 496 0770 &middot; sfagency.example
+  </div>
+</div>
+
+<p class="letter-date">{{ issue.letter_date }}</p>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.title }} {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Customer reference</td><td class="value">{{ vendor.customer_ref }}</td></tr>
+      <tr><td class="label">Plan type</td><td class="value">Plan 2</td></tr>
+    </table>
+  </div>
+</div>
+
+<h1>Change to your student loan interest rate</h1>
+
+<p>Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},</p>
+
+<p>This letter tells you about a change to the interest rate on your Plan 2
+student loan. <strong>You do not need to do anything.</strong></p>
+
+<div class="panel rate-panel">
+  <p class="big">From {{ issue.change_date }}, the annual interest rate on
+  your loan changes from {{ issue.old_rate }}% to {{ issue.new_rate }}%.</p>
+</div>
+
+<p>Interest rates on Plan 2 loans are linked to inflation and are reviewed
+every September using the inflation figure from the previous March. Because
+you are in repayment, the rate you are charged also varies with your
+income, up to a maximum of inflation plus 3%; the new rate above is the
+rate that applies at your current income level.</p>
+
+<p><strong>This change does not alter your monthly repayments.</strong>
+What you repay each month depends only on your income &mdash; 9% of
+anything you earn above the repayment threshold &mdash; and is collected
+through your employer&rsquo;s payroll as usual. The interest rate affects
+how your outstanding balance grows, not what you pay.</p>
+
+<p>Interest is calculated daily on your outstanding balance and added
+monthly. You can check your balance, see the rates applied to your account,
+and make voluntary repayments at sfagency.example/account.</p>
+
+<p>Yours sincerely,</p>
+
+<p><strong>Customer Accounts Team</strong><br>
+{{ vendor.name }}</p>
+
+<div class="small-print">
+  <p><strong>Accessible formats.</strong> We can provide this letter in
+  braille, large print or audio. Email accessible@sfagency.example or call
+  0113 496 0770.</p>
+  <p><strong>About your loan.</strong> Any balance remaining 30 years after
+  you first became liable to repay is written off. There is no charge for
+  repaying some or all of your loan early.</p>
+</div>
+
+</body>
+</html>
