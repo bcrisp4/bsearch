@@ -116,3 +116,21 @@ class TestCheckCLI:
 
         assert code == 2
         assert "denylist" in capsys.readouterr().err.lower()
+
+
+class TestEntityBlindSpot:
+    def test_html_entities_cannot_hide_an_entry(
+        self, denylist_file: Path, tmp_path: Path
+    ) -> None:
+        # "Acme&rsquo;s Corp" renders as "Acme's Corp"; raw-text scanning
+        # would miss it while the converted output later hits — the gate
+        # must catch it at the template stage.
+        root = tmp_path / "tree"
+        root.mkdir()
+        (root / "t.html").write_text(
+            "<p>ask Acme&nbsp;Corp for help</p>", encoding="utf-8"
+        )
+
+        dl = Denylist.from_file(denylist_file)
+
+        assert scan_tree(dl, root) != []

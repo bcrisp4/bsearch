@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -45,5 +46,10 @@ def scan_tree(denylist: Denylist, root: Path) -> list[Finding]:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        findings.extend(Finding(path=path, hit=h) for h in denylist.scan(text))
+        # Decode HTML entities first: "Acme&nbsp;Corp" in a template becomes
+        # "Acme Corp" in converted output — the gate must catch it at the
+        # source stage, not after conversion.
+        findings.extend(
+            Finding(path=path, hit=h) for h in denylist.scan(html.unescape(text))
+        )
     return findings
