@@ -125,6 +125,101 @@ func TestUpsertVectorsAndSearch(t *testing.T) {
 	}
 }
 
+func TestVecTableUsesCosineMetric(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 4); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+
+	var ddl string
+	if err := db.Reader().QueryRow(
+		"SELECT sql FROM sqlite_master WHERE name = 'vec_chunks_1'").Scan(&ddl); err != nil {
+		t.Fatalf("read vec table DDL: %v", err)
+	}
+	if !strings.Contains(ddl, "distance_metric=cosine") {
+		t.Errorf("vec table DDL %q missing distance_metric=cosine", ddl)
+	}
+
+	var descriptor string
+	if err := db.Reader().QueryRow(
+		"SELECT value FROM meta WHERE key = 'vec_table:vec_chunks_1'").Scan(&descriptor); err != nil {
+		t.Fatalf("meta descriptor: %v", err)
+	}
+	if !strings.Contains(descriptor, "cosine") {
+		t.Errorf("descriptor %q missing cosine metric", descriptor)
+	}
+}
+
+func TestSearchRankingIsMagnitudeInvariant(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"),
+		testChunks("d_1", "north-big", "east"))
+	if err != nil {
+		t.Fatalf("UpsertDocument: %v", err)
+	}
+
+	// A non-normalized model: same direction as the query but 10× the
+	// magnitude. Cosine must rank it nearest; L2 would rank "east" first
+	// (|q−north-big| = 9 vs |q−east| = √2), which is exactly the silent
+	// skew issue #40 guards against.
+	vectors := [][]float32{
+		{10, 0, 0}, // north-big
+		{0, 1, 0},  // east
+	}
+	if err := store.UpsertVectors(ctx, ids, vectors); err != nil {
+		t.Fatalf("UpsertVectors: %v", err)
+	}
+
+	hits, err := store.SearchVectors(ctx, []float32{1, 0, 0}, 2)
+	if err != nil {
+		t.Fatalf("SearchVectors: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("hits = %d, want 2", len(hits))
+	}
+	if hits[0].Chunk.Text != "north-big" {
+		t.Errorf("nearest = %q, want north-big (magnitude skewed the ranking)", hits[0].Chunk.Text)
+	}
+}
+
+func TestDescriptorMetricBackfillMintsNewGeneration(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a descriptor stored before the Metric field existed: that
+	// table is physically L2 (created without distance_metric), so unlike
+	// the layout/template backfills it must NOT match a cosine ensure —
+	// treating it as cosine-compatible would silently mix metrics.
+	if _, err := db.Writer().Exec(
+		`UPDATE meta SET value = '{"model":"test-model","dims":3,"layout":"float32"}' WHERE key = 'vec_table:vec_chunks_1'`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
+		t.Fatal(err)
+	}
+	var current string
+	if err := db.Reader().QueryRow("SELECT value FROM meta WHERE key = 'vec_current'").Scan(&current); err != nil {
+		t.Fatal(err)
+	}
+	if current != "vec_chunks_2" {
+		t.Errorf("vec_current = %q — legacy L2 generation matched a cosine ensure", current)
+	}
+}
+
 func TestUpsertVectorsDimsMismatch(t *testing.T) {
 	db := openTestDB(t)
 	store := NewStore(db)
@@ -281,9 +376,11 @@ func TestDescriptorLayoutBackfill(t *testing.T) {
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a descriptor stored before the Layout field existed.
+	// Simulate a descriptor stored before the Layout field existed (metric
+	// kept current: its backfill deliberately mints a new generation and is
+	// covered by TestDescriptorMetricBackfillMintsNewGeneration).
 	if _, err := db.Writer().Exec(
-		`UPDATE meta SET value = '{"model":"test-model","dims":3}' WHERE key = 'vec_table:vec_chunks_1'`); err != nil {
+		`UPDATE meta SET value = '{"model":"test-model","dims":3,"metric":"cosine"}' WHERE key = 'vec_table:vec_chunks_1'`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -398,9 +495,10 @@ func TestDescriptorTemplateBackfill(t *testing.T) {
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a descriptor stored before the template fields existed.
+	// Simulate a descriptor stored before the template fields existed
+	// (metric kept current — see TestDescriptorLayoutBackfill).
 	if _, err := db.Writer().Exec(
-		`UPDATE meta SET value = '{"model":"test-model","dims":3,"layout":"float32"}'
+		`UPDATE meta SET value = '{"model":"test-model","dims":3,"layout":"float32","metric":"cosine"}'
 		 WHERE key = 'vec_table:vec_chunks_1'`); err != nil {
 		t.Fatal(err)
 	}

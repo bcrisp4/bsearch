@@ -135,6 +135,7 @@ func (ix *Indexer) Run(ctx context.Context, docs []domain.Document) (Summary, er
 		domain.StageChunker:       chunker.Version,
 		domain.StageEmbedding:     ix.fp,
 		domain.StageEmbeddingDims: strconv.Itoa(dims),
+		domain.StageVecMetric:     domain.VectorMetric,
 	}
 	for _, doc := range current {
 		if doc.StageVersions[domain.StageEmbeddingDims] != sv[domain.StageEmbeddingDims] {
@@ -156,12 +157,14 @@ func (ix *Indexer) Run(ctx context.Context, docs []domain.Document) (Summary, er
 }
 
 // versionsCurrent reports whether doc's derived data was produced by this
-// chunker version and this embedding spec, dims aside (DESIGN.md: Pipeline
-// metadata — StageVersions diffed against current config). Dims are only
-// known after the probe and are re-checked separately in Run.
+// chunker version, this embedding spec, and the current vector metric, dims
+// aside (DESIGN.md: Pipeline metadata — StageVersions diffed against
+// current config). Dims are only known after the probe and are re-checked
+// separately in Run.
 func (ix *Indexer) versionsCurrent(doc domain.Document) bool {
 	return doc.StageVersions[domain.StageChunker] == chunker.Version &&
-		doc.StageVersions[domain.StageEmbedding] == ix.fp
+		doc.StageVersions[domain.StageEmbedding] == ix.fp &&
+		doc.StageVersions[domain.StageVecMetric] == domain.VectorMetric
 }
 
 // processDoc runs one document through read → chunk → embed → store. A
