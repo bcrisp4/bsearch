@@ -1,6 +1,6 @@
 # 0007 — vec0 cosine distance metric
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-21
 - **Confidence:** high
 
