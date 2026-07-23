@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .ci-brand { font-size: 13pt; font-weight: bold; color: #275d6b; letter-spacing: 0.5pt; }
+  .ci-sub { font-size: 7.5pt; color: #555; }
+  h1 { font-size: 13.5pt; }
+  h2.room {
+    background: #275d6b; color: #fff; font-size: 9.5pt; padding: 1.6mm 3mm;
+    margin: 4mm 0 0; letter-spacing: 0.5pt;
+  }
+  table.inv { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 2mm; }
+  table.inv th { background: #ddeaee; text-align: left; padding: 1.4mm 2mm;
+                 border-bottom: 0.5pt solid #888; font-size: 7.5pt; }
+  table.inv td { padding: 1.3mm 2mm; border-bottom: 0.3pt solid #ccc; vertical-align: top; }
+  .decl { font-size: 8.5pt; border: 0.5pt solid #888; padding: 3mm 4mm; margin-top: 4mm; }
+  .sig-line { display: inline-block; min-width: 50mm; border-bottom: 0.4pt solid #333;
+              font-style: italic; font-size: 11pt; padding: 0 3mm 1mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ issue.clerk_company }} &middot; independent inventory clerks &middot;
+  report {{ issue.report_ref }} &middot; prepared for {{ vendor.name }}
+  (ref {{ vendor.tenancy_ref }})
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div>
+    <div class="ci-brand">CRANSLEY INVENTORIES</div>
+    <div class="ci-sub">Independent inventory, check-in and check-out reporting</div>
+  </div>
+  <div class="contact">
+    {{ issue.clerk_company }}<br>
+    reports@cransley-inventories.example &middot; 020 7946 0764
+  </div>
+</div>
+
+<h1>Inventory &amp; Schedule of Condition &mdash; Check-in Report</h1>
+
+<div class="two-col">
+  <div class="meta-box" style="width: 80mm;">
+    <table>
+      <tr><td class="label">Property</td><td class="value">{{ addresses.uk_current.line1 }},
+          {{ addresses.uk_current.line2 }}, {{ addresses.uk_current.city }}
+          {{ addresses.uk_current.postcode }}</td></tr>
+      <tr><td class="label">Report reference</td><td class="value">{{ issue.report_ref }}</td></tr>
+      <tr><td class="label">Check-in date</td><td class="value">{{ issue.checkin_date }}</td></tr>
+      <tr><td class="label">Clerk</td><td class="value">{{ issue.clerk_name }}</td></tr>
+    </table>
+  </div>
+  <div class="meta-box" style="width: 80mm;">
+    <table>
+      <tr><td class="label">Landlord</td><td class="value">{{ vendors.landlord }}</td></tr>
+      <tr><td class="label">Agent</td><td class="value">{{ vendor.name }}</td></tr>
+      <tr><td class="label">Tenant</td><td class="value">{{ person.title }} {{ person.full_name }}</td></tr>
+      <tr><td class="label">Keys issued</td><td class="value">{{ issue.keys }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<p style="font-size: 8.5pt;">This report records the contents of the property
+and their condition at the start of the tenancy. Photographs referenced by
+number in the notes column are held with the master report. Unless stated
+otherwise, items are clean and in sound, usable condition.
+&ldquo;Good&rdquo; indicates condition consistent with age with no more than
+light wear. The tenant has seven days from receipt to propose amendments;
+after that the report stands as agreed, per clause 5.1 of the tenancy
+agreement.</p>
+
+<table class="inv">
+  <tr><th>Meters and safety devices</th><th>Detail</th><th>Reading / result at check-in</th></tr>
+  <tr><td>Electricity meter</td><td>Serial {{ issue.electric_serial }} (smart meter, hallway cupboard)</td>
+      <td>{{ issue.electric_reading }}</td></tr>
+  <tr><td>Gas meter</td><td>Serial {{ issue.gas_serial }} (communal meter bank, ground floor)</td>
+      <td>{{ issue.gas_reading }}</td></tr>
+  <tr><td>Water</td><td colspan="2">{{ issue.water_note }}</td></tr>
+  <tr><td>Smoke alarm</td><td colspan="2">{{ issue.smoke_alarm }}</td></tr>
+  <tr><td>Carbon monoxide alarm</td><td colspan="2">{{ issue.co_alarm }}</td></tr>
+</table>
+
+{% for room in issue.rooms %}
+<h2 class="room">{{ loop.index }}. {{ room.name }}</h2>
+<table class="inv">
+  <tr><th style="width: 28mm;">Item</th><th>Description</th>
+      <th style="width: 18mm;">Condition</th><th style="width: 42mm;">Notes</th></tr>
+  {% for r in room.rows %}
+  <tr><td>{{ r.item }}</td><td>{{ r.description }}</td>
+      <td>{{ r.condition }}</td><td>{{ r.notes }}</td></tr>
+  {% endfor %}
+</table>
+{% endfor %}
+
+<div class="decl">
+  <p><strong>Clerk&rsquo;s declaration.</strong> I confirm that this report is
+  a fair and accurate record of the contents and condition of the property at
+  the date of check-in.</p>
+  <p><span class="sig-line">{{ issue.clerk_name }}</span><br>
+  {{ issue.clerk_name }}, for {{ issue.clerk_company }} &middot; {{ issue.checkin_date }}</p>
+  <p style="margin-top: 4mm;"><strong>Tenant&rsquo;s acknowledgement.</strong>
+  I acknowledge receipt of this report and of the keys listed above.</p>
+  <p><span class="sig-line">{{ person.full_name }}</span><br>
+  {{ person.full_name }} &middot; {{ issue.checkin_date }}</p>
+</div>
+
+</body>
+</html>

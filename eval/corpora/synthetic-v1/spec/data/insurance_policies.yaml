@@ -1,0 +1,188 @@
+# Per-entry data for the full-policy `insurance` entries (corpus.yaml).
+# The policy_change_notice_* entries live in policy_change_notices.yaml.
+#
+# Distractor design: the two US renters bundles share one template whose
+# ~40 pages of form + endorsement boilerplate are verbatim identical —
+# only the declarations data below differs (spec: near-duplicate pairs).
+# Same pattern for the two UK Alderoak schedules.
+#
+# Narrative consistency:
+#   - US era (timeline us_residency 2023-09 → 2025-06): Umbrella Row
+#     renters policy years starting 1 Oct 2023 and 1 Oct 2024 at the
+#     Brooklyn address; Stonecroft Mutual disability policy issued through
+#     Meridian Loft, effective 1 Jan 2024, monthly benefit $3,400.
+#   - UK era: Alderoak contents cover restarts at Redecombe House on
+#     12 Aug 2025 under the same policy number lineage as the Ottersley-era
+#     policy behind policy_change_notices.yaml (persona vendor
+#     home_insurance_uk, AO/HH/9915522); the schedule keeps the £450
+#     escape-of-water excess introduced by the 2021 change notice and the
+#     0113 496 0344 claims line. Year 2 is the renewal from 12 Aug 2026
+#     with index-linked sum insured (renewal invitation sent July 2026).
+#   - Arithmetic: renters coverage costs sum to the total premium and the
+#     monthly figure is total/12; UK premium + 12% IPT = total.
+entries:
+  - id: us_renters_policy_year1
+    template: insurance/us_renters_policy.html
+    vendor_key: renters_insurance_us
+    policy_start: "October 1, 2023"
+    policy_end: "October 1, 2024"
+    issue_date: "September 26, 2023"
+    welcome_line: "Welcome to the neighborhood, Theo."
+    coverages:
+      - {name: "Personal Property (Coverage C)", limit: "$20,000", cost: "$131.40"}
+      - {name: "Loss of Use (Coverage D)", limit: "$4,000", cost: "Included"}
+      - {name: "Personal Liability (Coverage E)", limit: "$100,000", cost: "$36.00"}
+      - {name: "Medical Payments to Others (Coverage F)", limit: "$1,000 each person", cost: "Included"}
+      - {name: "Water Backup of Sewers and Drains (UR-E04)", limit: "$2,500", cost: "$21.00"}
+    deductible: "$500"
+    total_premium: "$188.40"
+    monthly_premium: "$15.70"
+    discounts:
+      - {reason: "Protective devices (smoke and CO alarms on premises)", amount: "$6.60"}
+    changes:
+      - {date: "—", change: "New business — no mid-term changes", from: "—", to: "—", premium: "—"}
+    rating_line: "Protection class 3 · Tier R2 · Territory 041 · Construction: masonry · Built 1928"
+    payment_plan: "Monthly recurring card payment of $15.70 on the 1st of each month"
+
+  - id: us_renters_policy_year2
+    template: insurance/us_renters_policy.html
+    vendor_key: renters_insurance_us
+    policy_start: "October 1, 2024"
+    policy_end: "October 1, 2025"
+    issue_date: "September 24, 2024"
+    welcome_line: "Thanks for renewing with us, Theo."
+    coverages:
+      - {name: "Personal Property (Coverage C)", limit: "$22,000", cost: "$148.20"}
+      - {name: "Loss of Use (Coverage D)", limit: "$4,400", cost: "Included"}
+      - {name: "Personal Liability (Coverage E)", limit: "$100,000", cost: "$38.40"}
+      - {name: "Medical Payments to Others (Coverage F)", limit: "$1,000 each person", cost: "Included"}
+      - {name: "Water Backup of Sewers and Drains (UR-E04)", limit: "$2,500", cost: "$22.20"}
+    deductible: "$500"
+    total_premium: "$208.80"
+    monthly_premium: "$17.40"
+    discounts:
+      - {reason: "Protective devices (smoke and CO alarms on premises)", amount: "$7.20"}
+      - {reason: "Loyalty — second policy year", amount: "$4.80"}
+    changes:
+      - {date: "October 1, 2024", change: "Personal Property limit (inflation adjustment)", from: "$20,000", to: "$22,000", premium: "+$16.80"}
+      - {date: "October 1, 2024", change: "Loss of Use limit (20% of Coverage C)", from: "$4,000", to: "$4,400", premium: "Included"}
+    rating_line: "Protection class 3 · Tier R2 · Territory 041 · Construction: masonry · Built 1928"
+    payment_plan: "Monthly recurring card payment of $17.40 on the 1st of each month"
+
+  - id: us_disability_policy
+    template: insurance/us_disability_policy.html
+    vendor_key: disability_insurance_us
+    generation_date: "January 12, 2024"
+    cover_letter_date: "January 12, 2024"
+    effective_date: "January 1, 2024"
+    policy_date: "January 1, 2024"
+    guarantee_date: "January 1, 2034"
+    risk_number: "RK-40-118827"
+    group_ref: "MERIDIAN LOFT INC — VOLUNTARY IDI PROGRAM"
+    occupational_class: "4A — Professional/Technical, office-based"
+    policy_fee: "$30.00"
+    elimination_period: "90 days"
+    monthly_benefit: "$3,400"
+    benefit_change_note: >-
+      This policy was re-issued to record an increase in your Monthly
+      Benefit Amount from $3,000 to $3,400 following the salary increase
+      reported by your employer, effective January 1, 2024.
+    premium_disability: "$438.60"
+    premium_additional: "$61.20"
+    premium_total: "$499.80"
+    premium_monthly: "$41.65"
+    premium_semiannual: "$254.90"
+    premium_quarterly: "$129.95"
+    riders:
+      - name: "Cost of Living Adjustment Rider"
+        premium: "$38.40"
+        text: >-
+          While Disability Benefits are payable, the Monthly Benefit Amount
+          increases on each anniversary of the start of Disability by the
+          lesser of the change in the consumer price index and 3%,
+          compounded.
+      - name: "Future Increase Option Rider"
+        premium: "$22.80"
+        text: >-
+          On each option date before age 50 You may increase the Monthly
+          Benefit Amount by up to $500 without evidence of medical
+          insurability, subject to income verification and the maximum
+          issue limits then in force.
+    benefit_matrix:
+      - {age: "Under 61", period: "To age 65, but not less than 24 months"}
+      - {age: "61", period: "48 months"}
+      - {age: "62", period: "42 months"}
+      - {age: "63", period: "36 months"}
+      - {age: "64", period: "30 months"}
+      - {age: "65 – 74", period: "24 months"}
+      - {age: "75 and over", period: "12 months"}
+
+  - id: uk_contents_policy_year1
+    template: insurance/uk_contents_policy.html
+    vendor_key: home_insurance_uk
+    schedule_date: "5 August 2025"
+    period_start: "12 August 2025"
+    period_end: "11 August 2026"
+    renewal_note: >-
+      Welcome back to Alderoak. Your policy number has been carried over
+      from your previous Alderoak contents policy, which was suspended in
+      September 2023 when you moved abroad. Cover under this schedule
+      begins at your new address shown below; nothing is carried over from
+      the previous address, and a new statement of fact applies.
+    sum_insured: "40,000"
+    valuables_limit: "10,000"
+    single_article_limit: "2,000"
+    money_limit: "500"
+    cycle_limit: "600"
+    away_cover: "Not included"
+    excess_standard: "100"
+    excess_water: "450"
+    premium_ex_ipt: "114.64"
+    ipt: "13.76"
+    premium_total: "128.40"
+    payment_note: "Paid in full by card on 5 August 2025"
+    endorsements:
+      - "AO/E11 — Escape of water excess £450 (in place of the standard excess), as introduced at the July 2021 renewal."
+      - "AO/E27 — Home working: office equipment used for clerical home working is covered as contents up to the single-article limit."
+    statement_of_fact:
+      - "The home is a purpose-built flat, occupied by you alone as your main residence, in a good state of repair."
+      - "The home is not left unoccupied for more than 30 consecutive days."
+      - "You have no unspent criminal convictions and no contents insurance claims in the last five years."
+      - "A smoke alarm and a carbon monoxide alarm are fitted and working."
+      - "The front door is fitted with a multi-point locking system."
+
+  - id: uk_contents_policy_year2
+    template: insurance/uk_contents_policy.html
+    vendor_key: home_insurance_uk
+    schedule_date: "14 July 2026"
+    period_start: "12 August 2026"
+    period_end: "11 August 2027"
+    renewal_note: >-
+      This is your renewal schedule. Your contents sum insured has been
+      index-linked: it rises automatically each month in line with a
+      published replacement-cost index, so the renewal figure below is
+      higher than last year even though your cover is otherwise unchanged.
+      If you do nothing, cover continues on these terms from the renewal
+      date.
+    sum_insured: "42,000"
+    valuables_limit: "10,500"
+    single_article_limit: "2,000"
+    money_limit: "500"
+    cycle_limit: "600"
+    away_cover: "Optional extension available — not selected"
+    excess_standard: "100"
+    excess_water: "450"
+    premium_ex_ipt: "123.90"
+    ipt: "14.87"
+    premium_total: "138.77"
+    payment_note: "Renewal premium collected by card on 12 August 2026 unless you tell us otherwise"
+    endorsements:
+      - "AO/E11 — Escape of water excess £450 (in place of the standard excess), as introduced at the July 2021 renewal."
+      - "AO/E27 — Home working: office equipment used for clerical home working is covered as contents up to the single-article limit."
+      - "AO/E31 — Index-linking of the contents sum insured (see your renewal note)."
+    statement_of_fact:
+      - "The home is a purpose-built flat, occupied by you alone as your main residence, in a good state of repair."
+      - "The home is not left unoccupied for more than 30 consecutive days."
+      - "You have no unspent criminal convictions and no contents insurance claims in the last five years."
+      - "A smoke alarm and a carbon monoxide alarm are fitted and working."
+      - "The front door is fitted with a multi-point locking system."

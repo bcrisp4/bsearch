@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Form W-2 employee copy set: four miniature box-grid copies in a 2x2
+     grid on page 1, two-column instructions on page 2. Public form format;
+     fill values in monospace. */
+  body { page: us-letter; }
+  html { font-size: 6.4pt; line-height: 1.15; }
+  .sheet { display: flex; flex-wrap: wrap; gap: 3mm; }
+  .w2 { width: 88mm; border: 0.9pt solid #000; }
+  .row { display: flex; border-bottom: 0.4pt solid #000; }
+  .row:last-child { border-bottom: none; }
+  .bx { border-right: 0.4pt solid #000; padding: 0.5mm 0.8mm; flex: 1;
+        min-height: 6.2mm; }
+  .bx:last-child { border-right: none; }
+  .bx .n { font-size: 5.2pt; }
+  .bx .fill { font-family: "Doc Mono", monospace; font-size: 6.6pt;
+              display: block; margin-top: 0.3mm; }
+  .bx.wide { flex: 2.6; }
+  .bx.shade { background: #e8e8e8; }
+  .w2-head { display: flex; justify-content: space-between;
+             border-bottom: 0.9pt solid #000; padding: 0.6mm 0.8mm;
+             align-items: baseline; }
+  .w2-head .yr { font-size: 12pt; font-weight: bold;
+                 font-family: "Doc Mono", monospace; letter-spacing: 1pt; }
+  .w2-head .ttl { font-weight: bold; font-size: 6.4pt; }
+  .copyline { font-size: 5.4pt; padding: 0.5mm 0.8mm;
+              border-top: 0.6pt solid #000; }
+  .instr { column-count: 2; column-gap: 6mm; font-size: 6.8pt; }
+  .instr h2 { column-span: all; font-size: 11pt; }
+  .instr h3 { font-size: 7.4pt; margin: 2mm 0 0.8mm; }
+  .instr p { margin: 0 0 1.4mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Form W-2 Wage and Tax Statement {{ issue.tax_year }} &middot; issued through
+  Brightpath Payroll LLC on behalf of {{ employers.us_former.name }} &middot;
+  Keep Copy C for your records.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+{% macro w2copy(copyline) %}
+<div class="w2">
+  <div class="w2-head">
+    <span class="ttl">Form W-2 Wage and Tax Statement</span>
+    <span class="yr">{{ issue.tax_year }}</span>
+    <span class="n">OMB No. 1545-0008</span>
+  </div>
+  <div class="row">
+    <div class="bx wide"><span class="n">a &nbsp;Employee's social security number</span>
+      <span class="fill">XXX-XX-{{ person.ssn[-4:] }}</span></div>
+    <div class="bx"><span class="n">d &nbsp;Control number</span>
+      <span class="fill">{{ issue.control_number }}</span></div>
+  </div>
+  <div class="row">
+    <div class="bx wide"><span class="n">b &nbsp;Employer identification number (EIN)</span>
+      <span class="fill">{{ employers.us_former.ein }}</span></div>
+    <div class="bx"><span class="n">1 &nbsp;Wages, tips, other compensation</span>
+      <span class="fill">{{ issue.box1 }}</span></div>
+    <div class="bx"><span class="n">2 &nbsp;Federal income tax withheld</span>
+      <span class="fill">{{ issue.box2 }}</span></div>
+  </div>
+  <div class="row">
+    <div class="bx wide" style="min-height: 11mm">
+      <span class="n">c &nbsp;Employer's name, address, and ZIP code</span>
+      <span class="fill">{{ employers.us_former.name }}<br>
+      c/o Brightpath Payroll LLC<br>{{ employers.us_former.address }}</span></div>
+    <div class="bx"><span class="n">3 &nbsp;Social security wages</span>
+      <span class="fill">{{ issue.box3 }}</span></div>
+    <div class="bx"><span class="n">4 &nbsp;Social security tax withheld</span>
+      <span class="fill">{{ issue.box4 }}</span></div>
+  </div>
+  <div class="row">
+    <div class="bx wide"><span class="n">e &nbsp;Employee's first name and initial, last name</span>
+      <span class="fill">{{ person.full_name }}</span></div>
+    <div class="bx"><span class="n">5 &nbsp;Medicare wages and tips</span>
+      <span class="fill">{{ issue.box5 }}</span></div>
+    <div class="bx"><span class="n">6 &nbsp;Medicare tax withheld</span>
+      <span class="fill">{{ issue.box6 }}</span></div>
+  </div>
+  <div class="row">
+    <div class="bx wide" style="min-height: 9mm">
+      <span class="n">f &nbsp;Employee's address and ZIP code</span>
+      <span class="fill">{{ addresses.us_former.line1 }},
+      {{ addresses.us_former.city }}, {{ addresses.us_former.state }}
+      {{ addresses.us_former.zip }}</span></div>
+    <div class="bx shade"><span class="n">7 &nbsp;Social security tips</span></div>
+    <div class="bx shade"><span class="n">8 &nbsp;Allocated tips</span></div>
+  </div>
+  <div class="row">
+    <div class="bx"><span class="n">12a &nbsp;Code | Amount</span>
+      <span class="fill">D &nbsp;{{ issue.box12d }}</span></div>
+    <div class="bx"><span class="n">12b</span></div>
+    <div class="bx"><span class="n">13 &nbsp;Retirement plan</span>
+      <span class="fill">[X]</span></div>
+    <div class="bx"><span class="n">14 &nbsp;Other</span>
+      <span class="fill">NY PFL {{ issue.box14_pfl }}</span></div>
+  </div>
+  <div class="row">
+    <div class="bx"><span class="n">15 &nbsp;State | Employer's state ID no.</span>
+      <span class="fill">NY | {{ employers.us_former.ein }}-NY</span></div>
+    <div class="bx"><span class="n">16 &nbsp;State wages, tips, etc.</span>
+      <span class="fill">{{ issue.box16 }}</span></div>
+    <div class="bx"><span class="n">17 &nbsp;State income tax</span>
+      <span class="fill">{{ issue.box17 }}</span></div>
+  </div>
+  <div class="row">
+    <div class="bx"><span class="n">20 &nbsp;Locality name</span>
+      <span class="fill">NYC</span></div>
+    <div class="bx"><span class="n">18 &nbsp;Local wages, tips, etc.</span>
+      <span class="fill">{{ issue.box18 }}</span></div>
+    <div class="bx"><span class="n">19 &nbsp;Local income tax</span>
+      <span class="fill">{{ issue.box19 }}</span></div>
+  </div>
+  <div class="copyline">{{ copyline }}</div>
+</div>
+{% endmacro %}
+
+<div class="sheet">
+  {{ w2copy("Copy B — To Be Filed With Employee's FEDERAL Tax Return.") }}
+  {{ w2copy("Copy 2 — To Be Filed With Employee's State, City, or Local Income Tax Return.") }}
+  {{ w2copy("Copy C — For EMPLOYEE'S RECORDS (See Notice to Employee).") }}
+  {{ w2copy("Copy 2 — To Be Filed With Employee's State, City, or Local Income Tax Return.") }}
+</div>
+
+{% if issue.note is defined %}
+<div class="panel" style="font-size: 7.5pt; margin-top: 4mm;">
+  <h3 style="font-size: 8pt;">Payroll note</h3>
+  <p>{{ issue.note }}</p>
+</div>
+{% endif %}
+
+<div class="page-break"></div>
+
+<div class="instr">
+  <h2>Instructions for Employee</h2>
+  <h3>Notice to Employee</h3>
+  <p>Do you have to file? Refer to the federal filing instructions to determine
+  whether you are required to file a tax return. Even if you do not have to
+  file, you should file if you can claim a refundable credit or had income tax
+  withheld from your pay.</p>
+  <p><strong>Corrections.</strong> If your name, SSN, or address is incorrect,
+  correct Copies B, C, and 2 and ask Brightpath Payroll for a corrected
+  statement (Form W-2c). Be sure to ask the payroll provider to file the
+  correction with the tax authorities.</p>
+  <h3>Box 1.</h3>
+  <p>Shows your total taxable wages, tips, and other compensation. Amounts
+  deferred to a 401(k) arrangement (see box 12, code D) are not included in
+  box 1.</p>
+  <h3>Box 2.</h3>
+  <p>Shows the total federal income tax withheld from your pay during the
+  year. Include this amount on the federal income tax withheld line of your
+  return.</p>
+  <h3>Boxes 3 and 5.</h3>
+  <p>Show wages subject to social security and Medicare taxes respectively.
+  Elective deferrals under code D remain subject to these taxes, so boxes 3
+  and 5 may be larger than box 1.</p>
+  <h3>Box 12 codes (extract).</h3>
+  <p><strong>D</strong> — Elective deferrals to a section 401(k) cash or
+  deferred arrangement. <strong>C</strong> — Taxable cost of group-term life
+  insurance over $50,000. <strong>DD</strong> — Cost of employer-sponsored
+  health coverage (not taxable). <strong>W</strong> — Employer contributions
+  to a health savings account.</p>
+  <h3>Box 13.</h3>
+  <p>The "Retirement plan" box is checked because you were an active
+  participant in your employer's 401(k) plan; this may limit the deduction
+  for traditional IRA contributions.</p>
+  <h3>Box 14.</h3>
+  <p>Your employer uses this box to report New York Paid Family Leave
+  contributions, which are after-tax payroll deductions.</p>
+  <h3>Boxes 15 through 20.</h3>
+  <p>Show state and local wages and income tax withheld. Use these amounts
+  when completing your New York State and New York City returns.</p>
+</div>
+
+</body>
+</html>

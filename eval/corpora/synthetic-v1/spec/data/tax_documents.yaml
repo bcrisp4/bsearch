@@ -1,0 +1,1265 @@
+# Tax documents cluster (corpus.yaml: tax_documents). Templates under
+# templates/tax/. vendor_key null throughout: employer/bank values come from
+# persona employers/banks; the preparer firm (Rowanmere Tax Advisors LLP) is
+# fictional and invented here.
+#
+# Consistency web (all figures chain — do not edit one in isolation):
+#   * W-2 2024 boxes == paystub-2024-12-27 YTDs (us_paystubs.yaml, 26
+#     biweekly pays of 3,300.00 gross netting the canon 2,118.47 deposit).
+#   * W-2 2025 boxes == 12 biweekly pays (final pay 06/13/2025); the
+#     05/30/2025 stub YTDs (pay 11) are exactly one period smaller.
+#   * Binder (tax year 2025): wages 37,620 (W-2 2025 box 1) + 17,468 UK
+#     wages (Aug–Dec 2025 payslips: £13,437.03 taxable pay after the 5%
+#     salary exchange, at the 1.30 USD/GBP annual average; the £2,000 Dec
+#     bonus was exchanged into pension so it is not wages); federal
+#     withholding 5,775 = W-2 2025 box 2 (whole dollars); UK tax for Form
+#     1116 = £1,639.91 PAYE (payslips Aug–Dec) at 1.30 = 2,132.
+#   * Interest == bank_certificates.yaml: 12 (US checking 1042-S) + 196
+#     (US savings 1042-S) + 25 (£19.06 Ferrand credit of 31 Oct 2025, the
+#     calendar-2025 part of the £47.21 certificate) = 233.
+#   * Tax maths: 55,321 income − 15,000 std deduction = 40,321 taxable;
+#     tax 4,600 (1,192.50 + 12% × 28,396 rounded); FTC limited to
+#     4,600 × 17,468/40,321 = 1,993 (carryover 139); net 2,607; refund
+#     5,775 − 2,607 = 3,168. NY: withheld 2,052 + 1,188 (W-2 boxes 17/19),
+#     liability 1,771 + 1,188, refund 281.
+#   * Settlement letter: 3,168 + 281 − 2,650 = 799; hypothetical column:
+#     37,828 income, 22,828 taxable, tax 2,501, withholding 5,151,
+#     overpayment 2,650.
+#   * P60s == March/July payslip YTDs (uk_payslips.yaml, whose net pay is
+#     canon against uk_current_statements.yaml); P60 2026/27 is the
+#     full-year continuation of the same monthly figures (12 × 3,065.95
+#     pay, 12 × 402.69 tax, 12 × 62 student loan).
+#   * SA returns: employment boxes == P60s; student loan 378 == the
+#     student-finance letters (letters.yaml); untaxed UK interest 47.21 ==
+#     the certificate of interest in bank_certificates.yaml. The 2026-27
+#     figure (204.11) is a forward anchor: the interest_summary xlsx and
+#     ISA statements were not yet authored — reconcile there if needed.
+vendor_key: null
+entries:
+
+  # ============================================================
+  # W-2s
+  # ============================================================
+  - id: w2_year1
+    template: tax/w2.html
+    tax_year: "2024"
+    control_number: "BP24-118-40072"
+    box1: "81,510.00"
+    box2: "12,526.02"
+    box3: "85,800.00"
+    box4: "5,319.60"
+    box5: "85,800.00"
+    box6: "1,244.10"
+    box12d: "4,290.00"
+    box14_pfl: "320.06"
+    box16: "81,510.00"
+    box17: "4,446.00"
+    box18: "81,510.00"
+    box19: "2,574.00"
+    note: >-
+      Reprints of this statement are available in the Brightpath portal
+      until January 2035. Verify boxes 1 and 2 against your final 2024 wage
+      statement (pay date 12/27/2024) before filing.
+
+  - id: w2_year2
+    template: tax/w2.html
+    tax_year: "2025"
+    control_number: "BP25-118-40073"
+    box1: "37,620.00"
+    box2: "5,775.36"
+    box3: "39,600.00"
+    box4: "2,455.20"
+    box5: "39,600.00"
+    box6: "574.20"
+    box12d: "1,980.00"
+    box14_pfl: "153.60"
+    box16: "37,620.00"
+    box17: "2,052.00"
+    box18: "37,620.00"
+    box19: "1,188.00"
+    note: >-
+      Final Wage and Tax Statement: your employment with Meridian Loft Inc.
+      ended June 13, 2025 and final wages were paid June 13, 2025 (12
+      biweekly pay periods in 2025). This W-2 was mailed to your
+      forwarding address in the United Kingdom.
+
+  # ============================================================
+  # P60s (figures == uk_payslips.yaml YTD columns)
+  # ============================================================
+  - id: p60_year1
+    template: tax/p60.html
+    tax_year: "2025 to 2026"
+    year_end: "2026"
+    tax_code: "1257L"
+    paye_ref: "475/HA41022"
+    prev_pay: "0.00"
+    prev_tax: "0.00"
+    pay: "22,356.03"
+    tax: "2,795.21"
+    total_pay: "22,356.03"
+    total_tax: "2,795.21"
+    ni_lel: "4,264"
+    ni_lel_pt: "4,116"
+    ni_pt_uel: "13,976"
+    ni_employee: "1,118.08"
+    student_loan: "378"
+    pension: "3,176.61"
+    footnote: >-
+      Employment commenced 18 August 2025; figures cover eight monthly pay
+      periods. The December 2025 bonus of £2,000.00 was exchanged in full
+      for an employer pension contribution and is not included in Pay.
+
+  - id: p60_year2
+    template: tax/p60.html
+    tax_year: "2026 to 2027"
+    year_end: "2027"
+    tax_code: "1263L"
+    paye_ref: "475/HA41022"
+    prev_pay: "0.00"
+    prev_tax: "0.00"
+    pay: "36,791.40"
+    tax: "4,832.28"
+    total_pay: "36,791.40"
+    total_tax: "4,832.28"
+    ni_lel: "6,396"
+    ni_lel_pt: "6,174"
+    ni_pt_uel: "24,221"
+    ni_employee: "1,937.76"
+    student_loan: "744"
+    pension: "1,936.44"
+    footnote: >-
+      Full-year certificate: twelve monthly pay periods at tax code 1263L
+      applied from April 2026, after the 1 April salary increase.
+
+  # ============================================================
+  # UK Self Assessment returns (SA100 copy prints)
+  # ============================================================
+  - id: uk_self_assessment_year1
+    template: tax/uk_self_assessment.html
+    return_year: "2026"
+    return_year_span: "2025-26"
+    year_start: "2025"
+    year_end: "2026"
+    online_deadline: "2027"
+    issue_date: "6 April 2026"
+    paye_ref: "475/HA41022"
+    form_footer: "SA100 2026 · SA102 · SA106 · SA110 · rev 12/25"
+    foreign_yesno: "Yes X"
+    residence_yesno: "Yes X — split year: arrived in the UK July 2025"
+    untaxed_interest: "47.21"
+    foreign_interest: "160.00"
+    foreign_tax_taken: "0.00"
+    ftcr_yesno: "No"
+    foreign_note: >-
+      US-dollar interest converted to sterling at the rate on the date the
+      income arose. Accounts were closed in June 2025 before the move to
+      the UK; the amount shown arose in the overseas part of the split
+      year and is included for disclosure.
+    student_loan: "378"
+    employment_pay: "22,356"
+    employment_tax: "2,795.21"
+    other_information: >-
+      I left the United States in June 2025 and became UK resident from
+      July 2025. Split-year treatment is claimed; overseas workday income
+      before arrival has been excluded. My US employment with Meridian
+      Loft Inc. ended 13 June 2025. UK employment with Halewick Systems
+      Ltd began 18 August 2025. Figures for pay and tax are taken from my
+      P60 for the year to 5 April 2026.
+    signature_date: "22 January 2027"
+    calc_total_due: "3,173.21"
+    calc_paye_deducted: "3,173.21"
+    calc_balance: "0.00"
+    calc_poa: "Not applicable — balancing figure under £1,000"
+    calc_rows:
+      - {label: "Income Tax charged after allowances", amount: "2,795.21"}
+      - {label: "Plus Student Loan repayments due (Plan 1)", amount: "378.00"}
+      - {label: "Less tax deducted at source under PAYE", amount: "2,795.21"}
+      - {label: "Less Student Loan deducted by employer", amount: "378.00"}
+    machine_codes:
+      - "SA10026-TM-1180734-001-XKQ4"
+      - "SA10026-TM-1180734-002-JWR9"
+      - "SA10026-TM-1180734-003-PLD2"
+      - "SA10026-TM-1180734-006-VBN8"
+      - "SA10226-TM-1180734-E01-HGT5"
+      - "SA10626-TM-1180734-F02-RCM3"
+      - "SA11026-TM-1180734-TC1-ZFD7"
+
+  - id: uk_self_assessment_year2
+    template: tax/uk_self_assessment.html
+    return_year: "2027"
+    return_year_span: "2026-27"
+    year_start: "2026"
+    year_end: "2027"
+    online_deadline: "2028"
+    issue_date: "6 April 2027"
+    paye_ref: "475/HA41022"
+    form_footer: "SA100 2027 · SA102 · SA106 · SA110 · rev 12/26"
+    foreign_yesno: "No X"
+    residence_yesno: "No X"
+    untaxed_interest: "204.11"
+    foreign_interest: "0.00"
+    foreign_tax_taken: "0.00"
+    ftcr_yesno: "No"
+    foreign_note: >-
+      No foreign accounts were held in this year: the US checking and
+      savings accounts were closed in June 2025.
+    student_loan: "744"
+    employment_pay: "36,791"
+    employment_tax: "4,832.28"
+    other_information: >-
+      Full year of UK residence. Employment with Halewick Systems Ltd
+      throughout. Figures taken from my P60 for the year to 5 April 2027.
+      Untaxed interest is from my Ferrand Bank savings account as shown on
+      the bank's certificate of interest.
+    signature_date: "14 June 2027"
+    calc_total_due: "5,576.28"
+    calc_paye_deducted: "5,576.28"
+    calc_balance: "0.00"
+    calc_poa: "Not applicable — balancing figure under £1,000"
+    calc_rows:
+      - {label: "Income Tax charged after allowances", amount: "4,832.28"}
+      - {label: "Plus Student Loan repayments due (Plan 1)", amount: "744.00"}
+      - {label: "Less tax deducted at source under PAYE", amount: "4,832.28"}
+      - {label: "Less Student Loan deducted by employer", amount: "744.00"}
+    machine_codes:
+      - "SA10027-TM-1180734-001-MRT6"
+      - "SA10027-TM-1180734-002-QSD1"
+      - "SA10027-TM-1180734-003-WPX8"
+      - "SA10027-TM-1180734-006-KJB4"
+      - "SA10227-TM-1180734-E01-NCV2"
+      - "SA10627-TM-1180734-F02-TLG9"
+      - "SA11027-TM-1180734-TC1-YHF3"
+
+  # ============================================================
+  # Form I-9 (scan) — onboarding at Meridian Loft, Sep 2023
+  # ============================================================
+  - id: i9_employment_form
+    template: tax/i9_form.html
+    scan: true
+    form_expiry: "07/31/2026"
+    doc_id: "b4e8f2a91c7d30655a2e9b81f4c06d73a852e1c9"
+    address_at_hire: "Apt 3B, 412 Calver Street"
+    work_auth_until: "09/30/2026"
+    passport_number: "559804712"
+    passport_expiry: "02/14/2031"
+    i94_number: "94817226103"
+    visa_class: "H-1B"
+    employee_sign_date: "09/08/2023"
+    employer_sign_date: "09/12/2023"
+    additional_info: >-
+      H-1B petition approved for Meridian Loft Inc.; remote document
+      examination performed via live video under the employer's alternative
+      procedure, physical documents re-examined 09/15/2023.
+    audit_events:
+      - kind: "SENT"
+        timestamp: "2023-09-07 14:02:11 UTC"
+        detail: >-
+          Envelope created by People Operations (noreply+e9d3@
+          signwell-flow.example) and sent to the signer's hashed
+          recipient address (email authentication).
+      - kind: "VIEWED"
+        timestamp: "2023-09-08 08:47:36 UTC"
+        detail: "Document viewed by signer 1 from IP 203.0.113.44 (New York, NY)."
+      - kind: "SIGNED"
+        timestamp: "2023-09-08 08:53:19 UTC"
+        detail: >-
+          Section 1 e-signed by signer 1 (email authentication); signature
+          hash 9c31b2aa04.
+      - kind: "VIEWED"
+        timestamp: "2023-09-12 16:20:05 UTC"
+        detail: "Document viewed by signer 2 from IP 198.51.100.17 (New York, NY)."
+      - kind: "SIGNED"
+        timestamp: "2023-09-12 16:24:48 UTC"
+        detail: >-
+          Section 2 e-signed by signer 2 (employer representative);
+          signature hash 51f7d90e3b.
+      - kind: "COMPLETE"
+        timestamp: "2023-09-12 16:24:49 UTC"
+        detail: "All parties have signed. Completed envelope archived."
+
+  # ============================================================
+  # US tax settlement letter (tax equalization, same firm as binder)
+  # ============================================================
+  - id: us_tax_settlement_letter
+    template: tax/us_tax_settlement.html
+    tax_year: "2025"
+    letter_date: "18 May 2026"
+    efile_control: "EF-2025-4471-8802-0094"
+    software_code: "TXW 5501-84"
+    firm:
+      name: "Rowanmere Tax Advisors LLP"
+      address: "12 Exchange Vane, 30th Floor, New York, NY 10165"
+      phone: "(212) 555-0188"
+      email: "expat.team@rowanmere-tax.example"
+      ein: "83-6602917"
+      ptin: "P44108276"
+    intro_paragraphs:
+      - >-
+        We have completed the tax settlement calculation for your
+        international assignment with Meridian Loft Inc., covering the 2025
+        US tax year in which your assignment ended and you repatriated to
+        the United Kingdom. Under the company's tax equalization policy you
+        bear tax as if you had remained on home payroll; assignment-related
+        refunds and credits belong to the company.
+      - >-
+        The table below summarises the cash position arising from your 2025
+        returns as filed.
+    settlement_rows:
+      - {label: "Federal refund shown on your 2025 federal return", amount: "3,168"}
+      - {label: "New York State and City refund", amount: "281"}
+      - {label: "Less: hypothetical tax settlement due to Meridian Loft Inc.", amount: "(2,650)"}
+      - {label: "Net cash due to you", amount: "799"}
+    outro_paragraphs:
+      - >-
+        Both refunds will be issued to you directly by the tax authorities
+        as cheques mailed to your UK address. Please pay the settlement of
+        $2,650 to Meridian Loft Inc. within 30 days of receiving the
+        federal refund; remittance details are enclosed with the company's
+        payroll close-out pack.
+      - >-
+        The Cash Flow Summary and pro forma on the following pages show how
+        the settlement was calculated. Please contact the expatriate tax
+        team if any figure does not match your records.
+    cashflow_rows:
+      - {label: "Actual withholdings", style: "grp", employee: "", company: "", total: ""}
+      - {label: "Federal income tax withheld (W-2 box 2)", employee: "5,775", company: "0", total: "5,775"}
+      - {label: "New York State tax withheld (W-2 box 17)", employee: "2,052", company: "0", total: "2,052"}
+      - {label: "New York City tax withheld (W-2 box 19)", employee: "1,188", company: "0", total: "1,188"}
+      - {label: "Actual liability per returns as filed", style: "grp", employee: "", company: "", total: ""}
+      - {label: "Federal tax after foreign tax credit", employee: "2,607", company: "0", total: "2,607"}
+      - {label: "New York State tax", employee: "1,771", company: "0", total: "1,771"}
+      - {label: "New York City tax", employee: "1,188", company: "0", total: "1,188"}
+      - {label: "Refunds due", style: "grp", employee: "", company: "", total: ""}
+      - {label: "Federal refund", employee: "3,168", company: "0", total: "3,168"}
+      - {label: "State and City refund", employee: "281", company: "0", total: "281"}
+      - {label: "Hypothetical settlement (see pro forma)", style: "grp", employee: "", company: "", total: ""}
+      - {label: "Hypothetical overpayment retained for the company", employee: "(2,650)", company: "2,650", total: "0"}
+      - {label: "Net cash in pocket", style: "tot", employee: "799", company: "2,650", total: "3,449"}
+    hypo_explainer:
+      - >-
+        Your hypothetical position restates 2025 as if you had no
+        assignment: US wages only (37,620), US bank interest only (208),
+        and no foreign tax credit. Hypothetical withholdings of 5,151 were
+        retained from your pay during the year against a hypothetical
+        liability of 2,501.
+      - >-
+        The resulting hypothetical overpayment of 2,650 is the settlement
+        amount due to Meridian Loft Inc. under the equalization policy.
+    vwm_text: >-
+      DO NOT FILE — FOR HYPOTHETICAL PURPOSES ONLY — DO NOT FILE — FOR
+      HYPOTHETICAL PURPOSES ONLY
+    proforma_rows:
+      - {n: "1", label: "Wages, salaries, tips (all sources)", actual: "55,088", hypo: "37,620"}
+      - {n: "2b", label: "Taxable interest", actual: "233", hypo: "208"}
+      - {n: "9", label: "Total income", actual: "55,321", hypo: "37,828"}
+      - {n: "12", label: "Standard deduction (single)", actual: "15,000", hypo: "15,000"}
+      - {n: "15", label: "Taxable income", actual: "40,321", hypo: "22,828"}
+      - {n: "16", label: "Tax", actual: "4,600", hypo: "2,501"}
+      - {n: "20", label: "Foreign tax credit (Form 1116)", actual: "(1,993)", hypo: "0"}
+      - {n: "22", label: "Tax after credits", actual: "2,607", hypo: "2,501"}
+      - {n: "25", label: "Withholding / hypothetical withholding", actual: "5,775", hypo: "5,151"}
+      - {n: "34", label: "Overpayment", style: "hd", actual: "3,168", hypo: "2,650"}
+    proforma_note: >-
+      Hypothetical column prepared solely for tax equalization settlement
+      under the Meridian Loft Inc. international assignment programme. It
+      does not represent a return filed with any tax authority.
+
+  # ============================================================
+  # US tax return binder — LENGTH OUTLIER (target 45-55 pages).
+  # issue.pages is the page stream; each object = one PDF page.
+  # ============================================================
+  - id: us_tax_return_binder
+    template: tax/us_tax_return_binder.html
+    tax_year: "2025"
+    letter_date: "24 April 2026"
+    created_stamp: "04/24/26"
+    efile_control: "EF-2025-4471-8802-0093"
+    software_code: "TXW 5501-84"
+    firm:
+      name: "Rowanmere Tax Advisors LLP"
+      logo_a: "rowan"
+      logo_b: "mere"
+      strapline: "Global mobility and expatriate tax, for people who move."
+      address: "12 Exchange Vane, 30th Floor, New York, NY 10165"
+      phone: "(212) 555-0188"
+      email: "expat.team@rowanmere-tax.example"
+      ein: "83-6602917"
+      ptin: "P44108276"
+    skyline_art: |2-
+          _   _     __      _        _   ___
+         | |_| |  _|  |_  _| |_    _| |_| _ |_   _
+       __|     |_|      ||     |__|     |   | |_| |___
+    pages:
+      - kind: cover
+
+      - kind: letter
+        show_address: true
+        signoff: false
+        content:
+          - p: >-
+              Dear @FIRST@,
+          - p: >-
+              We are pleased to enclose your 2025 United States tax return
+              package. This package contains the returns we have prepared on
+              behalf of Meridian Loft Inc. for your final US tax year: your
+              2025 federal income tax return, your 2025 New York State
+              resident-period return, your foreign bank account report
+              (FBAR), and the related e-filing consents. Please review each
+              document, sign where indicated, and return the consents to us
+              within 14 days.
+          - p: >-
+              Your package includes the following returns and reports:
+          - bullets:
+              - "2025 Federal Income Tax Return (Form 1040 with schedules and statements)"
+              - "2025 Report of Foreign Bank and Financial Accounts (FBAR, Form 114)"
+              - "2025 New York State return (Form IT-201 with Form IT-2)"
+              - "2025 Tax Settlement Calculation (sent separately)"
+          - h: "Form 8938 — Statement of Specified Foreign Financial Assets"
+          - p: >-
+              Because you held financial accounts outside the United States
+              during 2025, Form 8938 is included with your federal return in
+              addition to the FBAR. The two filings have different thresholds
+              and are both required; the account values reported on each have
+              been reconciled to the statements you provided.
+
+      - kind: letter
+        show_address: false
+        signoff: true
+        content:
+          - h: "Correspondence from tax authorities"
+          - p: >-
+              Now that you have left the United States, any correspondence
+              about these returns may be mailed to your UK address. Please
+              send us a copy of any notice you receive before responding; in
+              our experience the majority of post-departure notices concern
+              address changes or refund cheques and are resolved with a
+              single letter.
+          - h: "E-file consent"
+          - p: >-
+              We cannot transmit your returns until we hold your signed
+              e-file signature authorizations (federal Form 8879, FBAR Form
+              114a, and New York Form TR-579-IT). These are in the Filing
+              Instructions and Consents section of this package. Sign and
+              return all three together.
+          - h: "Refunds"
+          - p: >-
+              Your federal return shows a refund of $3,168 and your New York
+              return a combined State and City refund of $281. As your US
+              bank accounts are now closed, both refunds will be issued as
+              cheques to your UK address. Allow up to twelve weeks after
+              acceptance.
+          - h: "Your feedback"
+          - p: >-
+              You will shortly receive a short survey about this year's
+              process. Your assignment programme is billed to Meridian Loft
+              Inc.; the survey takes two minutes and directly shapes the
+              service.
+
+      - kind: checklist
+        title: "Required Action Checklist"
+        groups:
+          - heading: "E-filing consents — return within 14 days"
+            items:
+              - "Sign the federal e-file signature authorization (Form 8879)."
+              - "Sign the FBAR e-file authorization (Form 114a) so we may transmit your foreign account report."
+              - "Sign the New York e-file signature authorization (Form TR-579-IT)."
+          - heading: "Tax settlement"
+            items:
+              - "Review the 2025 Tax Settlement Letter (sent separately) and pay $2,650 to Meridian Loft Inc. within 30 days of receiving your federal refund."
+          - heading: "For your records"
+            items:
+              - "Keep this package with your P60 and payslips — your UK Self Assessment return reports the same UK employment income."
+              - "Notify us if any refund cheque has not arrived within twelve weeks."
+
+      - kind: divider
+        title: "Filing Instructions & Consents"
+
+      - kind: instructions
+        title: "Filing Instructions — 2025 Federal Income Tax Return"
+        sections:
+          - label: "Prepared For"
+            text: "@NAME@, @UKADDR@, United Kingdom"
+          - label: "Prepared By"
+            text: "Rowanmere Tax Advisors LLP, 12 Exchange Vane, 30th Floor, New York, NY 10165"
+          - label: "Amount of Tax"
+            rows:
+              - {label: "Total tax", amount: "$2,607"}
+              - {label: "Total payments", amount: "$5,775"}
+          - label: "Overpayment"
+            highlight: true
+            rows:
+              - {label: "Overpayment to be refunded to you", amount: "$3,168"}
+          - label: "File Your Return By"
+            highlight: true
+            text: >-
+              June 15, 2026. As a taxpayer whose tax home is outside the
+              United States on the regular due date, you receive an automatic
+              two-month extension. Your return will be filed electronically —
+              do not mail a paper copy.
+          - label: "Special Instructions"
+            text: >-
+              Sign and return Form 8879 to this office. Do not sign or mail
+              the return copy itself; it is watermarked for your records.
+
+      - kind: instructions
+        title: "Filing Instructions — 2025 New York State Return"
+        sections:
+          - label: "Prepared For"
+            text: "@NAME@ — New York part-year resident, January 1 to June 13, 2025"
+          - label: "Prepared By"
+            text: "Rowanmere Tax Advisors LLP"
+          - label: "Amount of Tax"
+            rows:
+              - {label: "New York State and City tax", amount: "$2,959"}
+              - {label: "New York withholdings", amount: "$3,240"}
+          - label: "Overpayment"
+            rows:
+              - {label: "Refund of State and City tax", amount: "$281"}
+          - label: "File Your Return By"
+            text: "The return will be e-filed with your federal return upon receipt of Form TR-579-IT."
+          - label: "Special Instructions"
+            text: >-
+              New York issues refunds under $1,000 as paper cheques to
+              foreign addresses; no action is needed.
+
+      - kind: instructions
+        title: "Filing Instructions — 2025 Foreign Bank Account Report (FBAR)"
+        sections:
+          - label: "Prepared For"
+            text: "@NAME@ — United States person for the 2025 calendar year"
+          - label: "Prepared By"
+            text: "Rowanmere Tax Advisors LLP"
+          - label: "Accounts Reported"
+            rows:
+              - {label: "@UKBANK@ current account (UK)", amount: "max $16,541"}
+              - {label: "@UKBANK@ savings account (UK)", amount: "max $3,925"}
+              - {label: "@ISANAME@ ISA (UK)", amount: "max $9,315"}
+          - label: "File Your Return By"
+            text: >-
+              April 15, 2026, with an automatic extension to October 15,
+              2026. The FBAR is filed separately from your income tax return
+              and carries no tax; it is an information report only.
+          - label: "Special Instructions"
+            text: "Sign and return Form 114a. Retain a copy for six years."
+
+      - kind: form
+        form_no: "Form 8879"
+        title: "E-file Signature Authorization"
+        subtitle: "Do not send to the tax authority — retain for preparer's records"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        vwm: >-
+          RETAIN FOR YOUR RECORDS — DO NOT MAIL — RETAIN FOR YOUR RECORDS —
+          DO NOT MAIL
+        parts:
+          - heading: "Part I — Tax Return Information (whole dollars only)"
+            lines:
+              - {n: "1", label: "Adjusted gross income", value: "55,321"}
+              - {n: "2", label: "Total tax", value: "2,607"}
+              - {n: "3", label: "Federal income tax withheld", value: "5,775"}
+              - {n: "4", label: "Amount you want refunded to you", value: "3,168"}
+              - {n: "5", label: "Amount you owe", value: "0", shade: true}
+          - heading: "Part II — Taxpayer Declaration and Signature Authorization"
+            lines:
+              - {label: "Under penalties of perjury, I declare that I have examined a copy of my electronic individual income tax return and accompanying schedules and statements for the tax year ending December 31, 2025, and to the best of my knowledge and belief they are true, correct, and complete. I consent to allow my electronic return originator (ERO) to send my return to the taxing authority and to receive acknowledgement of receipt of transmission.", value: ""}
+        pin_label: "Taxpayer's PIN: check one box only — I authorize Rowanmere Tax Advisors LLP to enter my PIN:"
+        pin_digits: ["4", "4", "7", "1", "8"]
+        declaration: >-
+          ERO's EFIN/PIN: 306617-55501. I certify that the above numeric
+          entry is my PIN, which is my signature for the electronic return.
+        sign_strip: true
+        sign_date: "____ / ____ / 2026"
+        rev_code: "Form 8879 (Rev. 01-2025) · LHA-equivalent code TXW 5501-84 · DCN 00-446617-55501-6"
+
+      - kind: form
+        form_no: "Form 114a"
+        title: "Record of Authorization to Electronically File FBARs"
+        subtitle: "Do not send to the filing network — retain for records"
+        omb: ""
+        year: "2025"
+        parts:
+          - heading: "Part I — Persons who have an obligation to file"
+            lines:
+              - {n: "1", label: "Owner last name / first name", value: "@LASTUP@ / @FIRSTUP@"}
+              - {n: "2", label: "Taxpayer identification number", value: "XXX-XX-@SSN4@"}
+              - {n: "3", label: "Spouse name (if jointly filing)", value: "", shade: true}
+          - heading: "Part II — Person authorized to file on behalf of the person(s) above"
+            lines:
+              - {n: "4", label: "Preparer firm", value: "ROWANMERE TAX ADVISORS LLP"}
+              - {n: "5", label: "Preparer TIN", value: "P44108276"}
+              - {n: "6", label: "Firm EIN", value: "83-6602917"}
+              - {n: "7", label: "Reporting period", value: "01/01/2025 - 12/31/2025"}
+        declaration: >-
+          I declare that I have provided information concerning accounts
+          reportable on the FBAR to the preparer identified in Part II, that
+          the information is true, correct and complete, and that I authorize
+          the preparer to complete and submit the report on my behalf.
+          Providing false information may result in civil and criminal
+          penalties. The preparer must retain this record for five years.
+        sign_strip: true
+        sign_date: "____ / ____ / 2026"
+        rev_code: "Form 114a (May 2015-format) · retained under preparer document policy RM-DOC-7"
+
+      - kind: form
+        form_no: "TR-579-IT"
+        title: "New York State E-File Signature Authorization for Tax Year 2025"
+        subtitle: "For Forms IT-201 and IT-2 — do not mail to the state"
+        omb: ""
+        year: "2025"
+        parts:
+          - heading: "Part A — Tax return information"
+            lines:
+              - {n: "1", label: "Federal adjusted gross income", value: "55,321"}
+              - {n: "2", label: "Refund", value: "281"}
+              - {n: "3", label: "Amount you owe", value: "0", shade: true}
+              - {n: "4", label: "Financial institution routing number (refund by cheque — none)", value: "", shade: true}
+          - heading: "Part B — Declaration of taxpayer"
+            lines:
+              - {label: "Under penalty of perjury, I declare that I have examined the information on my 2025 New York State electronic personal income tax return, including any accompanying schedules, attachments, and statements, and certify that the electronic return is true, correct, and complete. The ERO has my consent to send my return to New York State through the electronic filing programme.", value: ""}
+          - heading: "Part C — Declaration of electronic return originator (ERO) and paid preparer"
+            lines:
+              - {label: "I certify that I have a valid signed authorization and that the information above matches the return. ERO: Rowanmere Tax Advisors LLP · NYTPRIN 11-884472.", value: ""}
+        sign_strip: true
+        sign_date: "____ / ____ / 2026"
+        rev_code: "TR-579-IT (2025-format) · e-file batch 2026-0424-118"
+
+      - kind: divider
+        title: "Copies of your Returns to be E-Filed"
+
+      - kind: divider
+        title: "Your 2025 Federal Tax Return"
+
+      - kind: form
+        form_no: "Form 1040"
+        title: "U.S. Individual Income Tax Return"
+        subtitle: "Page 1 of 2 — copy for your records, watermarked; do not mail"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        parts:
+          - heading: "Filing status / digital assets"
+            lines:
+              - {label: "Filing status: [X] Single   [ ] Married filing jointly   [ ] Married filing separately   [ ] Head of household   [ ] Qualifying surviving spouse", value: ""}
+              - {label: "At any time during 2025, did you receive, sell, exchange, or otherwise dispose of a digital asset?  [ ] Yes  [X] No", value: ""}
+              - {label: "Home address: @UKADDR@, United Kingdom (foreign country: UNITED KINGDOM)", value: ""}
+              - {label: "Dependents: NONE", value: "", shade: true}
+          - heading: "Income"
+            lines:
+              - {n: "1a", label: "Total amount from Form(s) W-2, box 1", value: "37,620"}
+              - {n: "1h", label: "Other earned income — foreign employer wages, SEE STATEMENT 1", value: "17,468"}
+              - {n: "1z", label: "Add lines 1a through 1h", value: "55,088"}
+              - {n: "2b", label: "Taxable interest — attach Schedule B, SEE STATEMENT 2", value: "233"}
+              - {n: "3b", label: "Ordinary dividends", value: "0", shade: true}
+              - {n: "7", label: "Capital gain or (loss)", value: "0", shade: true}
+              - {n: "8", label: "Additional income from Schedule 1, line 10", value: "0"}
+              - {n: "9", label: "Total income", value: "55,321"}
+              - {n: "10", label: "Adjustments to income from Schedule 1, line 25", value: "0"}
+              - {n: "11", label: "Adjusted gross income", value: "55,321"}
+              - {n: "12", label: "Standard deduction or itemized deductions", value: "15,000"}
+              - {n: "15", label: "Taxable income", value: "40,321"}
+        rev_code: "Form 1040 (2025) · Created 04/24/26 · TXW 5501-84"
+
+      - kind: form
+        form_no: "Form 1040"
+        title: "U.S. Individual Income Tax Return"
+        subtitle: "Page 2 of 2 — copy for your records, watermarked; do not mail"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        parts:
+          - heading: "Tax and Credits"
+            lines:
+              - {n: "16", label: "Tax (from tax tables/computation)", value: "4,600"}
+              - {n: "17", label: "Amount from Schedule 2, line 3", value: "0"}
+              - {n: "20", label: "Amount from Schedule 3, line 8 (foreign tax credit)", value: "1,993"}
+              - {n: "22", label: "Subtract line 21 from line 18", value: "2,607"}
+              - {n: "23", label: "Other taxes from Schedule 2, line 21", value: "0"}
+              - {n: "24", label: "Total tax", value: "2,607"}
+          - heading: "Payments"
+            lines:
+              - {n: "25a", label: "Federal income tax withheld from Form(s) W-2", value: "5,775"}
+              - {n: "33", label: "Total payments", value: "5,775"}
+          - heading: "Refund"
+            lines:
+              - {n: "34", label: "Overpayment — amount you overpaid", value: "3,168"}
+              - {n: "35a", label: "Amount of line 34 you want refunded to you (cheque to foreign address)", value: "3,168"}
+              - {n: "37", label: "Amount you owe", value: "0", shade: true}
+        declaration: >-
+          Under penalties of perjury, I declare that I have examined this
+          return and accompanying schedules and statements, and to the best
+          of my knowledge and belief, they are true, correct, and complete.
+        sign_strip: true
+        sign_date: "e-file PIN on Form 8879"
+        rev_code: "Form 1040 (2025) page 2 · Created 04/24/26 · TXW 5501-84"
+
+      - kind: form
+        form_no: "Schedule 1"
+        title: "Additional Income and Adjustments to Income"
+        subtitle: "Attach to Form 1040 — page 1 of 2"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        parts:
+          - heading: "Part I — Additional Income"
+            lines:
+              - {n: "1", label: "Taxable refunds of state and local income taxes", value: "0"}
+              - {n: "3", label: "Business income or (loss)", value: "0", shade: true}
+              - {n: "7", label: "Unemployment compensation", value: "0", shade: true}
+              - {n: "8d", label: "Foreign earned income exclusion (Form 2555) — NOT CLAIMED, SEE STATEMENT 3", value: "0"}
+              - {n: "9", label: "Total other income", value: "0"}
+              - {n: "10", label: "Combine lines 1 through 9 — enter on Form 1040, line 8", value: "0"}
+        rev_code: "Schedule 1 (Form 1040) 2025 · Created 04/24/26"
+
+      - kind: form
+        form_no: "Schedule 1"
+        title: "Additional Income and Adjustments to Income"
+        subtitle: "Attach to Form 1040 — page 2 of 2"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        parts:
+          - heading: "Part II — Adjustments to Income"
+            lines:
+              - {n: "11", label: "Educator expenses", value: "0", shade: true}
+              - {n: "13", label: "Health savings account deduction", value: "0", shade: true}
+              - {n: "20", label: "IRA deduction", value: "0", shade: true}
+              - {n: "24", label: "Other adjustments", value: "0"}
+              - {n: "25", label: "Total adjustments — enter on Form 1040, line 10", value: "0"}
+        rev_code: "Schedule 1 (Form 1040) 2025 page 2 · Created 04/24/26"
+
+      - kind: form
+        form_no: "Schedule 2"
+        title: "Additional Taxes"
+        subtitle: "Attach to Form 1040"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        parts:
+          - heading: "Part I — Tax"
+            lines:
+              - {n: "1", label: "Alternative minimum tax (attach Form 6251)", value: "0"}
+              - {n: "2", label: "Excess advance premium tax credit repayment", value: "0", shade: true}
+              - {n: "3", label: "Add lines 1 and 2 — enter on Form 1040, line 17", value: "0"}
+          - heading: "Part II — Other Taxes"
+            lines:
+              - {n: "13", label: "Uncollected social security and Medicare tax", value: "0", shade: true}
+              - {n: "21", label: "Total other taxes — enter on Form 1040, line 23", value: "0"}
+        rev_code: "Schedule 2 (Form 1040) 2025 · Created 04/24/26"
+
+      - kind: form
+        form_no: "Schedule 3"
+        title: "Additional Credits and Payments"
+        subtitle: "Attach to Form 1040"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        parts:
+          - heading: "Part I — Nonrefundable Credits"
+            lines:
+              - {n: "1", label: "Foreign tax credit (attach Form 1116)", value: "1,993"}
+              - {n: "2", label: "Credit for child and dependent care expenses", value: "0", shade: true}
+              - {n: "5a", label: "Residential clean energy credit", value: "0", shade: true}
+              - {n: "8", label: "Add lines 1 through 7 — enter on Form 1040, line 20", value: "1,993"}
+          - heading: "Part II — Other Payments and Refundable Credits"
+            lines:
+              - {n: "13", label: "Other payments or refundable credits", value: "0"}
+        rev_code: "Schedule 3 (Form 1040) 2025 · Created 04/24/26"
+
+      - kind: form
+        form_no: "Schedule B"
+        title: "Interest and Ordinary Dividends"
+        subtitle: "Attach to Form 1040"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        parts:
+          - heading: "Part I — Interest"
+            lines:
+              - {n: "1", label: "@USBANK@ — checking account ending @USACCT4@", value: "12"}
+              - {n: "1", label: "@USBANK@ — savings account ending @USSAV4@", value: "196"}
+              - {n: "1", label: "@UKBANK@ (United Kingdom) — accounts ending @UKACCT4@ / @UKSAV4@", value: "25"}
+              - {n: "2", label: "Total interest", value: "233"}
+              - {n: "4", label: "Enter on Form 1040, line 2b", value: "233"}
+          - heading: "Part II — Ordinary Dividends"
+            lines:
+              - {n: "6", label: "None", value: "0", shade: true}
+          - heading: "Part III — Foreign Accounts and Trusts"
+            lines:
+              - {n: "7a", label: "At any time during 2025, did you have a financial interest in or signature authority over a financial account located in a foreign country?  [X] Yes  [ ] No — see FBAR (Form 114)", value: ""}
+              - {n: "7b", label: "Foreign country: UNITED KINGDOM", value: ""}
+              - {n: "8", label: "Foreign trusts:  [ ] Yes  [X] No", value: ""}
+        rev_code: "Schedule B (Form 1040) 2025 · Created 04/24/26 · figures reconcile to bank certificates of interest"
+
+      - kind: form
+        form_no: "Form 1116"
+        title: "Foreign Tax Credit — General Category Income"
+        subtitle: "Copy 1 of 3 — page 1 of 2 (Schedule B carryover matrix overleaf)"
+        omb: "OMB No. 1545-0121"
+        year: "2025"
+        parts:
+          - heading: "Part I — Taxable Income from Sources Outside the United States (country: United Kingdom)"
+            lines:
+              - {n: "1a", label: "Gross income from foreign sources — UK employer wages Aug-Dec 2025 (GBP 13,437.03 taxable pay at 1.30 USD/GBP), SEE STATEMENT 3", value: "17,468"}
+              - {n: "6", label: "Deductions allocable to foreign income (standard deduction ratably apportioned)", value: "4,737"}
+              - {n: "7", label: "Net foreign source taxable income", value: "12,731"}
+          - heading: "Part II — Foreign Taxes Paid or Accrued"
+            lines:
+              - {n: "8", label: "UK Pay As You Earn income tax withheld (GBP 1,639.91 at 1.30)", value: "2,132"}
+          - heading: "Part III — Figuring the Credit"
+            lines:
+              - {n: "9", label: "Total foreign taxes available for credit", value: "2,132"}
+              - {n: "19", label: "Limitation: 4,600 x (17,468 / 40,321)", value: "1,993"}
+              - {n: "21", label: "Foreign tax credit allowed (smaller of taxes paid or limitation)", value: "1,993"}
+              - {n: "22", label: "Carryover to 2026 (Schedule B, overleaf)", value: "139"}
+        rev_code: "Form 1116 (2025) — general category · Created 04/24/26"
+
+      - kind: matrix
+        title: "Form 1116 Schedule B — Foreign Tax Carryover Reconciliation (General Category)"
+        subtitle: "All amounts in US dollars. Landscape orientation as filed."
+        row_header: "Description"
+        columns: ["2019", "2020", "2021", "2022", "2023", "2024", "2025", "Total"]
+        rows:
+          - {label: "1. Carryover from prior years", values: ["0", "0", "0", "0", "0", "0", "-", "0"]}
+          - {label: "2. Foreign taxes paid or accrued", values: ["-", "-", "-", "-", "-", "-", "2,132", "2,132"]}
+          - {label: "3. Utilized in current year", values: ["0", "0", "0", "0", "0", "0", "(1,993)", "(1,993)"]}
+          - {label: "4. Carryback to prior year", values: ["0", "0", "0", "0", "0", "0", "0", "0"]}
+          - {label: "5. Carryover to subsequent years", values: ["0", "0", "0", "0", "0", "0", "139", "139"]}
+        note: >-
+          The unused foreign tax of 139 arises because the UK effective
+          rate on the assignment-period wages exceeds the US effective rate;
+          it may be carried forward ten years but is unlikely to be used
+          unless you have future US-taxable foreign income.
+
+      - kind: form
+        form_no: "Form 1116"
+        title: "Foreign Tax Credit — Passive Category Income"
+        subtitle: "Copy 2 of 3 — page 1 of 2 (Schedule B carryover matrix overleaf)"
+        omb: "OMB No. 1545-0121"
+        year: "2025"
+        parts:
+          - heading: "Part I — Taxable Income from Sources Outside the United States (country: United Kingdom)"
+            lines:
+              - {n: "1a", label: "Gross income from foreign sources — @UKBANK@ interest (GBP 19.06 arising in calendar 2025, at 1.30)", value: "25"}
+              - {n: "6", label: "Deductions allocable to foreign income", value: "7"}
+              - {n: "7", label: "Net foreign source taxable income", value: "18"}
+          - heading: "Part II — Foreign Taxes Paid or Accrued"
+            lines:
+              - {n: "8", label: "Foreign tax withheld on interest (UK interest paid gross)", value: "0"}
+          - heading: "Part III — Figuring the Credit"
+            lines:
+              - {n: "9", label: "Total foreign taxes available for credit", value: "0"}
+              - {n: "21", label: "Foreign tax credit allowed", value: "0"}
+        rev_code: "Form 1116 (2025) — passive category · Created 04/24/26"
+
+      - kind: matrix
+        title: "Form 1116 Schedule B — Foreign Tax Carryover Reconciliation (Passive Category)"
+        subtitle: "All amounts in US dollars. Landscape orientation as filed."
+        row_header: "Description"
+        columns: ["2019", "2020", "2021", "2022", "2023", "2024", "2025", "Total"]
+        rows:
+          - {label: "1. Carryover from prior years", values: ["0", "0", "0", "0", "0", "0", "-", "0"]}
+          - {label: "2. Foreign taxes paid or accrued", values: ["-", "-", "-", "-", "-", "-", "0", "0"]}
+          - {label: "3. Utilized in current year", values: ["0", "0", "0", "0", "0", "0", "0", "0"]}
+          - {label: "5. Carryover to subsequent years", values: ["0", "0", "0", "0", "0", "0", "0", "0"]}
+        note: "No foreign tax was withheld on UK interest; the passive-category copy is filed to disclose the foreign source income."
+
+      - kind: form
+        form_no: "Form 1116"
+        title: "Foreign Tax Credit — Alternative Minimum Tax (General Category)"
+        subtitle: "Copy 3 of 3 — AMT recomputation, page 1 of 2"
+        omb: "OMB No. 1545-0121"
+        year: "2025"
+        parts:
+          - heading: "Part I — AMT Foreign Source Taxable Income"
+            lines:
+              - {n: "1a", label: "Gross foreign source income (as regular tax)", value: "17,468"}
+              - {n: "6", label: "Deductions allocable under AMT rules", value: "0"}
+              - {n: "7", label: "Net AMT foreign source taxable income", value: "17,468"}
+          - heading: "Part III — Figuring the AMT Credit"
+            lines:
+              - {n: "9", label: "Foreign taxes available", value: "2,132"}
+              - {n: "19", label: "AMT limitation: tentative minimum tax is nil (AMTI below the exemption)", value: "0"}
+              - {n: "21", label: "AMT foreign tax credit", value: "0"}
+        rev_code: "Form 1116 AMT (2025) · Created 04/24/26"
+
+      - kind: matrix
+        title: "Form 1116 Schedule B — AMT Foreign Tax Carryover Reconciliation (General Category)"
+        subtitle: "All amounts in US dollars. Landscape orientation as filed."
+        row_header: "Description"
+        columns: ["2019", "2020", "2021", "2022", "2023", "2024", "2025", "Total"]
+        rows:
+          - {label: "1. Carryover from prior years", values: ["0", "0", "0", "0", "0", "0", "-", "0"]}
+          - {label: "2. Foreign taxes paid or accrued (AMT)", values: ["-", "-", "-", "-", "-", "-", "2,132", "2,132"]}
+          - {label: "3. Utilized in current year (AMT)", values: ["0", "0", "0", "0", "0", "0", "0", "0"]}
+          - {label: "5. Carryover to subsequent years (AMT)", values: ["0", "0", "0", "0", "0", "0", "2,132", "2,132"]}
+        note: "No AMT credit was usable this year (tentative minimum tax is nil); the AMT carryover is tracked separately from the regular-tax carryover of 139."
+
+      - kind: form
+        form_no: "Form 6251"
+        title: "Alternative Minimum Tax — Individuals"
+        subtitle: "Page 1 of 2"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        parts:
+          - heading: "Part I — Alternative Minimum Taxable Income"
+            lines:
+              - {n: "1", label: "Form 1040, line 15 (taxable income)", value: "40,321"}
+              - {n: "2a", label: "Add back: standard deduction", value: "15,000"}
+              - {n: "3", label: "Other adjustments and preferences", value: "0", shade: true}
+              - {n: "4", label: "Alternative minimum taxable income (AMTI)", value: "55,321"}
+        rev_code: "Form 6251 (2025) · Created 04/24/26"
+
+      - kind: form
+        form_no: "Form 6251"
+        title: "Alternative Minimum Tax — Individuals"
+        subtitle: "Page 2 of 2"
+        omb: "OMB No. 1545-0074"
+        year: "2025"
+        parts:
+          - heading: "Part II — Alternative Minimum Tax"
+            lines:
+              - {n: "5", label: "Exemption (single)", value: "88,100"}
+              - {n: "6", label: "Subtract line 5 from line 4 (not less than zero)", value: "0"}
+              - {n: "7", label: "Tentative minimum tax before AMT foreign tax credit", value: "0"}
+              - {n: "8", label: "AMT foreign tax credit (Form 1116 AMT)", value: "0"}
+              - {n: "9", label: "Tentative minimum tax", value: "0"}
+              - {n: "10", label: "Regular tax for AMT purposes", value: "4,600"}
+              - {n: "11", label: "Alternative minimum tax — enter on Schedule 2, line 1", value: "0"}
+        rev_code: "Form 6251 (2025) page 2 · Created 04/24/26 · AMTI fully covered by exemption"
+
+      - kind: form
+        form_no: "Form 8938"
+        title: "Statement of Specified Foreign Financial Assets"
+        subtitle: "Page 1 of 2 — attach to Form 1040"
+        omb: "OMB No. 1545-2195"
+        year: "2025"
+        parts:
+          - heading: "Part I — Foreign Deposit and Custodial Accounts Summary"
+            lines:
+              - {n: "1", label: "Number of deposit accounts reported", value: "2"}
+              - {n: "2", label: "Maximum value of all deposit accounts", value: "20,466"}
+              - {n: "3", label: "Number of custodial accounts reported", value: "1"}
+              - {n: "4", label: "Maximum value of all custodial accounts", value: "9,315"}
+              - {n: "5", label: "Were any foreign accounts closed during the tax year?  [ ] Yes  [X] No", value: ""}
+          - heading: "Part III — Summary of Tax Items Attributable to Specified Foreign Financial Assets"
+            lines:
+              - {n: "(a)", label: "Interest — reported on Form 1040, line 2b / Schedule B", value: "25"}
+        rev_code: "Form 8938 (2025) · Created 04/24/26"
+
+      - kind: form
+        form_no: "Form 8938"
+        title: "Statement of Specified Foreign Financial Assets"
+        subtitle: "Page 2 of 2 — account detail (continuation)"
+        omb: "OMB No. 1545-2195"
+        year: "2025"
+        parts:
+          - heading: "Part V — Detailed Information for Each Foreign Deposit and Custodial Account"
+            lines:
+              - {n: "V-1", label: "@UKBANK@ — current account, sort code @UKSORT@, account @UKACCT@, London, United Kingdom. Opened during tax year: Yes (July 2025).", value: "max 16,541"}
+              - {n: "V-2", label: "@UKBANK@ — instant savings account @UKSAVACCT@, London, United Kingdom. Opened during tax year: Yes (August 2025).", value: "max 3,925"}
+              - {n: "V-3", label: "@ISANAME@ — stocks and shares ISA, reference @ISAREF@, United Kingdom. Custodial account; UK tax wrapper not recognised for US purposes.", value: "max 9,315"}
+        rev_code: "Form 8938 (2025) page 2 · Created 04/24/26"
+
+      - kind: statement
+        body: |
+          @NAMEUP@                                      XXX-XX-@SSN4@
+          2025 FEDERAL RETURN                           STATEMENT 1
+          ==========================================================
+          FORM 1040, LINE 1H - OTHER EARNED INCOME
+          ----------------------------------------------------------
+          DESCRIPTION                                       AMOUNT
+          ----------------------------------------------------------
+          WAGES - @UKEMPUP@ (UNITED KINGDOM)
+            AUG-DEC 2025 TAXABLE PAY, GBP 13,437.03
+            (DEC BONUS GBP 2,000.00 EXCHANGED TO PENSION)
+            CONVERTED AT 1.30 USD/GBP                       17,468.
+          ----------------------------------------------------------
+          TOTAL TO FORM 1040, LINE 1H                       17,468.
+          ==========================================================
+
+      - kind: statement
+        body: |
+          @NAMEUP@                                      XXX-XX-@SSN4@
+          2025 FEDERAL RETURN                           STATEMENT 2
+          ==========================================================
+          SCHEDULE B - INTEREST INCOME DETAIL
+          ----------------------------------------------------------
+          PAYER                                             AMOUNT
+          ----------------------------------------------------------
+          @USBANKUP@ - CHECKING ..@USACCT4@            12.
+          @USBANKUP@ - SAVINGS  ..@USSAV4@           196.
+          @UKBANKUP@ (UK) - ACCOUNTS ..@UKACCT4@/..@UKSAV4@            25.
+          ----------------------------------------------------------
+          TOTAL TO SCHEDULE B, PART I, LINE 2                  233.
+          ==========================================================
+          PER CERTIFICATES OF INTEREST PROVIDED BY EACH BANK.
+          SEE ALSO FORM 8938 AND FBAR FOR ACCOUNT DISCLOSURE.
+
+      - kind: statement
+        body: |
+          @NAMEUP@                                      XXX-XX-@SSN4@
+          2025 FEDERAL RETURN                           STATEMENT 3
+          ==========================================================
+          FOREIGN WAGES AND EXCHANGE RATE COMPUTATION
+          ----------------------------------------------------------
+          UK TAXABLE PAY (AFTER SALARY EXCHANGE), AUG-DEC 2025
+              AUG (FROM 18 AUG)              GBP        1,545.03
+              SEP                            GBP        2,973.00
+              OCT                            GBP        2,973.00
+              NOV                            GBP        2,973.00
+              DEC (BONUS EXCHANGED TO PLAN)  GBP        2,973.00
+          ----------------------------------------------------------
+          TOTAL                              GBP       13,437.03
+          ANNUAL AVERAGE RATE                          1.30 USD/GBP
+          USD EQUIVALENT (ROUNDED)                        17,468.
+          ==========================================================
+          UK PAYE TAX WITHHELD SAME PERIOD   GBP        1,639.91
+          USD EQUIVALENT FOR FORM 1116                     2,132.
+          ==========================================================
+          FORM 2555 EXCLUSION NOT ELECTED - PHYSICAL PRESENCE AND
+          BONA FIDE RESIDENCE TESTS NOT MET FOR THE PERIOD. FOREIGN
+          TAX CREDIT CLAIMED INSTEAD. SEE FORM 1116.
+
+      - kind: statement
+        body: |
+          @NAMEUP@                                      XXX-XX-@SSN4@
+          2025 FEDERAL RETURN                           STATEMENT 4
+          ==========================================================
+          FORM 1116, LINE 3E - GROSS INCOME FROM ALL SOURCES
+          ----------------------------------------------------------
+          DESCRIPTION                                       AMOUNT
+          ----------------------------------------------------------
+          WAGES - US (W-2, @USEMPUP@)              37,620.
+          WAGES - FOREIGN (STATEMENT 1)                     17,468.
+          INTEREST - US PAYERS                                 208.
+          INTEREST - FOREIGN PAYERS                             25.
+          ----------------------------------------------------------
+          GROSS INCOME FROM ALL SOURCES                     55,321.
+          ==========================================================
+
+      - kind: statement
+        body: |
+          @NAMEUP@                                      XXX-XX-@SSN4@
+          2025 FEDERAL RETURN                           STATEMENT 5
+          ==========================================================
+          STANDARD VS ITEMIZED DEDUCTION COMPARISON
+          ----------------------------------------------------------
+          STANDARD DEDUCTION (SINGLE, 2025)                 15,000.
+          ITEMIZED DEDUCTIONS AVAILABLE:
+              STATE AND LOCAL INCOME TAXES PAID              3,240.
+              OTHER                                              0.
+          ----------------------------------------------------------
+          ITEMIZED TOTAL                                     3,240.
+          STANDARD DEDUCTION USED (GREATER)                 15,000.
+          ==========================================================
+
+      - kind: statement
+        body: |
+          @NAMEUP@                                      XXX-XX-@SSN4@
+          2025 FEDERAL RETURN                           STATEMENT 6
+          ==========================================================
+          CARRYOVER SUMMARY TO 2026
+          ----------------------------------------------------------
+          ITEM                                              AMOUNT
+          ----------------------------------------------------------
+          FOREIGN TAX CREDIT - GENERAL (REGULAR)               139.
+          FOREIGN TAX CREDIT - GENERAL (AMT)                 2,132.
+          CAPITAL LOSS                                           0.
+          ----------------------------------------------------------
+          NOTE: AS YOUR US FILING OBLIGATION IS EXPECTED TO END
+          AFTER 2025, THESE CARRYOVERS ARE UNLIKELY TO BE USED.
+          RETAIN THIS PACKAGE FOR AT LEAST SEVEN YEARS.
+          ==========================================================
+
+      - kind: divider
+        title: "Your 2025 FBAR"
+
+      - kind: form
+        form_no: "Form 114"
+        title: "Report of Foreign Bank and Financial Accounts (FBAR)"
+        subtitle: "Filing status page — information report, no tax due"
+        omb: ""
+        year: "2025"
+        parts:
+          - heading: "Filing summary"
+            lines:
+              - {n: "1", label: "Filing name", value: "2025 FBAR - @LASTUP@"}
+              - {n: "2", label: "Reporting period", value: "01/01/2025 - 12/31/2025"}
+              - {n: "3", label: "Number of foreign accounts reported", value: "3"}
+              - {n: "4", label: "Aggregate maximum value band", value: "29,781"}
+              - {n: "5", label: "Status", value: "READY TO TRANSMIT"}
+              - {n: "6", label: "Third-party preparer", value: "ROWANMERE TAX ADVISORS LLP"}
+        rev_code: "Form 114 status extract · batch 2026-0424-118"
+
+      - kind: form
+        form_no: "Form 114"
+        title: "Report of Foreign Bank and Financial Accounts (FBAR)"
+        subtitle: "Part I — Filer Information"
+        omb: ""
+        year: "2025"
+        parts:
+          - heading: "Part I — Filer Information"
+            lines:
+              - {n: "2", label: "Type of filer:  [X] Individual", value: ""}
+              - {n: "3", label: "Taxpayer identification number", value: "XXX-XX-@SSN4@"}
+              - {n: "5", label: "Date of birth", value: "@DOBUS@"}
+              - {n: "6", label: "Last name", value: "@LASTUP@"}
+              - {n: "7", label: "First name", value: "@FIRSTUP@"}
+              - {n: "9", label: "Address", value: "@UKADDR1UP@"}
+              - {n: "10", label: "City / postcode / country", value: "@UKCITYPCUP@ UNITED KINGDOM"}
+              - {n: "14a", label: "Did the filer have a financial interest in 25 or more financial accounts?  [ ] Yes  [X] No", value: ""}
+        rev_code: "Form 114 Part I · batch 2026-0424-118"
+
+      - kind: fbar_accounts
+        title: "Form 114, Part II — Information on Financial Account(s) Owned Separately"
+        intro: >-
+          One block per foreign account held during 2025. Maximum values in
+          US dollars, converted at the year-end rate.
+        blocks:
+          - heading: "Account 1 of 3"
+            max_value: "16,541"
+            type: "Bank — current (checking)"
+            institution: "@UKBANK@"
+            account: "Sort code @UKSORT@, account @UKACCT@"
+            address: "@UKBANK@, 21 Copperwheat Lane, London EC2V 8QL, United Kingdom"
+          - heading: "Account 2 of 3"
+            max_value: "3,925"
+            type: "Bank — savings"
+            institution: "@UKBANK@"
+            account: "Sort code @UKSORT@, account @UKSAVACCT@"
+            address: "@UKBANK@, 21 Copperwheat Lane, London EC2V 8QL, United Kingdom"
+
+      - kind: fbar_accounts
+        title: "Form 114, Part II — continued"
+        intro: ""
+        blocks:
+          - heading: "Account 3 of 3"
+            max_value: "9,315"
+            type: "Securities — custodial (stocks and shares ISA)"
+            institution: "@ISANAME@"
+            account: "Reference @ISAREF@"
+            address: "@ISANAME@, 4 Quillfield Park, Leeds LS10 4TN, United Kingdom"
+
+      - kind: divider
+        title: "Your 2025 New York Tax Return"
+
+      - kind: form
+        form_no: "IT-201"
+        title: "Resident Income Tax Return — New York State, New York City"
+        subtitle: "Page 1 of 4 — part-year city resident, January 1 to June 13, 2025"
+        omb: ""
+        year: "2025"
+        margin_text: "NO HANDWRITTEN ENTRIES, OTHER THAN SIGNATURE, ON THIS FORM"
+        barcode: true
+        barcode_text: "201001 25 0447188"
+        parts:
+          - heading: "Taxpayer information"
+            lines:
+              - {n: "A", label: "Filing status: Single [X]", value: ""}
+              - {n: "B", label: "Did you itemize your deductions on your 2025 federal return?  [ ] Yes  [X] No", value: ""}
+              - {n: "C", label: "Can you be claimed as a dependent?  [ ] Yes  [X] No", value: ""}
+              - {n: "D1", label: "New York City part-year resident — months: 6", value: ""}
+        rev_code: "IT-201 (2025) page 1 · whole dollar amounts only"
+
+      - kind: form
+        form_no: "IT-201"
+        title: "Resident Income Tax Return"
+        subtitle: "Page 2 of 4 — federal income and New York additions/subtractions"
+        omb: ""
+        year: "2025"
+        margin_text: "NO HANDWRITTEN ENTRIES, OTHER THAN SIGNATURE, ON THIS FORM"
+        barcode: true
+        barcode_text: "201002 25 0447188"
+        parts:
+          - heading: "Federal income (whole dollars)"
+            lines:
+              - {n: "1", label: "Wages, salaries, tips (federal amount)", value: "55,088"}
+              - {n: "2", label: "Taxable interest income", value: "233"}
+              - {n: "17", label: "Federal adjusted gross income", value: "55,321"}
+          - heading: "New York subtractions"
+            lines:
+              - {n: "31", label: "Income earned as a nonresident of New York (UK wages and interest after June 13, 2025)", value: "17,493"}
+              - {n: "33", label: "New York adjusted gross income", value: "37,828"}
+        rev_code: "IT-201 (2025) page 2"
+
+      - kind: form
+        form_no: "IT-201"
+        title: "Resident Income Tax Return"
+        subtitle: "Page 3 of 4 — standard deduction, taxable income and tax"
+        omb: ""
+        year: "2025"
+        margin_text: "NO HANDWRITTEN ENTRIES, OTHER THAN SIGNATURE, ON THIS FORM"
+        barcode: true
+        barcode_text: "201003 25 0447188"
+        parts:
+          - heading: "Tax computation"
+            lines:
+              - {n: "34", label: "New York standard deduction (single)", value: "8,000"}
+              - {n: "37", label: "New York taxable income", value: "29,828"}
+              - {n: "39", label: "New York State tax on line 37", value: "1,671"}
+              - {n: "45", label: "Net other New York State taxes", value: "100"}
+              - {n: "46", label: "Total New York State taxes", value: "1,771"}
+          - heading: "New York City taxes"
+            lines:
+              - {n: "47", label: "New York City taxable income (part-year, 6 months)", value: "21,828"}
+              - {n: "54", label: "Total New York City taxes", value: "1,188"}
+        rev_code: "IT-201 (2025) page 3"
+
+      - kind: form
+        form_no: "IT-201"
+        title: "Resident Income Tax Return"
+        subtitle: "Page 4 of 4 — payments and refund"
+        omb: ""
+        year: "2025"
+        margin_text: "NO HANDWRITTEN ENTRIES, OTHER THAN SIGNATURE, ON THIS FORM"
+        barcode: true
+        barcode_text: "201004 25 0447188"
+        parts:
+          - heading: "Payments and refundable credits"
+            lines:
+              - {n: "62", label: "Total New York State, City taxes and surcharges", value: "2,959"}
+              - {n: "72", label: "Total New York State tax withheld (Form IT-2)", value: "2,052"}
+              - {n: "73", label: "Total New York City tax withheld (Form IT-2)", value: "1,188"}
+              - {n: "76", label: "Total payments", value: "3,240"}
+          - heading: "Your refund"
+            lines:
+              - {n: "77", label: "Amount overpaid", value: "281"}
+              - {n: "78", label: "Amount of line 77 to be refunded — [X] paper cheque (foreign address)", value: "281"}
+              - {n: "80", label: "Amount you owe", value: "0", shade: true}
+        declaration: >-
+          I certify that this return and any attachments are to the best of
+          my knowledge and belief true, correct and complete. Paid preparer:
+          Rowanmere Tax Advisors LLP, NYTPRIN 11-884472.
+        sign_strip: true
+        sign_date: "e-file — TR-579-IT on file"
+        rev_code: "IT-201 (2025) page 4"
+
+      - kind: it2
+        title: "Form IT-2 — Summary of W-2 Statements (New York State)"
+        intro: >-
+          Box-by-box record of each federal Form W-2 reporting New York wages.
+          Do not attach the federal W-2 itself; this summary is filed instead.
+        margin_text: "NO HANDWRITTEN ENTRIES, OTHER THAN SIGNATURE, ON THIS FORM"
+        records:
+          - heading: "W-2 Record 1 — employer reported New York wages for 2025"
+            ein: "@USEIN@"
+            employer: "@USEMP@ c/o Brightpath Payroll LLC, @USEMPADDR@"
+            box1: "37,620.00"
+            box12: "1,980.00 / D"
+            box16: "37,620.00"
+            box17: "2,052.00"
+            box18: "37,620.00"
+            box19: "1,188.00"
+
+      - kind: form
+        form_no: "RM-EF"
+        title: "Record of Electronic Filing — client copy"
+        subtitle: "Generated by Rowanmere Tax Advisors LLP practice software"
+        omb: ""
+        year: "2025"
+        name_strip: false
+        parts:
+          - heading: "Transmission summary (completed after consents are received)"
+            lines:
+              - {n: "1", label: "Federal return — submission ID", value: "PENDING CONSENT"}
+              - {n: "2", label: "New York return — submission ID", value: "PENDING CONSENT"}
+              - {n: "3", label: "FBAR — BSA tracking ID", value: "PENDING CONSENT"}
+              - {n: "4", label: "Preparer control number", value: "EF-2025-4471-8802-0093"}
+              - {n: "5", label: "Package generated", value: "04/24/2026 09:41 EST"}
+          - heading: "Document retention"
+            lines:
+              - {label: "This package is your permanent record of the 2025 filings. Rowanmere retains workpapers for seven years under engagement letter RM-2025-0912. Request copies via expat.team@rowanmere-tax.example.", value: ""}
+        rev_code: "RM practice software v11.4 · TXW 5501-84"

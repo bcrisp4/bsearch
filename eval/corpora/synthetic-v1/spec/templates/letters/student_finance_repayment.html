@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand { color: #0b5e63; }
+  .letter-date { text-align: right; margin: 2mm 0 4mm; }
+  table.data th { background: #e3edee; }
+  .how-panel { background: #eef4f4; border-left: 1.6mm solid #0b5e63; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} &middot; PO Box 210, Millbrook DL98 6ZZ &middot;
+  sfagency.example &middot; Please quote your customer reference number in
+  all correspondence. <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">{{ vendor.name }}</div>
+  <div class="contact">
+    PO Box 210, Millbrook DL98 6ZZ<br>
+    0113 496 0770 &middot; sfagency.example
+  </div>
+</div>
+
+<p class="letter-date">{{ issue.letter_date }}</p>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.title }} {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Customer reference</td><td class="value">{{ vendor.customer_ref }}</td></tr>
+      <tr><td class="label">Plan type</td><td class="value">Plan 2</td></tr>
+    </table>
+  </div>
+</div>
+
+<h1>You&rsquo;ve started repaying your student loan</h1>
+
+<p>Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},</p>
+
+<p>Our records from the tax authority show that deductions towards your
+Plan 2 student loan have started coming through your employer&rsquo;s
+payroll. Nothing is wrong &mdash; this letter simply explains how the
+deductions work and confirms what we have received so far.</p>
+
+<div class="panel how-panel">
+  <h3>How Plan 2 repayments work</h3>
+  <p>You repay <strong>9% of your income above the repayment
+  threshold</strong>, which is currently &pound;{{ issue.threshold_annual }}
+  a year (&pound;{{ issue.threshold_monthly }} a month). Your employer works
+  out the deduction each payday and shows it on your payslip; it changes
+  automatically if your pay changes, and stops in any month you earn below
+  the threshold. Repayments depend on your income, not on the size of your
+  loan balance.</p>
+</div>
+
+<h2>Payments we&rsquo;ve received so far</h2>
+
+<table class="data">
+  <tr><th>Month</th><th class="num">Amount received</th></tr>
+  {% for p in issue.payments %}
+  <tr><td>{{ p.month }}</td><td class="num">&pound;{{ p.amount }}</td></tr>
+  {% endfor %}
+  <tr class="subtotal"><td>Total received</td><td class="num">&pound;{{ issue.total_received }}</td></tr>
+</table>
+
+<p>Employer deductions reach us after the end of each tax year, so the most
+recent payslip deductions may not appear above yet. If a deduction on your
+payslip looks wrong, speak to your employer&rsquo;s payroll team first.</p>
+
+<p>If you expect your income to stay over the threshold you don&rsquo;t
+need to do anything. You can also make voluntary repayments at any time at
+sfagency.example/account &mdash; these reduce your balance directly and
+there is no charge for repaying early. Any balance remaining 30 years after
+you first became liable to repay is written off.</p>
+
+<p>Yours sincerely,</p>
+
+<p><strong>Repayments Team</strong><br>
+{{ vendor.name }}</p>
+
+<div class="small-print">
+  <p><strong>Accessible formats.</strong> We can provide this letter in
+  braille, large print or audio. Email accessible@sfagency.example or call
+  0113 496 0770.</p>
+</div>
+
+</body>
+</html>

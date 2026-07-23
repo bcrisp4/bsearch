@@ -1,0 +1,124 @@
+# Per-issue data for the Netherhale Borough Council annual demand series
+# (3 issues, corpus.yaml: council_tax_bills). Timeline-consistent with the
+# persona: 2024-25 relates to the previous UK address (retained, unoccupied,
+# during the US residency era — its own, older account number); 2025-26 is a
+# part-year new-account bill at the current flat from the 1 Aug 2025 move-in;
+# 2026-27 is the first full year there. Band C throughout. Arithmetic: precepts
+# sum to the annual band charge; bands scale in the statutory 6:7:8:9:11:13:15:18
+# ninths of band D; instalments sum to the amount due; the 2025-26 part-year
+# charge is 243/365 of the annual figure.
+template: bills/council_tax_bill.html
+vendor_key: council
+issues:
+  - id: ctax-2024-25
+    scan: true
+    year_label: "2024/2025"
+    issue_date: "12 March 2024"
+    address_key: uk_previous
+    account_ref: "41220974A"
+    reason: >-
+      Annual bill — unoccupied and unfurnished property. No discount or
+      exemption applies to this property for the year shown.
+    annual_band_charge: "1,624.80"
+    precepts:
+      - {label: "Netherhale Borough Council — general services", amount: "1,214.30", change: "+3.1%"}
+      - {label: "Adult social care precept*", amount: "158.90", change: "+8.7%"}
+      - {label: "Police, fire and other joint precepts", amount: "251.60", change: "+4.9%"}
+    charge_lines:
+      - {description: "Council tax — band C", from: "01 Apr 2024", to: "31 Mar 2025", amount: "1,624.80"}
+    amount_due: "1,624.80"
+    instalments: >-
+      Payable by 10 monthly instalments of £162.48. First instalment due on
+      1 April 2024, then on the 1st of each month to 1 January 2025.
+    bands:
+      - {band: "A", amount: "1,218.60"}
+      - {band: "B", amount: "1,421.70"}
+      - {band: "C", amount: "1,624.80"}
+      - {band: "D", amount: "1,827.90"}
+      - {band: "E", amount: "2,234.10"}
+      - {band: "F", amount: "2,640.30"}
+      - {band: "G", amount: "3,046.50"}
+      - {band: "H", amount: "3,655.80"}
+    notice:
+      title: "Unoccupied properties"
+      body:
+        - >-
+          Our records show this property is unoccupied and unfurnished. No
+          empty-property discount applies in the borough, and properties
+          left empty for more than twelve months may attract an
+          empty-property premium of up to 100% of the charge. Tell us
+          within 21 days if the property becomes occupied or furnished.
+  - id: ctax-2025-26
+    year_label: "2025/2026"
+    issue_date: "18 August 2025"
+    address_key: uk_current
+    reason: >-
+      New account — you became liable for council tax at this property on
+      1 August 2025. A 25% single-occupancy discount has been applied from
+      the same date.
+    annual_band_charge: "1,712.80"
+    precepts:
+      - {label: "Netherhale Borough Council — general services", amount: "1,269.10", change: "+4.5%"}
+      - {label: "Adult social care precept*", amount: "175.60", change: "+10.5%"}
+      - {label: "Police, fire and other joint precepts", amount: "268.10", change: "+6.6%"}
+    charge_lines:
+      - {description: "Council tax — band C (part year, 243 days)", from: "01 Aug 2025", to: "31 Mar 2026", amount: "1,140.30"}
+      - {description: "Single-occupancy discount (25%)", from: "01 Aug 2025", to: "31 Mar 2026", amount: "285.07", credit: true}
+    amount_due: "855.23"
+    instalments: >-
+      Payable by 8 monthly instalments: £106.93 due on 1 September 2025,
+      then 7 instalments of £106.90 on the 1st of each month to
+      1 April 2026.
+    bands:
+      - {band: "A", amount: "1,284.60"}
+      - {band: "B", amount: "1,498.70"}
+      - {band: "C", amount: "1,712.80"}
+      - {band: "D", amount: "1,926.90"}
+      - {band: "E", amount: "2,355.10"}
+      - {band: "F", amount: "2,783.30"}
+      - {band: "G", amount: "3,211.50"}
+      - {band: "H", amount: "3,853.80"}
+    notice:
+      title: "Your single-occupancy discount"
+      body:
+        - >-
+          Your bill includes a 25% discount because you've told us you are
+          the only adult living at the property. If another adult moves in
+          you lose the discount from that date and must tell us within 21
+          days — we check discount claims against other records each year.
+  - id: ctax-2026-27
+    year_label: "2026/2027"
+    issue_date: "10 March 2026"
+    address_key: uk_current
+    reason: >-
+      Annual bill. A 25% single-occupancy discount continues to apply for
+      the year shown.
+    annual_band_charge: "1,799.20"
+    precepts:
+      - {label: "Netherhale Borough Council — general services", amount: "1,333.40", change: "+5.1%"}
+      - {label: "Adult social care precept*", amount: "193.20", change: "+10.0%"}
+      - {label: "Police, fire and other joint precepts", amount: "272.60", change: "+1.7%"}
+    charge_lines:
+      - {description: "Council tax — band C", from: "01 Apr 2026", to: "31 Mar 2027", amount: "1,799.20"}
+      - {description: "Single-occupancy discount (25%)", from: "01 Apr 2026", to: "31 Mar 2027", amount: "449.80", credit: true}
+    amount_due: "1,349.40"
+    instalments: >-
+      Payable by 10 monthly instalments of £134.94. First instalment due on
+      1 April 2026, then on the 1st of each month to 1 January 2027.
+    bands:
+      - {band: "A", amount: "1,349.40"}
+      - {band: "B", amount: "1,574.30"}
+      - {band: "C", amount: "1,799.20"}
+      - {band: "D", amount: "2,024.10"}
+      - {band: "E", amount: "2,473.90"}
+      - {band: "F", amount: "2,923.70"}
+      - {band: "G", amount: "3,373.50"}
+      - {band: "H", amount: "4,048.20"}
+    notice:
+      title: "Paying over 12 months instead of 10"
+      body:
+        - >-
+          Instalments are shown over 10 months, but you can ask to spread
+          them over 12 (April to March) instead — the total stays the
+          same. Request this at netherhale.example/counciltax before your
+          first instalment is due.

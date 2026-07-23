@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  h1.grey { color: #5a5a5a; font-size: 15pt; }
+  .brand { color: #0b5e63; }
+  .info-banner {
+    border: 1pt solid #1a1a1a; padding: 2mm 3mm; margin: 4mm 0;
+    text-align: center; font-weight: bold; font-size: 9.5pt;
+  }
+  table.data th { background: #e3edee; }
+  .letter-date { text-align: right; margin: 2mm 0 4mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} &middot; PO Box 210, Millbrook DL98 6ZZ &middot;
+  sfagency.example &middot; Please quote your customer reference number in
+  all correspondence. <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <h1 class="grey" style="margin: 0">Your Student Loan Statement</h1>
+  <div style="text-align: right">
+    <div class="brand" style="font-size: 13pt; font-weight: bold">{{ vendor.name }}</div>
+    <div class="contact" style="text-align: right">
+      PO Box 210, Millbrook DL98 6ZZ<br>
+      0113 496 0770 &middot; sfagency.example
+    </div>
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.title }} {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Customer reference</td><td class="value">{{ vendor.customer_ref }}</td></tr>
+      <tr><td class="label">Plan type</td><td class="value">Plan 2</td></tr>
+      <tr><td class="label">Statement date</td><td class="value">{{ issue.letter_date }}</td></tr>
+      <tr><td class="label">Statement period</td><td class="value">{{ issue.period }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="info-banner">
+  THIS STATEMENT IS FOR INFORMATION ONLY &mdash; NOT A DEMAND FOR PAYMENT
+</div>
+
+<p>Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},</p>
+
+<p>This is your annual student loan statement for the period
+{{ issue.period }}. Please use your customer reference number,
+{{ vendor.customer_ref }}, whenever you contact us.</p>
+
+<p>Repayment information on this statement comes to us from the tax
+authority after the end of each tax year, so recent deductions shown on
+your payslips may not appear until your next statement. If you see a
+repayment amount you do not recognise, contact your employer first, then
+us.</p>
+
+<h2>Summary of account</h2>
+
+<table class="summary">
+  <tr><td>Opening balance at start of period</td><td class="amount">&pound;{{ issue.opening_balance }}</td></tr>
+  <tr><td>Total interest applied</td><td class="amount">&pound;{{ issue.total_interest }}</td></tr>
+  <tr><td>Total repayments received &mdash; thank you</td><td class="amount">&minus;&pound;{{ issue.total_repayments }}</td></tr>
+  <tr class="total"><td>Closing balance at end of period</td><td class="amount">&pound;{{ issue.closing_balance }}</td></tr>
+</table>
+
+<h2>Interest added during the period</h2>
+
+<table class="data">
+  <tr><th>Period</th><th class="num">Annual interest rate</th><th class="num">Interest added</th></tr>
+  {% for row in issue.interest_rows %}
+  <tr>
+    <td>{{ row.period }}</td>
+    <td class="num">{{ row.rate }}%</td>
+    <td class="num">&pound;{{ row.amount }}</td>
+  </tr>
+  {% endfor %}
+  <tr class="subtotal"><td>Total interest applied</td><td class="num"></td>
+      <td class="num">&pound;{{ issue.total_interest }}</td></tr>
+</table>
+
+<p>We received {{ issue.repayment_count }} payroll deductions of
+&pound;{{ issue.repayment_each }} through your employer&rsquo;s payroll
+between {{ issue.repayment_span }}, totalling
+&pound;{{ issue.total_repayments }}. Interest is calculated daily on your
+outstanding balance and added monthly.</p>
+
+<p>You can see an up-to-date balance, and make additional voluntary
+repayments at any time, at sfagency.example/account.</p>
+
+<div class="small-print">
+  <p><strong>Accessible formats.</strong> We can provide this statement in
+  braille, large print or audio. Email accessible@sfagency.example or call
+  0113 496 0770.</p>
+  <p><strong>About your loan.</strong> Plan 2 loans are written off 30 years
+  after you first became liable to repay. Repayments are collected through
+  the tax system and depend on your income, not on the size of your
+  balance.</p>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  html { font-family: "Doc Serif", serif; font-size: 10pt; }
+  .brand { font-family: "Doc Sans", sans-serif; color: #1f4e37; }
+  .letter-date { text-align: right; margin: 2mm 0 5mm; }
+  .ref-block {
+    margin: 3mm 0 4mm; padding: 2.5mm 3mm; background: #f4f2ec;
+    border-left: 1.2mm solid #7a6f52; font-size: 9.5pt;
+  }
+  .sig { margin-top: 9mm; }
+  .cc { margin-top: 7mm; font-size: 9pt; color: #444; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} &middot; 2 Calverley Park Row, London SE28 4QN &middot;
+  a partnership of general practitioners, inspected by the statutory
+  care-quality regulator &middot; calverleypark-surgery.example
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">{{ vendor.name }}</div>
+  <div class="contact">
+    2 Calverley Park Row, London SE28 4QN<br>
+    Reception 020 7946 0862 &middot; Secretaries 020 7946 0863<br>
+    reception@calverleypark-surgery.example
+  </div>
+</div>
+
+<p class="letter-date">Our ref: {{ issue.our_ref }} &middot; {{ issue.letter_date }}</p>
+
+<div class="addr-window">
+  {{ issue.recipient.name }}<br>
+  {{ issue.recipient.dept }}<br>
+  {{ issue.recipient.hospital }}<br>
+  {{ issue.recipient.address }}
+</div>
+
+<p>Dear {{ issue.recipient.salutation }},</p>
+
+<div class="ref-block">
+  <strong>Re: {{ person.title }} {{ person.full_name }}, DOB {{ person.date_of_birth }}</strong><br>
+  {{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }},
+  {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}<br>
+  Tel {{ person.phone_uk_mobile }} &middot; Practice ID {{ issue.practice_id }}
+</div>
+
+<p>Thank you for seeing this 31-year-old gentleman, who has presented to us
+three times since registering with the practice in August 2025 with episodes
+of acute sinusitis on a background of long-standing nasal obstruction. Each
+episode has featured frontal facial pressure, purulent nasal discharge and
+disturbed sleep; the most recent, in late December, required a course of
+antibiotics.</p>
+
+<p>{{ person.short_name }} lived in the United States until June 2025 and was
+assessed there in October 2024 at {{ vendors.hospital_us.name }}, where
+examination demonstrated a leftward septal deviation with inferior turbinate
+hypertrophy. He reports partial improvement with a steroid nasal spray and
+saline irrigation, but obstruction of the left nostril has persisted since
+his return to the UK.</p>
+
+<p>On examination today the septum is visibly deviated to the left with
+reduced airflow on that side; there are no polyps and no cervical
+lymphadenopathy. He is otherwise fit and well, a non-smoker, on no regular
+medication apart from fluticasone nasal spray, and has no known drug
+allergies.</p>
+
+<p>I would be grateful for your assessment of his recurrent sinusitis and
+persistent nasal obstruction, and in particular your view on whether
+septoplasty is now appropriate. He understands the referral pathway and is
+happy to attend Southmere Park for outpatient review.</p>
+
+<p>Yours sincerely,</p>
+
+<div class="sig">
+  <p><strong>{{ supporting_cast.gp }}</strong><br>
+  General Practitioner, {{ vendor.name }}</p>
+</div>
+
+<p class="cc">cc: {{ person.full_name }} (patient copy)</p>
+
+</body>
+</html>

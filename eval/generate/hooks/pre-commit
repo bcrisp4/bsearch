@@ -1,0 +1,27 @@
+#!/bin/sh
+# bsearch eval privacy gate (spec: Privacy rules #3).
+#
+# Blocks commits when the generated corpus contains denylisted real personal
+# values. The denylist is local-only and never committed; this hook is
+# installed per-machine (it cannot run in CI by design):
+#
+#   ln -s ../../eval/generate/hooks/pre-commit .git/hooks/pre-commit
+#
+# Override the denylist location with BSEARCH_EVAL_DENYLIST.
+set -e
+
+repo_root=$(git rev-parse --show-toplevel)
+denylist="${BSEARCH_EVAL_DENYLIST:-$HOME/bsearch-eval/denylist.txt}"
+
+# Only gate commits that touch eval/ — the corpus is the leak surface.
+if git diff --cached --quiet -- "$repo_root/eval"; then
+    exit 0
+fi
+
+if [ ! -f "$denylist" ]; then
+    echo "pre-commit: denylist not found at $denylist — refusing to commit eval/ changes blind" >&2
+    exit 1
+fi
+
+exec uv run --project "$repo_root/eval/generate" corpusgen check \
+    --denylist "$denylist" "$repo_root/eval"

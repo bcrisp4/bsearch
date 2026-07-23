@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Form I-9 Employment Eligibility Verification (public form format),
+     completed via an e-signature flow in the payroll provider's onboarding.
+     Page 1 form proper, page 2 lists of acceptable documents, page 3
+     e-signature audit trail. Rendered as a scan (entry: scan true). */
+  body { page: us-letter; }
+  html { font-size: 7.2pt; line-height: 1.2; }
+  .i9-head { display: flex; justify-content: space-between;
+             border-bottom: 1.4pt solid #000; padding-bottom: 1.5mm;
+             margin-bottom: 2mm; align-items: flex-start; }
+  .i9-head h1 { font-size: 12pt; margin: 0; }
+  .i9-head .sub { font-size: 8pt; }
+  .i9-head .right { text-align: right; font-size: 7pt; }
+  .antidisc { font-size: 6.6pt; border: 0.6pt solid #000; padding: 1.2mm 2mm;
+              margin-bottom: 2mm; font-weight: bold; }
+  .secbar { background: #3a3a3a; color: #fff; font-weight: bold;
+            padding: 1mm 2mm; font-size: 8pt; margin-top: 2.5mm; }
+  table.grid { width: 100%; border-collapse: collapse; }
+  table.grid td { border: 0.4pt solid #000; padding: 0.7mm 1.2mm;
+                  vertical-align: top; min-height: 6mm; }
+  table.grid .n { font-size: 5.8pt; display: block; }
+  table.grid .fill { font-family: "Doc Mono", monospace; font-size: 7.6pt; }
+  .attest { display: flex; }
+  .attest .side { writing-mode: vertical-rl; transform: rotate(180deg);
+                  background: #e5e5e5; font-size: 6pt; font-weight: bold;
+                  padding: 1mm 0.5mm; text-align: center;
+                  border: 0.4pt solid #000; }
+  .cols3 { display: flex; gap: 3mm; font-size: 6.6pt; }
+  .cols3 .col { flex: 1; border: 0.5pt solid #000; padding: 1.5mm; }
+  .cols3 h4 { margin: 0 0 1mm; font-size: 7pt; text-align: center;
+              border-bottom: 0.4pt solid #000; padding-bottom: 0.8mm; }
+  .cols3 ol { margin: 0; padding-left: 4mm; }
+  .cols3 li { margin-bottom: 1mm; }
+  .orband { text-align: center; font-weight: bold; align-self: center; }
+  .sig { font-family: "Doc Serif", serif; font-style: italic; font-size: 10pt; }
+  .audit { font-size: 8pt; }
+  .audit .hrow { display: flex; border-bottom: 0.3pt solid #bbb;
+                 padding: 1.6mm 0; gap: 3mm; }
+  .audit .ic { width: 16mm; font-weight: bold; color: #1c6e42; }
+  .audit .ts { width: 40mm; color: #555; font-family: "Doc Mono", monospace;
+               font-size: 6.8pt; }
+  .receipts { background: #e9e9e9; border: 0.5pt solid #000; padding: 1.5mm 2mm;
+              margin-top: 2mm; font-size: 6.6pt; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Form I-9 (public format) &middot; completed electronically via SignWell Flow
+  for Brightpath Payroll onboarding &middot; Doc ID:
+  {{ issue.doc_id }}
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<!-- ============ Page 1: the form proper ============ -->
+<div class="i9-head">
+  <div>
+    <h1>Employment Eligibility Verification</h1>
+    <div class="sub">Form I-9</div>
+  </div>
+  <div class="right">
+    OMB No. 1615-0047<br>Expires {{ issue.form_expiry }}
+  </div>
+</div>
+
+<div class="antidisc">
+  ANTI-DISCRIMINATION NOTICE: It is illegal to discriminate against
+  work-authorized individuals. Employers CANNOT specify which document(s) an
+  employee may present to establish employment authorization and identity.
+</div>
+
+<div class="secbar">Section 1. Employee Information and Attestation
+(Employees must complete and sign Section 1 no later than the first day of
+employment.)</div>
+<table class="grid">
+  <tr>
+    <td style="width: 26%"><span class="n">Last Name (Family Name)</span>
+      <span class="fill">{{ person.full_name.split(" ")[-1] }}</span></td>
+    <td style="width: 26%"><span class="n">First Name (Given Name)</span>
+      <span class="fill">{{ person.full_name.split(" ")[0] }}</span></td>
+    <td style="width: 14%"><span class="n">Middle Initial</span>
+      <span class="fill">N/A</span></td>
+    <td><span class="n">Other Last Names Used (if any)</span>
+      <span class="fill">N/A</span></td>
+  </tr>
+  <tr>
+    <td colspan="2"><span class="n">Address (Street Number and Name), Apt.</span>
+      <span class="fill">{{ issue.address_at_hire }}</span></td>
+    <td><span class="n">City or Town</span>
+      <span class="fill">{{ addresses.us_former.city }}</span></td>
+    <td><span class="n">State / ZIP Code</span>
+      <span class="fill">{{ addresses.us_former.state }}
+      {{ addresses.us_former.zip }}</span></td>
+  </tr>
+  <tr>
+    <td><span class="n">Date of Birth (mm/dd/yyyy)</span>
+      <span class="fill">{{ person.date_of_birth[5:7] }}/{{ person.date_of_birth[8:] }}/{{ person.date_of_birth[:4] }}</span></td>
+    <td><span class="n">U.S. Social Security Number</span>
+      <span class="fill">{{ person.ssn }}</span></td>
+    <td><span class="n">Employee's Email Address</span>
+      <span class="fill">{{ person.email }}</span></td>
+    <td><span class="n">Employee's Telephone Number</span>
+      <span class="fill">{{ person.phone_us }}</span></td>
+  </tr>
+</table>
+
+<div class="attest" style="margin-top: 1.5mm">
+  <div class="side">PENALTY OF PERJURY</div>
+  <table class="grid" style="flex: 1">
+    <tr><td>
+      <span class="n">I attest, under penalty of perjury, that I am (check one
+      of the following boxes):</span>
+      <span class="fill">[ ] 1. A citizen of the United States<br>
+      [ ] 2. A noncitizen national of the United States<br>
+      [ ] 3. A lawful permanent resident (Alien Registration Number)<br>
+      [X] 4. A noncitizen authorized to work until
+      {{ issue.work_auth_until }}</span>
+    </td></tr>
+    <tr><td>
+      <span class="n">For box 4: Foreign Passport Number and Country of
+      Issuance / Form I-94 Admission Number</span>
+      <span class="fill">Passport {{ issue.passport_number }} &mdash; United
+      Kingdom &middot; I-94 No. {{ issue.i94_number }} &middot;
+      {{ issue.visa_class }} classification</span>
+    </td></tr>
+    <tr><td>
+      <span class="n">Signature of Employee / Today's Date (mm/dd/yyyy)</span>
+      <span class="sig">{{ person.full_name }}</span>
+      <span class="fill">&nbsp;&nbsp;{{ issue.employee_sign_date }}
+      (e-signed)</span>
+    </td></tr>
+  </table>
+</div>
+
+<div class="secbar">Section 2. Employer Review and Verification
+(Employers must complete and sign Section 2 within three business days of the
+employee's first day of employment.)</div>
+<table class="grid">
+  <tr>
+    <td style="width: 34%"><span class="n">List A &mdash; Identity and
+      Employment Authorization<br>Document Title / Issuing Authority / Number /
+      Expiration</span>
+      <span class="fill">Foreign passport with Form I-94 &middot; United
+      Kingdom &middot; {{ issue.passport_number }} &middot;
+      {{ issue.passport_expiry }}<br>
+      Form I-94 &middot; {{ issue.i94_number }} &middot;
+      {{ issue.work_auth_until }}</span></td>
+    <td class="orband" style="width: 6%">OR</td>
+    <td style="width: 27%"><span class="n">List B &mdash; Identity</span>
+      <span class="fill">N/A</span></td>
+    <td class="orband" style="width: 6%">AND</td>
+    <td><span class="n">List C &mdash; Employment Authorization</span>
+      <span class="fill">N/A</span></td>
+  </tr>
+  <tr>
+    <td colspan="5"><span class="n">Additional Information</span>
+      <span class="fill">{{ issue.additional_info }}</span></td>
+  </tr>
+  <tr>
+    <td colspan="5"><span class="n">Certification: I attest, under penalty of
+      perjury, that (1) I have examined the documentation presented by the
+      above-named employee, (2) the above-listed documentation appears to be
+      genuine and to relate to the employee named, and (3) to the best of my
+      knowledge, the employee is authorized to work in the United States.</span>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2"><span class="n">Signature of Employer or Authorized
+      Representative / Title</span>
+      <span class="sig">{{ supporting_cast.hr_manager }}</span>
+      <span class="fill">&nbsp;&mdash; People Operations Manager
+      (e-signed)</span></td>
+    <td><span class="n">Today's Date</span>
+      <span class="fill">{{ issue.employer_sign_date }}</span></td>
+    <td colspan="2"><span class="n">Employer's Business Name and Address</span>
+      <span class="fill">{{ employers.us_former.name }},
+      {{ employers.us_former.address }}</span></td>
+  </tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ============ Page 2: lists of acceptable documents ============ -->
+<h2 style="text-align: center">LISTS OF ACCEPTABLE DOCUMENTS<br>
+<span style="font-size: 8pt; font-weight: normal">All documents containing an
+expiration date must be unexpired.</span></h2>
+<div class="cols3">
+  <div class="col">
+    <h4>LIST A<br>Documents that Establish Both Identity and Employment
+    Authorization</h4>
+    <ol>
+      <li>U.S. Passport or U.S. Passport Card</li>
+      <li>Permanent Resident Card or Alien Registration Receipt Card</li>
+      <li>Foreign passport that contains a temporary I-551 stamp or notation</li>
+      <li>Employment Authorization Document that contains a photograph</li>
+      <li>For an individual temporarily authorized to work for a specific
+      employer, foreign passport with an Arrival/Departure Record (Form I-94)
+      bearing the same name and an endorsement of the individual's status</li>
+      <li>Passport from certain freely associated states with Form I-94</li>
+    </ol>
+  </div>
+  <div class="col">
+    <h4>LIST B<br>Documents that Establish Identity</h4>
+    <ol>
+      <li>Driver's license or ID card issued by a State, provided it contains
+      a photograph or identifying information</li>
+      <li>ID card issued by federal, state or local government agencies</li>
+      <li>School ID card with a photograph</li>
+      <li>Voter's registration card</li>
+      <li>U.S. Military card or draft record</li>
+      <li>Military dependent's ID card</li>
+      <li>Native American tribal document</li>
+      <li>Driver's license issued by a Canadian government authority</li>
+    </ol>
+    <p style="font-size: 6.2pt">For persons under age 18 who are unable to
+    present a document listed above: school record, clinic record, or
+    day-care record.</p>
+  </div>
+  <div class="col">
+    <h4>LIST C<br>Documents that Establish Employment Authorization</h4>
+    <ol>
+      <li>A Social Security Account Number card, unless the card includes a
+      restrictive endorsement</li>
+      <li>Certification of report of birth abroad issued by the consular
+      authorities</li>
+      <li>Original or certified copy of a birth certificate issued by a
+      State, county, or municipal authority bearing an official seal</li>
+      <li>Native American tribal document</li>
+      <li>U.S. Citizen ID Card</li>
+      <li>Identification Card for Use of Resident Citizen</li>
+      <li>Employment authorization document issued by the federal
+      immigration authority (not a List A document)</li>
+    </ol>
+  </div>
+</div>
+<div class="receipts">
+  <strong>Acceptable Receipts.</strong> A receipt showing that the individual
+  has applied to replace a document that was lost, stolen or damaged may be
+  presented in place of the document, and is valid for 90 days from the date
+  of hire.
+</div>
+
+<div class="page-break"></div>
+
+<!-- ============ Page 3: e-signature audit trail ============ -->
+<div class="wm" style="font-size: 13pt; font-weight: bold; margin-bottom: 3mm">
+  signwell<span style="color: #1c6e42">flow</span> &mdash; Signature Certificate
+</div>
+<table class="grid audit" style="margin-bottom: 4mm">
+  <tr><td style="width: 30%"><span class="n">Title</span>
+    <span class="fill">I-9 Onboarding &mdash; {{ person.full_name }}</span></td>
+    <td><span class="n">File name</span>
+    <span class="fill">i9_{{ person.full_name.split(" ")[-1] | lower }}_onboarding.pdf</span></td></tr>
+  <tr><td><span class="n">Document ID</span>
+    <span class="fill">{{ issue.doc_id }}</span></td>
+    <td><span class="n">Status</span>
+    <span class="fill" style="color: #1c6e42; font-weight: bold">&#10003;
+    Completed</span></td></tr>
+</table>
+
+<h3>Document History</h3>
+<div class="audit">
+  {% for ev in issue.audit_events %}
+  <div class="hrow">
+    <span class="ic">{{ ev.kind }}</span>
+    <span class="ts">{{ ev.timestamp }}</span>
+    <span>{{ ev.detail }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<p style="font-size: 6.8pt; color: #b02a2a; margin-top: 3mm">
+Note: signer identity was verified by email authentication only. IP addresses
+recorded above are those reported by the signer's browser session.</p>
+
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand { color: #b0233a; font-size: 16pt; }
+  .brand .strap { display: block; font-size: 8pt; font-weight: normal; color: #666; letter-spacing: 0.3pt; }
+  .letter-date { text-align: right; margin: 2mm 0 4mm; }
+  h1 { color: #b0233a; }
+  .impact { background: #f9eef0; border-left: 1.6mm solid #b0233a; }
+  .sig { margin-top: 8mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} is a registered charity in England and Wales
+  (no. 1198877) and a company limited by guarantee (no. 07714402).
+  Registered office: Hartfield House, 62 Bellchapel Road, London EC1Y 8XX.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">{{ vendor.name }}
+    <span class="strap">Funding research and support for every heart</span>
+  </div>
+  <div class="contact">
+    Hartfield House, 62 Bellchapel Road, London EC1Y 8XX<br>
+    020 7946 0955 &middot; hello@hartfieldheart.example<br>
+    Supporter reference: {{ vendor.supporter_ref }}
+  </div>
+</div>
+
+<p class="letter-date">{{ issue.letter_date }}</p>
+
+<div class="addr-window">
+  {{ person.title }} {{ person.full_name }}<br>
+  {{ addresses.uk_current.line1 }}<br>
+  {{ addresses.uk_current.line2 }}<br>
+  {{ addresses.uk_current.city }}<br>
+  {{ addresses.uk_current.postcode }}
+</div>
+
+<h1>Thank you, {{ person.short_name }} &mdash; your gift is already at work</h1>
+
+<p>Dear {{ person.short_name }},</p>
+
+<p>Thank you so much for your generous donation of
+<strong>&pound;{{ issue.amount_display }}</strong>, which we received on
+{{ issue.received_date }}. And because you ticked the Gift Aid box, the
+government adds another <strong>&pound;{{ issue.gift_aid_value }}</strong>
+at no cost to you &mdash; making your gift worth
+&pound;{{ issue.total_value }} to people living with heart conditions.</p>
+
+<div class="panel impact">
+  <h3>What a gift like yours makes possible</h3>
+  <p>&pound;{{ issue.amount_display }} funds a full day of specialist nurse
+  cover on our heart helpline &mdash; a lifeline for people newly diagnosed
+  with a heart condition, and for their families, at the moment they need
+  clear answers most.</p>
+</div>
+
+<p>Gifts like yours also power our research programme. This year we are
+funding fourteen research fellowships into inherited heart conditions,
+which often go undetected until they affect a young, apparently healthy
+person. Early findings from work we funded are already changing how
+families are screened after a diagnosis.</p>
+
+<p>Closer to home, our community defibrillator fund placed 212 public
+defibrillators last year, each registered with the ambulance service and
+maintained by trained local volunteers. Survival after cardiac arrest more
+than doubles when a defibrillator is used in the first few minutes.</p>
+
+<p>We will keep you posted on the difference your support makes through our
+supporter magazine, <em>Heartbeat</em>. If you would rather hear from us
+less often &mdash; or not at all &mdash; just let us know at
+hartfieldheart.example/preferences or on 020 7946 0955.</p>
+
+<p>With warmest thanks,</p>
+
+<div class="sig">
+  <p><strong>{{ issue.signatory }}</strong><br>
+  Supporter Care Team, {{ vendor.name }}</p>
+</div>
+
+<div class="small-print">
+  <p><strong>Your donation record.</strong> Please keep this letter as your
+  receipt. Quote supporter reference {{ vendor.supporter_ref }} in any
+  correspondence about your gift. We are registered with the fundraising
+  standards body and follow its code in all our fundraising.</p>
+</div>
+
+</body>
+</html>

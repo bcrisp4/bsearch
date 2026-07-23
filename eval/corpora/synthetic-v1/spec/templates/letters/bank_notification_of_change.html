@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand { color: #14395c; letter-spacing: 1.2pt; }
+  .letter-date { text-align: right; margin: 2mm 0 4mm; }
+  .effective { background: #eef2f7; border-left: 1.6mm solid #14395c; }
+  ul.changes { padding-left: 5mm; }
+  ul.changes li { margin-bottom: 2.4mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ banks.uk_current_account.institution }} plc is registered in England and
+  Wales (company no. 01984407). Registered office: 1 Ferrand Court, London
+  EC2V 9AA. Authorised and regulated by the UK&rsquo;s statutory financial
+  regulators. <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">FERRAND BANK</div>
+  <div class="contact">
+    1 Ferrand Court, London EC2V 9AA<br>
+    Telephone banking 020 7946 0700 (24 hours)<br>
+    ferrandbank.example
+  </div>
+</div>
+
+<p class="letter-date">{{ issue.letter_date }}</p>
+
+<div class="addr-window">
+  {{ person.title }} {{ person.full_name }}<br>
+  {{ addresses.uk_current.line1 }}<br>
+  {{ addresses.uk_current.line2 }}<br>
+  {{ addresses.uk_current.city }}<br>
+  {{ addresses.uk_current.postcode }}
+</div>
+
+<h1>We&rsquo;re making changes to your Personal Banking Terms</h1>
+
+<p>Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},</p>
+
+<p>We review our Personal Banking Terms and Conditions and our charges
+regularly. This letter tells you about changes that affect your Everyday
+Current Account (sort code {{ banks.uk_current_account.sort_code }}, account
+number ending {{ banks.uk_current_account.account_number[-4:] }}).</p>
+
+<div class="panel effective">
+  <h3>These changes take effect on {{ issue.effective_date }}</h3>
+  <p>You don&rsquo;t need to do anything if you&rsquo;re happy with them.</p>
+</div>
+
+<h2>What&rsquo;s changing</h2>
+
+<ul class="changes">
+  {% for c in issue.changes %}
+  <li><strong>{{ c.title }}.</strong> {{ c.body }}</li>
+  {% endfor %}
+</ul>
+
+<h2>If you&rsquo;re not happy with these changes</h2>
+
+<p>You can close your account, or switch to another provider, at any time
+before {{ issue.effective_date }} without charge and without notice. If you
+keep using your account after that date, the updated terms will apply. The
+full updated Personal Banking Terms and Conditions are available now at
+ferrandbank.example/terms, in any branch, or by post on request.</p>
+
+<p>If you have questions about any of these changes, call us on
+020 7946 0700 &mdash; we&rsquo;re here 24 hours a day.</p>
+
+<p>Yours sincerely,</p>
+
+<p><strong>{{ issue.signatory }}</strong><br>
+Head of Everyday Banking</p>
+
+<div class="small-print">
+  <p><strong>Protecting your money.</strong> Your eligible deposits with
+  {{ banks.uk_current_account.institution }} are protected up to &pound;85,000
+  by the UK&rsquo;s statutory deposit guarantee scheme.</p>
+  <p><strong>Accessible formats.</strong> We can send this letter in braille,
+  large print or audio &mdash; call 020 7946 0700 to arrange it.</p>
+</div>
+
+</body>
+</html>

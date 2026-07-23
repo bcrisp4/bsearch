@@ -1,0 +1,180 @@
+# synthetic-v1 corpus blueprint (spec: docs/specs/2026-07-20-eval-corpus-generation.md).
+#
+# Declarative doc-mix plan the generator renders from spec/templates/.
+# Counts and shapes are informed by shape-only analysis of real samples
+# (local notes, never committed). All values come from persona.yaml.
+
+name: synthetic-v1
+version: 1
+description: >
+  Fictional personal-document corpus for the bsearch retrieval eval:
+  UK-resident persona with a former-US-residency chapter, generating the
+  bill/statement/tax/letter/notes mix of a real home folder, rendered to
+  native formats and converted through bscribe.
+
+# ~10-15% of rendered PDFs are produced as image-only "scans" (150 dpi
+# greyscale JPEG-in-PDF, seeded rotation/noise) to exercise the OCR path.
+# Marked per-entry with `scan: true`.
+
+document_sets:
+  # --- Distractor series (near-miss engines). Every series entry MUST
+  # carry per-issue prose variation (spec rule), not just field changes.
+  energy_bills:
+    vendor: energy            # Harwood Energy
+    format: pdf
+    count: 12                 # monthly, 2pp each
+    series: monthly
+    prose_variation_slots:
+      - tariff change insert
+      - disputed standing charge exchange   # golden target
+      - estimated vs actual meter reading
+      - price cap explainer
+      - direct debit reset notice
+  broadband_bills:
+    vendor: broadband
+    format: pdf
+    count: 12
+    series: monthly
+    prose_variation_slots:
+      - mid-contract price rise letter
+      - one-off engineer visit charge       # golden target
+      - router upgrade offer
+  water_bills:
+    vendor: water
+    format: pdf
+    count: 4
+    series: quarterly
+  uk_current_statements:
+    vendor: uk_current_account
+    format: pdf
+    count: 12                 # monthly; row counts vary 8-40
+    series: monthly
+    prose_variation_slots:
+      - FSCS notice rotation
+      - fee change insert
+      - fraud-warning panel
+  uk_savings_statements: {vendor: uk_savings, format: pdf, count: 4, series: quarterly}
+  us_checking_statements:
+    vendor: us_checking
+    format: pdf
+    count: 8                  # US-era only (timeline)
+    series: monthly
+  us_savings_statements: {vendor: us_savings, format: pdf, count: 3, series: quarterly}
+  uk_payslips:
+    vendor: uk_employer
+    format: pdf
+    count: 12
+    series: monthly
+    prose_variation_slots: [bonus month, pension uplift note, tax code change]
+  us_paystubs: {vendor: us_employer, format: pdf, count: 8, series: biweekly-sampled}
+  council_tax_bills:
+    vendor: council
+    format: pdf
+    count: 3                  # annual near-miss series
+    series: yearly
+  boiler_service_invoices:
+    vendor: heating_engineer  # Harwood Heating — near-miss name vs Harwood Energy
+    format: pdf
+    count: 3
+    series: yearly
+    prose_variation_slots: [part replacement, safety advisory]   # golden target
+
+  # --- Singles and small clusters
+  tax_documents:
+    entries:
+      - {name: us_tax_return_binder, format: pdf, pages: 50, outlier: length}  # form grids
+      - {name: us_tax_settlement_letter, format: pdf}
+      - {name: w2_year1, format: pdf}
+      - {name: w2_year2, format: pdf}
+      - {name: uk_self_assessment_year1, format: pdf}
+      - {name: uk_self_assessment_year2, format: pdf}
+      - {name: p60_year1, format: pdf}
+      - {name: p60_year2, format: pdf}
+      - {name: i9_employment_form, format: pdf}
+  bank_certificates:
+    entries:
+      - {name: uk_interest_certificate, format: pdf}
+      - {name: us_1042s_checking, format: pdf, scan: true}
+      - {name: us_1042s_savings, format: pdf, scan: true}    # near-identical pair
+      - {name: interest_summary, format: xlsx}
+      - {name: isa_statement_q1, format: pdf}
+      - {name: isa_statement_q2, format: pdf}
+  insurance:
+    entries:
+      - {name: us_renters_policy_year1, format: pdf, pages: 45, outlier: length}
+      - {name: us_renters_policy_year2, format: pdf}     # declarations differ only
+      - {name: us_disability_policy, format: pdf}
+      - {name: uk_contents_policy_year1, format: pdf}
+      - {name: uk_contents_policy_year2, format: pdf}
+      - {name: policy_change_notice_1, format: pdf}      # pure-prose series
+      - {name: policy_change_notice_2, format: pdf}
+      - {name: policy_change_notice_3, format: pdf}
+  letters:
+    entries:
+      - {name: gp_referral_letter, format: pdf}
+      - {name: gp_test_results_letter, format: pdf}
+      - {name: hospital_appointment_letter, format: pdf, scan: true}
+      - {name: us_clinical_note_visit1, format: pdf}     # portal export style
+      - {name: us_clinical_note_visit2, format: pdf}
+      - {name: bank_account_opening_letter, format: pdf, scan: true}
+      - {name: bank_address_confirmation_letter, format: docx}
+      - {name: bank_notification_of_change, format: pdf}
+      - {name: council_ctax_moving_letter, format: pdf}
+      - {name: council_parking_permit_letter, format: pdf, scan: true}
+      - {name: student_finance_statement_letter, format: pdf}
+      - {name: student_finance_repayment_letter, format: pdf}
+      - {name: student_finance_interest_letter, format: pdf}
+      - {name: charity_donation_form, format: pdf, scan: true}  # handwritten-style
+      - {name: charity_thanks_letter, format: pdf}
+      - {name: deposit_scheme_certificate, format: pdf}
+      - {name: agency_renewal_letter, format: docx}
+      - {name: covid_vaccination_record, format: pdf}
+  tenancy_legal:
+    entries:
+      - {name: tenancy_agreement, format: pdf, pages: 24, outlier: length}  # e-sig page, clause tree
+      - {name: employment_terms_of_offer, format: pdf}
+      - {name: tenancy_inventory, format: pdf}
+      - {name: guarantor_deed, format: pdf}
+  education_certs:
+    entries:
+      - {name: degree_transcript, format: pdf}
+      - {name: degree_diploma, format: pdf, scan: true}
+      - {name: university_offer_letter, format: pdf, scan: true}
+      - {name: cv, format: pdf}
+      - {name: grade_calculation, format: xlsx}
+      - {name: course_certificate_1, format: pdf}
+      - {name: course_certificate_2, format: pdf}
+      - {name: epc_certificate, format: pdf}         # A-G arrow chart
+      - {name: eicr_certificate, format: pdf, scan: true}  # wide landscape table
+      - {name: museum_eticket, format: pdf}
+      - {name: conference_badge_invoice, format: pdf}
+  quotes_invoices:
+    entries:
+      - {name: heatpump_quote_vendor_a, format: pdf}   # golden target pair:
+      - {name: heatpump_quote_vendor_b, format: pdf}   # competing quotes
+      - {name: furniture_invoice, format: pdf}
+      - {name: electrician_invoice, format: pdf}
+      - {name: mattress_invoice, format: docx}
+  credit_reports:
+    entries:
+      - {name: credit_report_date1, format: pdf, pages: 30}  # 12-col status grids
+      - {name: credit_report_date2, format: pdf}
+
+  # --- Native markdown (no conversion — as in production)
+  notes:
+    format: markdown
+    count: 50
+    themes:
+      - home projects (boiler research cross-referencing the quotes/invoices)
+      - meeting and work notes
+      - travel planning
+      - tech how-tos and homelab notes
+      - reading/research summaries
+      - recipes and misc lists
+    # Notes deliberately cross-reference other corpus documents by topic
+    # (not path) to power multi-doc golden queries.
+
+totals:
+  documents: ~200
+  scanned_fraction: ~12% of PDFs
+  length_outliers: [us_tax_return_binder, us_renters_policy_year1, tenancy_agreement, credit_report_date1]

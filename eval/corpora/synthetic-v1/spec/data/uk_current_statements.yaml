@@ -1,0 +1,559 @@
+# Per-issue data for the Ferrand Bank Everyday Current Account monthly
+# statement series (12 issues, corpus.yaml: uk_current_statements),
+# Aug 2025 - Jul 2026. All balances chain issue to issue and every row's
+# balance column is arithmetically correct (generated, then verified).
+#
+# Cross-document consistency (deliberate — golden-query material):
+#   - Harwood Energy DDs on the 19th match energy_bills.yaml totals
+#     (61.40, 65.77, 68.09, 78.68, 89.29, 102.21, 111.30, 99.58, 89.51,
+#     77.55, 70.92, 65.60).
+#   - Loopfibre DDs on the 14th match broadband_bills.yaml (34.99 x 5,
+#     99.99 in Feb — engineer visit, 34.99 x 2, 37.99 x 3 after the
+#     1 May price rise); first bill paid by card 18 Aug 2025.
+#   - Brackenwater bill payments match water_bills.yaml (119.69, 133.21,
+#     128.05).
+#   - Council tax DDs match council_tax_bills.yaml (106.93, then 7 x
+#     106.90 for 2025-26; 134.94 from 1 Apr 2026 for 2026-27 — note the
+#     two DDs on 1 Apr). The one-off 740.00 payment on 14 Apr 2026 is the
+#     final settlement for the previous-address account 41220974A (spec
+#     golden query: "statement showing the GBP 740 council tax payment").
+#   - Harwood Heating invoices HH-1892 (120.00) and HH-2306 (295.08) per
+#     boiler_service_invoices.yaml; Brayfield Electrical BE-4471 (227.52)
+#     and Calder & Roe order CR-118427 (923.00) per quotes_invoices.yaml;
+#     Aurellon survey fee 150.00 per the heat pump quote; Hartfield Heart
+#     Trust donation 150.00 received 18 Feb 2026 per letters.yaml.
+#   - Tenancy: deposit 1,850.00 (= 5 weeks at 370/week) matches the
+#     deposit scheme certificate; rent 1,603.33/month (370 x 52 / 12) as
+#     a standing order to Wrenmoor Estates from 1 Sep 2025 (August rent
+#     paid to the letting agency at move-in).
+#   - Salary: Halewick Systems net pay 2,379.86 (gross c. 35,676 — the
+#     figure implied by the 54.00/month student-loan deduction in
+#     letters.yaml), rising to 2,439.78 from April 2026. Payslip authors:
+#     please match (partial first month 1,405.72 on 28 Aug 2025).
+#   - Overdraft EAR 34.9% until the 18 May 2026 change (33.9% after),
+#     matching bank_notification_of_change in letters.yaml.
+# Prose-variation slots per corpus.yaml: deposit-guarantee notice
+# rotation, fee change insert, fraud-warning panels.
+template: statements/uk_current_statement.html
+vendor_key: null
+issues:
+  - id: ferrand-current-2025-08
+    sheet: "01"
+    statement_date: "31 August 2025"
+    period: "1 August 2025 to 31 August 2025"
+    previous_balance: "0.00"
+    paid_in: "14,171.82"
+    withdrawn: "6,964.18"
+    new_balance: "7,207.64"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "Welcome to your Ferrand Everyday Current Account"
+      body:
+        - >-
+          Thank you for opening your account with us on 1 August. This is your
+          first statement; from now on we'll produce one at the end of each
+          calendar month. Check the entries and tell us straight away if
+          something looks wrong.
+        - >-
+          Your eligible deposits at Ferrand Bank are protected up to £85,000
+          by the UK deposit guarantee scheme. The full information sheet is in
+          your welcome pack and at ferrandbank.example/protection.
+    transactions:
+      - {date: "01 Aug", desc: "Debit card funding payment — account opening", money_out: "", money_in: "500.00", balance: "500.00"}
+      - {date: "02 Aug", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "42.16", money_in: "", balance: "457.84"}
+      - {date: "04 Aug", desc: "International credit — COMMONWEALTH HARBOR BK, USD 16,500.00 at 0.74340", money_out: "", money_in: "12,266.10", balance: "12,723.94"}
+      - {date: "04 Aug", desc: "Faster Payment — PENFOLD & REACH, tenancy deposit PR/RED/1207", money_out: "1,850.00", money_in: "", balance: "10,873.94"}
+      - {date: "04 Aug", desc: "Faster Payment — PENFOLD & REACH, first month's rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "9,270.61"}
+      - {date: "07 Aug", desc: "Card payment — KELDWICK DIY, LONDON GB", money_out: "34.60", money_in: "", balance: "9,236.01"}
+      - {date: "09 Aug", desc: "Card payment — HABERLEY HOME STORE, LONDON GB", money_out: "58.35", money_in: "", balance: "9,177.66"}
+      - {date: "09 Aug", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "38.74", money_in: "", balance: "9,138.92"}
+      - {date: "11 Aug", desc: "Transfer to Ferrand Instant Saver 00918282", money_out: "2,000.00", money_in: "", balance: "7,138.92"}
+      - {date: "11 Aug", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 10 Aug", money_out: "18.40", money_in: "", balance: "7,120.52"}
+      - {date: "13 Aug", desc: "Cash withdrawal — FERRAND ATM, CALVERLEY GROVE", money_out: "50.00", money_in: "", balance: "7,070.52"}
+      - {date: "16 Aug", desc: "Card payment — THE COPPER KETTLE, LONDON GB", money_out: "31.80", money_in: "", balance: "7,038.72"}
+      - {date: "16 Aug", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "51.02", money_in: "", balance: "6,987.70"}
+      - {date: "18 Aug", desc: "Card payment — LOOPFIBRE, first bill LF3308127", money_out: "34.99", money_in: "", balance: "6,952.71"}
+      - {date: "18 Aug", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 17 Aug", money_out: "24.60", money_in: "", balance: "6,928.11"}
+      - {date: "19 Aug", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "61.40", money_in: "", balance: "6,866.71"}
+      - {date: "20 Aug", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "6,855.71"}
+      - {date: "21 Aug", desc: "Card payment — ELM YARD PIZZA, LONDON GB", money_out: "19.45", money_in: "", balance: "6,836.26"}
+      - {date: "23 Aug", desc: "Card payment — CALDER & ROE FURNITURE, order CR-118427", money_out: "923.00", money_in: "", balance: "5,913.26"}
+      - {date: "23 Aug", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "44.31", money_in: "", balance: "5,868.95"}
+      - {date: "26 Aug", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 24 Aug", money_out: "21.30", money_in: "", balance: "5,847.65"}
+      - {date: "27 Aug", desc: "Card payment — CALVERLEY PHARMACY, LONDON GB", money_out: "9.15", money_in: "", balance: "5,838.50"}
+      - {date: "28 Aug", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "1,405.72", balance: "7,244.22"}
+      - {date: "30 Aug", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "36.58", money_in: "", balance: "7,207.64"}
+  - id: ferrand-current-2025-09
+    sheet: "02"
+    statement_date: "30 September 2025"
+    period: "1 September 2025 to 30 September 2025"
+    previous_balance: "7,207.64"
+    paid_in: "2,379.86"
+    withdrawn: "2,360.10"
+    new_balance: "7,227.40"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "Go paperless"
+      body:
+        - >-
+          Get your statements the moment they're ready, searchable and in one
+          place, in the Ferrand Mobile app. Switch to paperless in Settings,
+          and switch back whenever you like.
+    transactions:
+      - {date: "01 Sep", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "5,604.31"}
+      - {date: "01 Sep", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "106.93", money_in: "", balance: "5,497.38"}
+      - {date: "01 Sep", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 31 Aug", money_out: "23.70", money_in: "", balance: "5,473.68"}
+      - {date: "02 Sep", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "5,323.68"}
+      - {date: "06 Sep", desc: "Card payment — HABERLEY HOME STORE, LONDON GB", money_out: "27.90", money_in: "", balance: "5,295.78"}
+      - {date: "06 Sep", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "47.23", money_in: "", balance: "5,248.55"}
+      - {date: "08 Sep", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 07 Sep", money_out: "26.80", money_in: "", balance: "5,221.75"}
+      - {date: "09 Sep", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "3.80", money_in: "", balance: "5,217.95"}
+      - {date: "12 Sep", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "5,207.96"}
+      - {date: "12 Sep", desc: "Card payment — NOODLE BARN, LONDON GB", money_out: "18.20", money_in: "", balance: "5,189.76"}
+      - {date: "13 Sep", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "39.86", money_in: "", balance: "5,149.90"}
+      - {date: "15 Sep", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "34.99", money_in: "", balance: "5,114.91"}
+      - {date: "15 Sep", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 14 Sep", money_out: "24.60", money_in: "", balance: "5,090.31"}
+      - {date: "19 Sep", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "65.77", money_in: "", balance: "5,024.54"}
+      - {date: "20 Sep", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "52.44", money_in: "", balance: "4,972.10"}
+      - {date: "22 Sep", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "4,961.10"}
+      - {date: "22 Sep", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 21 Sep", money_out: "27.90", money_in: "", balance: "4,933.20"}
+      - {date: "23 Sep", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.20", money_in: "", balance: "4,929.00"}
+      - {date: "24 Sep", desc: "Card payment — VELLUM BOOKS, LONDON GB", money_out: "14.99", money_in: "", balance: "4,914.01"}
+      - {date: "26 Sep", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,379.86", balance: "7,293.87"}
+      - {date: "27 Sep", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "41.07", money_in: "", balance: "7,252.80"}
+      - {date: "29 Sep", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 28 Sep", money_out: "25.40", money_in: "", balance: "7,227.40"}
+  - id: ferrand-current-2025-10
+    sheet: "03"
+    statement_date: "31 October 2025"
+    period: "1 October 2025 to 31 October 2025"
+    previous_balance: "7,227.40"
+    paid_in: "2,379.86"
+    withdrawn: "2,489.24"
+    new_balance: "7,118.02"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "How your money is protected"
+      body:
+        - >-
+          Your eligible deposits at Ferrand Bank are protected up to a total
+          of £85,000 by the UK deposit guarantee scheme. Any deposits you hold
+          above the limit are unlikely to be covered. This protection applies
+          per person, per authorised bank, and covers the total across all
+          your Ferrand accounts.
+    transactions:
+      - {date: "01 Oct", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "5,624.07"}
+      - {date: "01 Oct", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "106.90", money_in: "", balance: "5,517.17"}
+      - {date: "02 Oct", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "5,367.17"}
+      - {date: "04 Oct", desc: "Card payment — THE COPPER KETTLE, LONDON GB", money_out: "26.40", money_in: "", balance: "5,340.77"}
+      - {date: "04 Oct", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "45.62", money_in: "", balance: "5,295.15"}
+      - {date: "06 Oct", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 05 Oct", money_out: "26.80", money_in: "", balance: "5,268.35"}
+      - {date: "07 Oct", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "3.80", money_in: "", balance: "5,264.55"}
+      - {date: "10 Oct", desc: "Faster Payment — HARWOOD HEATING, invoice HH-1892", money_out: "120.00", money_in: "", balance: "5,144.55"}
+      - {date: "11 Oct", desc: "Cash withdrawal — FERRAND ATM, CALVERLEY GROVE", money_out: "30.00", money_in: "", balance: "5,114.55"}
+      - {date: "11 Oct", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "38.19", money_in: "", balance: "5,076.36"}
+      - {date: "13 Oct", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "5,066.37"}
+      - {date: "13 Oct", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 12 Oct", money_out: "24.60", money_in: "", balance: "5,041.77"}
+      - {date: "14 Oct", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "34.99", money_in: "", balance: "5,006.78"}
+      - {date: "17 Oct", desc: "Card payment — CALVERLEY PHARMACY, LONDON GB", money_out: "12.70", money_in: "", balance: "4,994.08"}
+      - {date: "18 Oct", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "49.83", money_in: "", balance: "4,944.25"}
+      - {date: "20 Oct", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "4,933.25"}
+      - {date: "20 Oct", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "68.09", money_in: "", balance: "4,865.16"}
+      - {date: "20 Oct", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "4,862.67"}
+      - {date: "20 Oct", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 19 Oct", money_out: "28.30", money_in: "", balance: "4,834.37"}
+      - {date: "21 Oct", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.60", money_in: "", balance: "4,829.77"}
+      - {date: "25 Oct", desc: "Card payment — ELM YARD PIZZA, LONDON GB", money_out: "22.15", money_in: "", balance: "4,807.62"}
+      - {date: "25 Oct", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "43.56", money_in: "", balance: "4,764.06"}
+      - {date: "27 Oct", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 26 Oct", money_out: "25.90", money_in: "", balance: "4,738.16"}
+      - {date: "28 Oct", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,379.86", balance: "7,118.02"}
+  - id: ferrand-current-2025-11
+    sheet: "04"
+    statement_date: "30 November 2025"
+    period: "1 November 2025 to 30 November 2025"
+    previous_balance: "7,118.02"
+    paid_in: "2,379.86"
+    withdrawn: "2,729.70"
+    new_balance: "6,768.18"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "We will never ask you to move money"
+      body:
+        - >-
+          Fraudsters are calling customers pretending to be their bank and
+          urging them to move money to a “safe account”. Ferrand Bank will
+          never ask you to transfer money, read out a full password, or hand
+          your card to a courier. If you get a call like this, hang up and
+          call us on 020 7946 0552 using a different phone if you can.
+    transactions:
+      - {date: "01 Nov", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "40.92", money_in: "", balance: "7,077.10"}
+      - {date: "03 Nov", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "5,473.77"}
+      - {date: "03 Nov", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "106.90", money_in: "", balance: "5,366.87"}
+      - {date: "03 Nov", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "5,216.87"}
+      - {date: "03 Nov", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 02 Nov", money_out: "26.80", money_in: "", balance: "5,190.07"}
+      - {date: "04 Nov", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.20", money_in: "", balance: "5,185.87"}
+      - {date: "08 Nov", desc: "Card payment — KELDWICK DIY, LONDON GB", money_out: "16.25", money_in: "", balance: "5,169.62"}
+      - {date: "08 Nov", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "53.27", money_in: "", balance: "5,116.35"}
+      - {date: "10 Nov", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 09 Nov", money_out: "24.60", money_in: "", balance: "5,091.75"}
+      - {date: "12 Nov", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "5,081.76"}
+      - {date: "14 Nov", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "34.99", money_in: "", balance: "5,046.77"}
+      - {date: "15 Nov", desc: "Card payment — NOODLE BARN, LONDON GB", money_out: "21.60", money_in: "", balance: "5,025.17"}
+      - {date: "15 Nov", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "38.61", money_in: "", balance: "4,986.56"}
+      - {date: "17 Nov", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 16 Nov", money_out: "27.40", money_in: "", balance: "4,959.16"}
+      - {date: "19 Nov", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "78.68", money_in: "", balance: "4,880.48"}
+      - {date: "20 Nov", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "4,869.48"}
+      - {date: "20 Nov", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "4,866.99"}
+      - {date: "22 Nov", desc: "Card payment — VELLUM BOOKS, LONDON GB", money_out: "9.99", money_in: "", balance: "4,857.00"}
+      - {date: "22 Nov", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "46.14", money_in: "", balance: "4,810.86"}
+      - {date: "24 Nov", desc: "Faster Payment — BRAYFIELD ELECTRICAL, invoice BE-4471", money_out: "227.52", money_in: "", balance: "4,583.34"}
+      - {date: "24 Nov", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 23 Nov", money_out: "26.80", money_in: "", balance: "4,556.54"}
+      - {date: "25 Nov", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "3.80", money_in: "", balance: "4,552.74"}
+      - {date: "27 Nov", desc: "Bill payment — BRACKENWATER BW-2210553", money_out: "119.69", money_in: "", balance: "4,433.05"}
+      - {date: "28 Nov", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,379.86", balance: "6,812.91"}
+      - {date: "29 Nov", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "44.73", money_in: "", balance: "6,768.18"}
+  - id: ferrand-current-2025-12
+    sheet: "05"
+    statement_date: "31 December 2025"
+    period: "1 December 2025 to 31 December 2025"
+    previous_balance: "6,768.18"
+    paid_in: "2,419.86"
+    withdrawn: "3,027.18"
+    new_balance: "6,160.86"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "Payments over the festive period"
+      body:
+        - >-
+          Faster Payments run as normal every day including bank holidays.
+          Direct Debits and standing orders due on 25, 26 or 28 December will
+          leave your account on the next working day, 29 December. Branches
+          close early on 24 December.
+    transactions:
+      - {date: "01 Dec", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "5,164.85"}
+      - {date: "01 Dec", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "106.90", money_in: "", balance: "5,057.95"}
+      - {date: "01 Dec", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 30 Nov", money_out: "25.90", money_in: "", balance: "5,032.05"}
+      - {date: "02 Dec", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "4,882.05"}
+      - {date: "05 Dec", desc: "Card payment — VELLUM BOOKS, LONDON GB", money_out: "34.50", money_in: "", balance: "4,847.55"}
+      - {date: "06 Dec", desc: "Card payment — CHESHAM & DAUGHTERS GIFTS, LONDON GB", money_out: "47.25", money_in: "", balance: "4,800.30"}
+      - {date: "06 Dec", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "49.37", money_in: "", balance: "4,750.93"}
+      - {date: "08 Dec", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 07 Dec", money_out: "28.30", money_in: "", balance: "4,722.63"}
+      - {date: "09 Dec", desc: "Transfer to Ferrand Instant Saver 00918282", money_out: "400.00", money_in: "", balance: "4,322.63"}
+      - {date: "09 Dec", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.60", money_in: "", balance: "4,318.03"}
+      - {date: "12 Dec", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "4,308.04"}
+      - {date: "12 Dec", desc: "Card payment — HABERLEY HOME STORE, LONDON GB", money_out: "28.60", money_in: "", balance: "4,279.44"}
+      - {date: "13 Dec", desc: "Card payment — THE COPPER KETTLE, LONDON GB", money_out: "44.90", money_in: "", balance: "4,234.54"}
+      - {date: "13 Dec", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "57.82", money_in: "", balance: "4,176.72"}
+      - {date: "15 Dec", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "34.99", money_in: "", balance: "4,141.73"}
+      - {date: "15 Dec", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 14 Dec", money_out: "26.80", money_in: "", balance: "4,114.93"}
+      - {date: "16 Dec", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.20", money_in: "", balance: "4,110.73"}
+      - {date: "18 Dec", desc: "Cash withdrawal — FERRAND ATM, CALVERLEY GROVE", money_out: "50.00", money_in: "", balance: "4,060.73"}
+      - {date: "19 Dec", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "89.29", money_in: "", balance: "3,971.44"}
+      - {date: "19 Dec", desc: "Card payment — CHESHAM & DAUGHTERS GIFTS, LONDON GB", money_out: "23.80", money_in: "", balance: "3,947.64"}
+      - {date: "20 Dec", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "72.16", money_in: "", balance: "3,875.48"}
+      - {date: "22 Dec", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "3,864.48"}
+      - {date: "22 Dec", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "3,861.99"}
+      - {date: "22 Dec", desc: "Card payment — RAILPOINT TICKETS, LONDON GB", money_out: "36.40", money_in: "", balance: "3,825.59"}
+      - {date: "22 Dec", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 21 Dec", money_out: "19.20", money_in: "", balance: "3,806.39"}
+      - {date: "24 Dec", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,379.86", balance: "6,186.25"}
+      - {date: "24 Dec", desc: "Faster Payment received — R MARCHBANK, GIFT", money_out: "", money_in: "40.00", balance: "6,226.25"}
+      - {date: "27 Dec", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "35.44", money_in: "", balance: "6,190.81"}
+      - {date: "29 Dec", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 28 Dec", money_out: "12.60", money_in: "", balance: "6,178.21"}
+      - {date: "30 Dec", desc: "Card payment — NOODLE BARN, LONDON GB", money_out: "17.35", money_in: "", balance: "6,160.86"}
+  - id: ferrand-current-2026-01
+    sheet: "06"
+    statement_date: "31 January 2026"
+    period: "1 January 2026 to 31 January 2026"
+    previous_balance: "6,160.86"
+    paid_in: "2,379.86"
+    withdrawn: "2,221.75"
+    new_balance: "6,318.97"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "Start the year with a clearer picture"
+      body:
+        - >-
+          The Spending view in the Ferrand Mobile app sorts your transactions
+          into categories and shows how each month compares with the last.
+          January is a good month to set a budget — it takes about two
+          minutes.
+    transactions:
+      - {date: "02 Jan", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "4,557.53"}
+      - {date: "02 Jan", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "106.90", money_in: "", balance: "4,450.63"}
+      - {date: "02 Jan", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "4,300.63"}
+      - {date: "05 Jan", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 04 Jan", money_out: "24.60", money_in: "", balance: "4,276.03"}
+      - {date: "10 Jan", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "46.28", money_in: "", balance: "4,229.75"}
+      - {date: "12 Jan", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "4,219.76"}
+      - {date: "12 Jan", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 11 Jan", money_out: "26.80", money_in: "", balance: "4,192.96"}
+      - {date: "14 Jan", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "34.99", money_in: "", balance: "4,157.97"}
+      - {date: "19 Jan", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "102.21", money_in: "", balance: "4,055.76"}
+      - {date: "19 Jan", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 18 Jan", money_out: "26.80", money_in: "", balance: "4,028.96"}
+      - {date: "20 Jan", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "4,017.96"}
+      - {date: "20 Jan", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "4,015.47"}
+      - {date: "24 Jan", desc: "Card payment — CALVERLEY PHARMACY, LONDON GB", money_out: "7.85", money_in: "", balance: "4,007.62"}
+      - {date: "24 Jan", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "43.91", money_in: "", balance: "3,963.71"}
+      - {date: "26 Jan", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 25 Jan", money_out: "24.60", money_in: "", balance: "3,939.11"}
+      - {date: "28 Jan", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,379.86", balance: "6,318.97"}
+  - id: ferrand-current-2026-02
+    sheet: "07"
+    statement_date: "28 February 2026"
+    period: "1 February 2026 to 28 February 2026"
+    previous_balance: "6,318.97"
+    paid_in: "2,392.85"
+    withdrawn: "2,699.55"
+    new_balance: "6,012.27"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "Deposit protection limit is increasing"
+      body:
+        - >-
+          From 1 December 2026 the deposit protection limit under the UK
+          deposit guarantee scheme rises from £85,000 to £110,000 per person,
+          per authorised bank. Until then the current £85,000 limit continues
+          to apply. You don't need to do anything.
+    transactions:
+      - {date: "02 Feb", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "4,715.64"}
+      - {date: "02 Feb", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "106.90", money_in: "", balance: "4,608.74"}
+      - {date: "02 Feb", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "4,458.74"}
+      - {date: "02 Feb", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 01 Feb", money_out: "26.80", money_in: "", balance: "4,431.94"}
+      - {date: "07 Feb", desc: "Card payment — ELM YARD PIZZA, LONDON GB", money_out: "20.90", money_in: "", balance: "4,411.04"}
+      - {date: "07 Feb", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "44.53", money_in: "", balance: "4,366.51"}
+      - {date: "09 Feb", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 08 Feb", money_out: "24.60", money_in: "", balance: "4,341.91"}
+      - {date: "10 Feb", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "3.80", money_in: "", balance: "4,338.11"}
+      - {date: "12 Feb", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "4,328.12"}
+      - {date: "14 Feb", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "39.27", money_in: "", balance: "4,288.85"}
+      - {date: "16 Feb", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "99.99", money_in: "", balance: "4,188.86"}
+      - {date: "16 Feb", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 15 Feb", money_out: "27.90", money_in: "", balance: "4,160.96"}
+      - {date: "18 Feb", desc: "Faster Payment — HARTFIELD HEART TRUST, donation HH0428871", money_out: "150.00", money_in: "", balance: "4,010.96"}
+      - {date: "19 Feb", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "111.30", money_in: "", balance: "3,899.66"}
+      - {date: "20 Feb", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "3,888.66"}
+      - {date: "20 Feb", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "3,886.17"}
+      - {date: "21 Feb", desc: "Card payment — VELLUM BOOKS, LONDON GB", money_out: "12.50", money_in: "", balance: "3,873.67"}
+      - {date: "21 Feb", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "47.66", money_in: "", balance: "3,826.01"}
+      - {date: "23 Feb", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 22 Feb", money_out: "26.80", money_in: "", balance: "3,799.21"}
+      - {date: "24 Feb", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.20", money_in: "", balance: "3,795.01"}
+      - {date: "25 Feb", desc: "Bill payment — BRACKENWATER BW-2210553", money_out: "133.21", money_in: "", balance: "3,661.80"}
+      - {date: "27 Feb", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,379.86", balance: "6,041.66"}
+      - {date: "27 Feb", desc: "Refund — HABERLEY HOME STORE, LONDON GB", money_out: "", money_in: "12.99", balance: "6,054.65"}
+      - {date: "28 Feb", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "42.38", money_in: "", balance: "6,012.27"}
+  - id: ferrand-current-2026-03
+    sheet: "08"
+    statement_date: "31 March 2026"
+    period: "1 March 2026 to 31 March 2026"
+    previous_balance: "6,012.27"
+    paid_in: "2,379.86"
+    withdrawn: "2,420.23"
+    new_balance: "5,971.90"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "We've written to you about changes to your account"
+      body:
+        - >-
+          On 16 March we sent you a letter setting out changes that take
+          effect on 18 May 2026: arranged overdraft interest falls from 34.9%
+          EAR (variable) to 33.9% EAR (variable), the branch fee for a same-
+          day CHAPS payment falls from £25 to £15, and free low-balance text
+          alerts switch on for everyone. The letter has the full detail — if
+          you need another copy, ask in the app.
+    transactions:
+      - {date: "02 Mar", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "4,408.94"}
+      - {date: "02 Mar", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "106.90", money_in: "", balance: "4,302.04"}
+      - {date: "02 Mar", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "4,152.04"}
+      - {date: "02 Mar", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 01 Mar", money_out: "26.80", money_in: "", balance: "4,125.24"}
+      - {date: "07 Mar", desc: "Card payment — KELDWICK DIY, LONDON GB", money_out: "21.10", money_in: "", balance: "4,104.14"}
+      - {date: "07 Mar", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "45.81", money_in: "", balance: "4,058.33"}
+      - {date: "09 Mar", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 08 Mar", money_out: "28.30", money_in: "", balance: "4,030.03"}
+      - {date: "10 Mar", desc: "Card payment — SOUTHMERE PARK HOSPITAL CAFE, LONDON GB", money_out: "6.45", money_in: "", balance: "4,023.58"}
+      - {date: "12 Mar", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "4,013.59"}
+      - {date: "14 Mar", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "38.94", money_in: "", balance: "3,974.65"}
+      - {date: "16 Mar", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "34.99", money_in: "", balance: "3,939.66"}
+      - {date: "16 Mar", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 15 Mar", money_out: "24.60", money_in: "", balance: "3,915.06"}
+      - {date: "17 Mar", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.60", money_in: "", balance: "3,910.46"}
+      - {date: "19 Mar", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "99.58", money_in: "", balance: "3,810.88"}
+      - {date: "20 Mar", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "3,799.88"}
+      - {date: "20 Mar", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "3,797.39"}
+      - {date: "20 Mar", desc: "Card payment — THE COPPER KETTLE, LONDON GB", money_out: "29.75", money_in: "", balance: "3,767.64"}
+      - {date: "21 Mar", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "50.23", money_in: "", balance: "3,717.41"}
+      - {date: "23 Mar", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 22 Mar", money_out: "26.80", money_in: "", balance: "3,690.61"}
+      - {date: "27 Mar", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,379.86", balance: "6,070.47"}
+      - {date: "28 Mar", desc: "Cash withdrawal — FERRAND ATM, CALVERLEY GROVE", money_out: "30.00", money_in: "", balance: "6,040.47"}
+      - {date: "28 Mar", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "43.17", money_in: "", balance: "5,997.30"}
+      - {date: "30 Mar", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 29 Mar", money_out: "25.40", money_in: "", balance: "5,971.90"}
+  - id: ferrand-current-2026-04
+    sheet: "09"
+    statement_date: "30 April 2026"
+    period: "1 April 2026 to 30 April 2026"
+    previous_balance: "5,971.90"
+    paid_in: "2,439.78"
+    withdrawn: "3,244.14"
+    new_balance: "5,167.54"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "Impersonation scams: a 30-second check"
+      body:
+        - >-
+          If someone contacts you claiming to be Ferrand Bank, the police, or
+          a utility and asks you to act urgently, stop. Real organisations
+          don't mind you hanging up and calling back on the number printed on
+          this statement.
+        - >-
+          From 18 May, payments to a new payee set up by telephone banking
+          will also need approval in the Ferrand Mobile app before they are
+          sent.
+    transactions:
+      - {date: "01 Apr", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "4,368.57"}
+      - {date: "01 Apr", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "106.90", money_in: "", balance: "4,261.67"}
+      - {date: "01 Apr", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "134.94", money_in: "", balance: "4,126.73"}
+      - {date: "02 Apr", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "3,976.73"}
+      - {date: "04 Apr", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "41.76", money_in: "", balance: "3,934.97"}
+      - {date: "07 Apr", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 05 Apr", money_out: "26.80", money_in: "", balance: "3,908.17"}
+      - {date: "11 Apr", desc: "Card payment — NOODLE BARN, LONDON GB", money_out: "19.80", money_in: "", balance: "3,888.37"}
+      - {date: "11 Apr", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "47.32", money_in: "", balance: "3,841.05"}
+      - {date: "13 Apr", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "3,831.06"}
+      - {date: "13 Apr", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 12 Apr", money_out: "24.60", money_in: "", balance: "3,806.46"}
+      - {date: "14 Apr", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "34.99", money_in: "", balance: "3,771.47"}
+      - {date: "14 Apr", desc: "Online payment — NETHERHALE BC COUNCIL TAX 41220974A, final account", money_out: "740.00", money_in: "", balance: "3,031.47"}
+      - {date: "14 Apr", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "3.80", money_in: "", balance: "3,027.67"}
+      - {date: "18 Apr", desc: "Card payment — HABERLEY HOME STORE, LONDON GB", money_out: "41.20", money_in: "", balance: "2,986.47"}
+      - {date: "18 Apr", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "39.58", money_in: "", balance: "2,946.89"}
+      - {date: "20 Apr", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "2,935.89"}
+      - {date: "20 Apr", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "89.51", money_in: "", balance: "2,846.38"}
+      - {date: "20 Apr", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "2,843.89"}
+      - {date: "20 Apr", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 19 Apr", money_out: "26.80", money_in: "", balance: "2,817.09"}
+      - {date: "25 Apr", desc: "Card payment — VELLUM BOOKS, LONDON GB", money_out: "11.99", money_in: "", balance: "2,805.10"}
+      - {date: "25 Apr", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "45.24", money_in: "", balance: "2,759.86"}
+      - {date: "27 Apr", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 26 Apr", money_out: "27.90", money_in: "", balance: "2,731.96"}
+      - {date: "28 Apr", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,439.78", balance: "5,171.74"}
+      - {date: "28 Apr", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.20", money_in: "", balance: "5,167.54"}
+  - id: ferrand-current-2026-05
+    sheet: "10"
+    statement_date: "31 May 2026"
+    period: "1 May 2026 to 31 May 2026"
+    previous_balance: "5,167.54"
+    paid_in: "2,439.78"
+    withdrawn: "2,566.41"
+    new_balance: "5,040.91"
+    ovd_ear: "34.9"
+    ovd_nar: "30.4"
+    notice:
+      title: "Reminder: account changes took effect on 18 May"
+      body:
+        - >-
+          The changes we wrote to you about in March are now in force: lower
+          arranged overdraft interest, a lower branch CHAPS fee, and automatic
+          low-balance text alerts. The new overdraft rates appear in the
+          interest section from your next statement.
+    transactions:
+      - {date: "01 May", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "3,564.21"}
+      - {date: "01 May", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "134.94", money_in: "", balance: "3,429.27"}
+      - {date: "02 May", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "43.87", money_in: "", balance: "3,385.40"}
+      - {date: "05 May", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "3,235.40"}
+      - {date: "05 May", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 03 May", money_out: "24.60", money_in: "", balance: "3,210.80"}
+      - {date: "09 May", desc: "Card payment — ELM YARD PIZZA, LONDON GB", money_out: "23.40", money_in: "", balance: "3,187.40"}
+      - {date: "09 May", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "50.41", money_in: "", balance: "3,136.99"}
+      - {date: "11 May", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 10 May", money_out: "26.80", money_in: "", balance: "3,110.19"}
+      - {date: "12 May", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "3,100.20"}
+      - {date: "12 May", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.20", money_in: "", balance: "3,096.00"}
+      - {date: "14 May", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "37.99", money_in: "", balance: "3,058.01"}
+      - {date: "16 May", desc: "Cash withdrawal — FERRAND ATM, CALVERLEY GROVE", money_out: "40.00", money_in: "", balance: "3,018.01"}
+      - {date: "16 May", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "38.26", money_in: "", balance: "2,979.75"}
+      - {date: "18 May", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 17 May", money_out: "26.80", money_in: "", balance: "2,952.95"}
+      - {date: "19 May", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "77.55", money_in: "", balance: "2,875.40"}
+      - {date: "20 May", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "2,864.40"}
+      - {date: "20 May", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "2,861.91"}
+      - {date: "23 May", desc: "Card payment — CHESHAM & DAUGHTERS GIFTS, LONDON GB", money_out: "18.65", money_in: "", balance: "2,843.26"}
+      - {date: "23 May", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "46.93", money_in: "", balance: "2,796.33"}
+      - {date: "26 May", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 24 May", money_out: "24.60", money_in: "", balance: "2,771.73"}
+      - {date: "27 May", desc: "Bill payment — BRACKENWATER BW-2210553", money_out: "128.05", money_in: "", balance: "2,643.68"}
+      - {date: "28 May", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,439.78", balance: "5,083.46"}
+      - {date: "30 May", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "42.55", money_in: "", balance: "5,040.91"}
+  - id: ferrand-current-2026-06
+    sheet: "11"
+    statement_date: "30 June 2026"
+    period: "1 June 2026 to 30 June 2026"
+    previous_balance: "5,040.91"
+    paid_in: "2,439.78"
+    withdrawn: "2,838.89"
+    new_balance: "4,641.80"
+    ovd_ear: "33.9"
+    ovd_nar: "29.6"
+    notice:
+      title: "Your text alerts are now on"
+      body:
+        - >-
+          We now send you a free text alert when your balance falls below £50,
+          so you can move money in before charges or refused payments. Change
+          the threshold or turn alerts off any time in the app.
+    transactions:
+      - {date: "01 Jun", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "3,437.58"}
+      - {date: "01 Jun", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "134.94", money_in: "", balance: "3,302.64"}
+      - {date: "01 Jun", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 31 May", money_out: "26.80", money_in: "", balance: "3,275.84"}
+      - {date: "02 Jun", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "3,125.84"}
+      - {date: "06 Jun", desc: "Card payment — KELDWICK DIY, LONDON GB", money_out: "13.85", money_in: "", balance: "3,111.99"}
+      - {date: "06 Jun", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "44.19", money_in: "", balance: "3,067.80"}
+      - {date: "08 Jun", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 07 Jun", money_out: "27.90", money_in: "", balance: "3,039.90"}
+      - {date: "09 Jun", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "3.80", money_in: "", balance: "3,036.10"}
+      - {date: "12 Jun", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "3,026.11"}
+      - {date: "12 Jun", desc: "Faster Payment — HARWOOD HEATING, invoice HH-2306", money_out: "295.08", money_in: "", balance: "2,731.03"}
+      - {date: "13 Jun", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "39.72", money_in: "", balance: "2,691.31"}
+      - {date: "15 Jun", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "37.99", money_in: "", balance: "2,653.32"}
+      - {date: "15 Jun", desc: "Faster Payment — AURELLON RENEWABLES, heat pump survey fee", money_out: "150.00", money_in: "", balance: "2,503.32"}
+      - {date: "15 Jun", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 14 Jun", money_out: "24.60", money_in: "", balance: "2,478.72"}
+      - {date: "19 Jun", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "70.92", money_in: "", balance: "2,407.80"}
+      - {date: "20 Jun", desc: "Card payment — THE COPPER KETTLE, LONDON GB", money_out: "35.10", money_in: "", balance: "2,372.70"}
+      - {date: "20 Jun", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "48.36", money_in: "", balance: "2,324.34"}
+      - {date: "22 Jun", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "2,313.34"}
+      - {date: "22 Jun", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "2,310.85"}
+      - {date: "22 Jun", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 21 Jun", money_out: "26.80", money_in: "", balance: "2,284.05"}
+      - {date: "23 Jun", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.60", money_in: "", balance: "2,279.45"}
+      - {date: "26 Jun", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,439.78", balance: "4,719.23"}
+      - {date: "27 Jun", desc: "Card payment — CALVERLEY PHARMACY, LONDON GB", money_out: "10.40", money_in: "", balance: "4,708.83"}
+      - {date: "27 Jun", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "41.63", money_in: "", balance: "4,667.20"}
+      - {date: "29 Jun", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 28 Jun", money_out: "25.40", money_in: "", balance: "4,641.80"}
+  - id: ferrand-current-2026-07
+    sheet: "12"
+    statement_date: "31 July 2026"
+    period: "1 July 2026 to 31 July 2026"
+    previous_balance: "4,641.80"
+    paid_in: "2,439.78"
+    withdrawn: "2,367.00"
+    new_balance: "4,714.58"
+    ovd_ear: "33.9"
+    ovd_nar: "29.6"
+    notice:
+      title: "One year with Ferrand"
+      body:
+        - >-
+          You opened this account a year ago this August. In the app you can
+          now see a twelve-month view of money in and out, your average
+          balance, and your most frequent payees — useful if you're reviewing
+          bills or planning a savings goal.
+    transactions:
+      - {date: "01 Jul", desc: "Standing Order — WRENMOOR ESTATES LTD, rent PR/RED/1207", money_out: "1,603.33", money_in: "", balance: "3,038.47"}
+      - {date: "01 Jul", desc: "Direct Debit — NETHERHALE BC COUNCIL TAX 55018837B", money_out: "134.94", money_in: "", balance: "2,903.53"}
+      - {date: "02 Jul", desc: "Standing Order — FERRAND INSTANT SAVER 00918282", money_out: "150.00", money_in: "", balance: "2,753.53"}
+      - {date: "04 Jul", desc: "Card payment — NOODLE BARN, LONDON GB", money_out: "22.70", money_in: "", balance: "2,730.83"}
+      - {date: "04 Jul", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "45.37", money_in: "", balance: "2,685.46"}
+      - {date: "06 Jul", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 05 Jul", money_out: "26.80", money_in: "", balance: "2,658.66"}
+      - {date: "07 Jul", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "4.20", money_in: "", balance: "2,654.46"}
+      - {date: "11 Jul", desc: "Card payment — VELLUM BOOKS, LONDON GB", money_out: "16.99", money_in: "", balance: "2,637.47"}
+      - {date: "11 Jul", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "40.84", money_in: "", balance: "2,596.63"}
+      - {date: "13 Jul", desc: "Card payment — STREAMPIX SUBSCRIPTION", money_out: "9.99", money_in: "", balance: "2,586.64"}
+      - {date: "13 Jul", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 12 Jul", money_out: "24.60", money_in: "", balance: "2,562.04"}
+      - {date: "14 Jul", desc: "Direct Debit — LOOPFIBRE LF3308127", money_out: "37.99", money_in: "", balance: "2,524.05"}
+      - {date: "18 Jul", desc: "Card payment — ELM YARD PIZZA, LONDON GB", money_out: "21.25", money_in: "", balance: "2,502.80"}
+      - {date: "18 Jul", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "47.12", money_in: "", balance: "2,455.68"}
+      - {date: "20 Jul", desc: "Direct Debit — HOPCROFT MOBILE SIM", money_out: "11.00", money_in: "", balance: "2,444.68"}
+      - {date: "20 Jul", desc: "Direct Debit — HARWOOD ENERGY HW 4471 0925", money_out: "65.60", money_in: "", balance: "2,379.08"}
+      - {date: "20 Jul", desc: "Card payment — NIMBUS VAULT CLOUD STORAGE", money_out: "2.49", money_in: "", balance: "2,376.59"}
+      - {date: "20 Jul", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 19 Jul", money_out: "27.90", money_in: "", balance: "2,348.69"}
+      - {date: "21 Jul", desc: "Card payment — BRINDLE & CO COFFEE, LONDON GB", money_out: "3.80", money_in: "", balance: "2,344.89"}
+      - {date: "25 Jul", desc: "Card payment — MERROWFIELD SUPERMARKET, LONDON GB", money_out: "43.29", money_in: "", balance: "2,301.60"}
+      - {date: "27 Jul", desc: "Card payment — CAPITAL TRANSIT travel charge, week ending 26 Jul", money_out: "26.80", money_in: "", balance: "2,274.80"}
+      - {date: "28 Jul", desc: "Faster Payment from HALEWICK SYSTEMS LTD — SALARY HAL/2214", money_out: "", money_in: "2,439.78", balance: "4,714.58"}

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand { color: #b0233a; font-size: 16pt; }
+  .brand .strap { display: block; font-size: 8pt; font-weight: normal; color: #666; letter-spacing: 0.3pt; }
+  .form-section {
+    background: #b0233a; color: #fff; font-weight: bold;
+    padding: 1.6mm 3mm; margin: 5mm 0 2mm; font-size: 9.5pt;
+  }
+  .form-row { display: flex; border-bottom: 0.4pt solid #999; padding: 1.8mm 0; }
+  .form-row .lbl { width: 36mm; font-weight: bold; font-size: 8.5pt; flex-shrink: 0; }
+  .form-row .val { flex-grow: 1; }
+  .tick {
+    display: inline-block; width: 4mm; height: 4mm; border: 0.6pt solid #333;
+    text-align: center; line-height: 4mm; margin-right: 1.5mm;
+    font-weight: bold; vertical-align: middle;
+  }
+  .amounts { margin: 2mm 0; }
+  .amounts .box {
+    display: inline-block; border: 0.6pt solid #333; padding: 1.6mm 3mm;
+    margin-right: 3mm; font-weight: bold;
+  }
+  .ga-box { border: 1pt solid #b0233a; padding: 3mm 4mm; margin: 3mm 0; }
+  .ga-box h3 { color: #b0233a; }
+  .sig-row { display: flex; gap: 8mm; margin-top: 3mm; }
+  .sig-row div { flex: 1; border-top: 0.5pt solid #333; padding-top: 1mm; font-size: 8.5pt; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} is a registered charity in England and Wales
+  (no. 1198877) and a company limited by guarantee (no. 07714402).
+  Registered office: Hartfield House, 62 Bellchapel Road, London EC1Y 8XX.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">{{ vendor.name }}
+    <span class="strap">Funding research and support for every heart</span>
+  </div>
+  <div class="contact">
+    Hartfield House, 62 Bellchapel Road, London EC1Y 8XX<br>
+    020 7946 0955 &middot; hello@hartfieldheart.example<br>
+    hartfieldheart.example
+  </div>
+</div>
+
+<h1>Single donation form</h1>
+
+<p>Please complete in black ink and return this form with your gift to the
+address above. Supporter reference (if known):
+<strong>{{ vendor.supporter_ref }}</strong></p>
+
+<div class="form-section">1 &mdash; Your details</div>
+
+<div class="form-row"><span class="lbl">Title</span><span class="val">{{ person.title }}</span></div>
+<div class="form-row"><span class="lbl">Full name</span><span class="val">{{ person.full_name }}</span></div>
+<div class="form-row"><span class="lbl">Address</span>
+  <span class="val">{{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }},
+  {{ addresses.uk_current.city }}</span></div>
+<div class="form-row"><span class="lbl">Postcode</span><span class="val">{{ addresses.uk_current.postcode }}</span></div>
+<div class="form-row"><span class="lbl">Email</span><span class="val">{{ person.email }}</span></div>
+<div class="form-row"><span class="lbl">Phone</span><span class="val">{{ person.phone_uk_mobile }}</span></div>
+
+<div class="form-section">2 &mdash; Your gift</div>
+
+<p class="amounts">
+  <span class="box"><span class="tick"></span>&pound;25</span>
+  <span class="box"><span class="tick"></span>&pound;50</span>
+  <span class="box"><span class="tick"></span>&pound;100</span>
+  <span class="box"><span class="tick">X</span>Other: &pound;{{ issue.amount_display }}</span>
+</p>
+
+<p>
+  <span class="tick">X</span> Cheque enclosed, payable to
+  &ldquo;{{ vendor.name }}&rdquo;<br>
+  <span class="tick"></span> Please charge my debit/credit card (we will
+  contact you securely for details)
+</p>
+
+<div class="form-section">3 &mdash; Gift Aid declaration</div>
+
+<div class="ga-box">
+  <h3>Make your gift worth 25% more &mdash; at no cost to you</h3>
+  <p>
+    <span class="tick">X</span> <strong>Yes</strong>, I am a UK taxpayer and
+    I want {{ vendor.name }} to claim Gift Aid on this donation and on any
+    donations I make in the future or have made in the past 4 years.
+  </p>
+  <p>I understand that if I pay less Income Tax and/or Capital Gains Tax in
+  a tax year than the amount of Gift Aid claimed on all my donations, it is
+  my responsibility to pay any difference. Please notify us if you want to
+  cancel this declaration, change your name or home address, or no longer
+  pay sufficient tax.</p>
+  <div class="sig-row">
+    <div>Signature: {{ person.full_name }}</div>
+    <div>Date: {{ issue.form_date }}</div>
+  </div>
+</div>
+
+<div class="small-print">
+  <p><strong>Keeping in touch.</strong> We would love to tell you about the
+  work your support makes possible. Tick here
+  <span class="tick"></span> if you would rather we contacted you by email
+  only, or here <span class="tick"></span> if you do not wish to hear from
+  us at all. You can change your preferences at any time at
+  hartfieldheart.example/preferences.</p>
+  <p><strong>Your data.</strong> We use your details to process your
+  donation and administer Gift Aid, and never sell or swap supporter data.
+  Full privacy notice: hartfieldheart.example/privacy.</p>
+</div>
+
+</body>
+</html>

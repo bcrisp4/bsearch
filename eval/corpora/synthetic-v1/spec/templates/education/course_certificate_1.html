@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Brindlefield Training: traditional bordered certificate, green serif. */
+  body { font-family: "Doc Serif", serif; color: #1c3a2a; }
+  .frame {
+    border: 2pt solid #1c5c3a; outline: 0.5pt solid #1c5c3a; outline-offset: -2.5mm;
+    padding: 16mm 14mm; text-align: center; min-height: 225mm;
+  }
+  .provider { font-size: 19pt; font-weight: bold; letter-spacing: 2.5pt; text-transform: uppercase; }
+  .provider-sub { font-size: 8.5pt; letter-spacing: 1.5pt; color: #4a6a58; margin-bottom: 10mm; }
+  .cert-word { font-size: 15pt; font-style: italic; margin: 8mm 0 2mm; }
+  .rule { width: 60mm; border-top: 0.6pt solid #1c5c3a; margin: 3mm auto; }
+  .holder { font-size: 18pt; font-weight: bold; margin: 5mm 0; }
+  .course { font-size: 14pt; font-weight: bold; color: #1c5c3a; margin: 4mm 0 2mm; }
+  .detail { font-size: 9pt; max-width: 130mm; margin: 0 auto 6mm; color: #33443a; }
+  .meta { font-size: 9.5pt; margin: 5mm 0 12mm; }
+  .sigs { display: flex; justify-content: space-around; margin-top: 14mm; }
+  .sig { width: 56mm; }
+  .sig .script { font-style: italic; font-size: 13pt; border-bottom: 0.5pt solid #1c3a2a; padding-bottom: 1mm; }
+  .sig .who { font-size: 8pt; margin-top: 1.5mm; }
+  .certno { font-family: "Doc Mono", monospace; font-size: 8pt; color: #4a6a58; margin-top: 10mm; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <div class="provider">{{ issue.provider }}</div>
+  <div class="provider-sub">Professional development for network engineers &mdash; est. 2004</div>
+
+  <div class="cert-word">Certificate of Completion</div>
+  <div class="rule"></div>
+
+  <p style="font-size: 10pt;">This is to certify that</p>
+  <div class="holder">{{ person.full_name }}</div>
+  <p style="font-size: 10pt;">has successfully completed the course</p>
+
+  <div class="course">{{ issue.course_title }}</div>
+  <div class="detail">{{ issue.course_detail }}</div>
+
+  <div class="meta">
+    Completed on <strong>{{ issue.completion_date }}</strong> &middot;
+    {{ issue.duration }}
+  </div>
+
+  <div class="sigs">
+    <div class="sig">
+      <div class="script">{{ issue.instructor }}</div>
+      <div class="who">{{ issue.instructor }}<br>{{ issue.instructor_title }}</div>
+    </div>
+    <div class="sig">
+      <div class="script">{{ issue.director }}</div>
+      <div class="who">{{ issue.director }}<br>{{ issue.director_title }}</div>
+    </div>
+  </div>
+
+  <div class="certno">Certificate no. {{ issue.certificate_no }} &middot;
+  verify at brindlefield-training.example/verify</div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  h1 { color: #1a5d9e; }
+  .issuer { text-align: right; font-size: 8pt; color: #444; }
+  .id-card {
+    border: 1pt solid #888; border-radius: 3mm; padding: 3mm 4mm;
+    margin: 4mm 0; width: 90mm;
+  }
+  .id-card .lbl { font-size: 7.5pt; color: #555; }
+  .id-card .val { font-size: 11pt; font-weight: bold; margin-bottom: 2mm; }
+  .advice { font-weight: bold; margin: 3mm 0; }
+  table.data th { background: #e8eef5; }
+  dl.record-meta { font-size: 8.5pt; margin: 3mm 0; }
+  dl.record-meta dt { font-weight: bold; display: inline; }
+  dl.record-meta dd { display: inline; margin: 0 4mm 0 1mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Issued from the national immunisation register. This record was accurate
+  at the date of issue; vaccinations received after that date are not shown.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <h1 style="margin: 0">COVID-19 Vaccination Record</h1>
+  <div class="issuer">
+    National immunisation record service<br>
+    Record issued: {{ issue.issued_date }}
+  </div>
+</div>
+
+<div class="id-card">
+  <div class="lbl">Name</div>
+  <div class="val">{{ person.full_name }}</div>
+  <div class="lbl">Date of birth</div>
+  <div class="val">{{ person.date_of_birth }}</div>
+  <div class="lbl">Please check this record against the bearer&rsquo;s identity.</div>
+</div>
+
+<p class="advice">This document is important. Keep it safe. You may be asked
+to show it when travelling or attending certain venues, together with
+photographic identification.</p>
+
+<h2>Vaccinations received</h2>
+
+<table class="data">
+  <tr>
+    <th>Dose</th><th>Date of vaccination</th><th>Vaccine product</th>
+    <th>Product code</th><th>Batch number</th><th>Administering centre</th>
+  </tr>
+  {% for d in issue.doses %}
+  <tr>
+    <td>{{ d.dose }}</td>
+    <td>{{ d.date }}</td>
+    <td>{{ d.product }}</td>
+    <td>{{ d.code }}</td>
+    <td>{{ d.batch }}</td>
+    <td>{{ d.centre }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<dl class="record-meta">
+  <dt>Manufacturer:</dt><dd>Bellhaven Biologics</dd>
+  <dt>Disease targeted:</dt><dd>COVID-19</dd>
+  <dt>Country of vaccination:</dt><dd>United Kingdom</dd>
+  <dt>Issuer:</dt><dd>National immunisation record service</dd>
+</dl>
+
+<p>A full course plus booster is shown above. If any entry looks wrong
+&mdash; for example a missing dose or an incorrect date &mdash; contact the
+vaccination centre that administered the dose, or ask your general practice
+to raise a correction against the national immunisation register.</p>
+
+<div class="small-print">
+  <p><strong>Your data.</strong> This record is drawn from the national
+  immunisation register, which is maintained to support individual care and
+  public health monitoring. Details of how vaccination data is used and your
+  rights over it are published in the register&rsquo;s privacy notice.</p>
+  <p><strong>Checking validity.</strong> Organisations verifying this
+  document should check the bearer&rsquo;s name and date of birth against
+  photographic identification. This printed record does not expire, but
+  verifiers may require a record issued within a recent period.</p>
+</div>
+
+</body>
+</html>

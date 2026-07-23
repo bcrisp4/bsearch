@@ -1,0 +1,1173 @@
+{
+  "name": "synthetic-v1",
+  "version": 1,
+  "generated_at": "2026-07-21T15:03:18+00:00",
+  "bscribe": {
+    "fingerprint": "545438f20985",
+    "components": {
+      "bscribe": "0.3.1",
+      "liteparse": "2.5.0",
+      "pdfium": "bundled (liteparse 2.5.0)",
+      "tesseract": "bundled (liteparse 2.5.0)",
+      "tessdata": "sha256:cbc251c70db9",
+      "imagemagick": "6.9.11-60",
+      "libreoffice": "7.4.7.2",
+      "ghostscript": "10.00.0",
+      "librsvg": "2.54.7"
+    }
+  },
+  "files": [
+    {
+      "src": "corpus-src/bank_certificates/uk-interest-certificate-2026.pdf",
+      "out": "bank_certificates/uk-interest-certificate-2026.md",
+      "src_sha256": "536c4d6587acce8410e7f5311d12487bc77703a06b49ff4bfd37d88309a8606c",
+      "out_sha256": "9e42a0aac46ef878cfc6ee5550f0a71e4b5300e7e2330e2335c8b61c0b98aa53"
+    },
+    {
+      "src": "corpus-src/bank_certificates/us-1042s-checking-2025.pdf",
+      "out": "bank_certificates/us-1042s-checking-2025.md",
+      "src_sha256": "688f10d5e64c02863da266a07b67b591e5f7323348608b8be6c9e0c882164b0f",
+      "out_sha256": "37733766288ecce40a01298eb536e5f48409d9147ef1017f4c68e8a38f9b9f44"
+    },
+    {
+      "src": "corpus-src/bank_certificates/us-1042s-savings-2025.pdf",
+      "out": "bank_certificates/us-1042s-savings-2025.md",
+      "src_sha256": "b2cd9a4da7e98fc725b27479e54c271b2ffee4d8f20138ffbe84a53067e90c5b",
+      "out_sha256": "038b601617d23d51639cf6951f3042a52bdbce0f255308f04e9dd35007f4416f"
+    },
+    {
+      "src": "corpus-src/boiler_service_invoices/boiler-service-2024.pdf",
+      "out": "boiler_service_invoices/boiler-service-2024.md",
+      "src_sha256": "13cb1653745618dee281cffbc1f0f0e58df8847b7c7e4654b98c9c95f524e96d",
+      "out_sha256": "11747753bd8f4e30c10808da641c0bb751b3dc7b0f594d9dba0d19c894e03324"
+    },
+    {
+      "src": "corpus-src/boiler_service_invoices/boiler-service-2025.pdf",
+      "out": "boiler_service_invoices/boiler-service-2025.md",
+      "src_sha256": "4684a1bba967cf148226e135d54faed84d9a2effc3dda23d02d795af9d98aab0",
+      "out_sha256": "6af916c4be2035e3651e8ace9255af917c60f131c54d207d51f432afbb930ea5"
+    },
+    {
+      "src": "corpus-src/boiler_service_invoices/boiler-service-2026.pdf",
+      "out": "boiler_service_invoices/boiler-service-2026.md",
+      "src_sha256": "209d89a2d108e81f7f7d1ebbd9c2654eb68f9bb4d27d918581780ae52bdba917",
+      "out_sha256": "85cd74db6d3dbfb26d35d2fee8ae5a2ee958fa2b470814656fd2c5280815a401"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2025-09.pdf",
+      "out": "broadband_bills/broadband-2025-09.md",
+      "src_sha256": "2fb1e59fcd70175ae5ceaf161cbd1a0f77533c578ef5f06acc4c4bf85b55f34d",
+      "out_sha256": "9a89ad8e2618eef88428bbf9118cdf641c845c97769b189db254ea59ba90bb3f"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2025-10.pdf",
+      "out": "broadband_bills/broadband-2025-10.md",
+      "src_sha256": "3fe57706bcd9e8d88c9d4f1bc78498d7e9d55936e4fe58ceedbc4f4bb0b90854",
+      "out_sha256": "96e9cdf1cfbe11e8f825c4cb978b7e901615082d7b420e12b759bdbc1e2eb574"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2025-11.pdf",
+      "out": "broadband_bills/broadband-2025-11.md",
+      "src_sha256": "8572c9de35e739e28d1e37f2fbbd17339f4fc8e1f78338604d49518b8208fe09",
+      "out_sha256": "4f84d8ddd8284934064acdbb7a32c5a916ee46e16fbef9bb3820898902a8e967"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2025-12.pdf",
+      "out": "broadband_bills/broadband-2025-12.md",
+      "src_sha256": "384b64813fb51d3c57f03f67a079eeca958eafb3014ae443b41c18609d59c725",
+      "out_sha256": "dcf68fb8d730a3d7bb9798c096e8c0fca53d0f5a5ca8bda2526b2810b123f005"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2026-01.pdf",
+      "out": "broadband_bills/broadband-2026-01.md",
+      "src_sha256": "6c2e7daac519f0f81a62946a39b2c906c494ab94232224718dd11b919c0bc23c",
+      "out_sha256": "8c2964d19808da3cfc20e90010326829bdfcb7cdcf81c7177dc6f1139cdb4916"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2026-02.pdf",
+      "out": "broadband_bills/broadband-2026-02.md",
+      "src_sha256": "5196ec32371fcf4e92ed6658ccf542172ce3d1b5adf7ac75b3b721f587fb19ec",
+      "out_sha256": "6e73a0e2b70f7513d874489d37028b6d7d918a84667909085e48343973aacce7"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2026-03.pdf",
+      "out": "broadband_bills/broadband-2026-03.md",
+      "src_sha256": "8ca0e43b6a8952f7eb9b985e5b697e7caaa64caaa37c42fe7e66a6b36ec96380",
+      "out_sha256": "c93a55cb26d811fdb3a30bf3e2c9c7ad6b1c36aa5d590b46d1d1ab4c40ba21c1"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2026-04.pdf",
+      "out": "broadband_bills/broadband-2026-04.md",
+      "src_sha256": "eb337a47b010c8b185b9b2002a76374c8ae17257e814cc64436b8ce282ab135e",
+      "out_sha256": "bec1ea233904cb3cf9c431a43be7915d38473fa38de0e2f7ec4925daa1875b66"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2026-05.pdf",
+      "out": "broadband_bills/broadband-2026-05.md",
+      "src_sha256": "bf561aa03c68a9c04ac2521fed65f726e08334e20ddc6960300f82b76b96a5f7",
+      "out_sha256": "738397bf80cd06c13dd14bb26169a86e37369cd4accaa02882b348cde4fba211"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2026-06.pdf",
+      "out": "broadband_bills/broadband-2026-06.md",
+      "src_sha256": "15c4b3a9b4c3b005720eccaffb93c4ae1cf93e618bd10524d6489e3949a31716",
+      "out_sha256": "0b8d0360990544b3f419b17786834cecb5ccccb30f30bed4da90c11440f673c3"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2026-07.pdf",
+      "out": "broadband_bills/broadband-2026-07.md",
+      "src_sha256": "26f7e764ffa6b8390b41b23cf1d6a791a594d4c56b7492a55392820942481b49",
+      "out_sha256": "05ff674f3528e0a02b22b8155c19bc4fb1a0aa16859576a80c0460e4f32b3d90"
+    },
+    {
+      "src": "corpus-src/broadband_bills/broadband-2026-08.pdf",
+      "out": "broadband_bills/broadband-2026-08.md",
+      "src_sha256": "46132404953d0fcc3d7994158ad7627174cc2f5806470fee9ecd99da6f4f0668",
+      "out_sha256": "3ac9ef0744b8cffbc8c2e31dd82b5e62a5a1a4d91fbb0652514ff85b5f4e9cf7"
+    },
+    {
+      "src": "corpus-src/council_tax_bills/ctax-2024-25.pdf",
+      "out": "council_tax_bills/ctax-2024-25.md",
+      "src_sha256": "1a7920bf3d80c9334e34ed1a4f9cf10173042901e1abcdbfd0d34715850b6498",
+      "out_sha256": "f09f0f6f516421f18723e4aed7bcfbdf50dd24f3ba0796f09bcf961e79dd8a79"
+    },
+    {
+      "src": "corpus-src/council_tax_bills/ctax-2025-26.pdf",
+      "out": "council_tax_bills/ctax-2025-26.md",
+      "src_sha256": "bd76b9f4473be986d9678378fa487f32b0fb2c2f4b7c3a27803845c8ecaa9d69",
+      "out_sha256": "495248df777278a28259463e64ac903da95dedbd44710c25ab0fbdf55783e799"
+    },
+    {
+      "src": "corpus-src/council_tax_bills/ctax-2026-27.pdf",
+      "out": "council_tax_bills/ctax-2026-27.md",
+      "src_sha256": "a736fa2ac7d3b3990506ccab117a0972a40601f9c23c57975401d64b7494cd9b",
+      "out_sha256": "5d788690f11572d1abf7a3fa5e58105ea8efd442d2bb83647251498ff7664825"
+    },
+    {
+      "src": "corpus-src/credit_reports/credit_report_date1.pdf",
+      "out": "credit_reports/credit_report_date1.md",
+      "src_sha256": "f243ac010f824a2c7c8258ea6f9e7340e138de8c53ab84b12508280c06c95679",
+      "out_sha256": "3b5d669dfb5f2faa7e8fd3b340113f9724246f15c794fb6723936f4bfaab8b8e"
+    },
+    {
+      "src": "corpus-src/credit_reports/credit_report_date2.pdf",
+      "out": "credit_reports/credit_report_date2.md",
+      "src_sha256": "a9f1f93656c4c03d09d1e2cd45218fd8667a1ee6b7f41e841c1b81f09f659590",
+      "out_sha256": "17dcbbe90ee87a8e38eea7b22f20671d3d91dfe16f75a9024a391a25f91de9a3"
+    },
+    {
+      "src": "corpus-src/education_certs/conference_badge_invoice.pdf",
+      "out": "education_certs/conference_badge_invoice.md",
+      "src_sha256": "a1d833a4a2cf3843d2569bfcd4fcac0585d306b85f11107c0984bd02e4b71264",
+      "out_sha256": "8bf93489ddf95b0cd8d4eadadff4e20174f2d13690b8ccf799eba25db0727635"
+    },
+    {
+      "src": "corpus-src/education_certs/course_certificate_1.pdf",
+      "out": "education_certs/course_certificate_1.md",
+      "src_sha256": "e9089fc68519314f5b6b0031bec4b80ae6658745e4a9fca284c958e3344d7175",
+      "out_sha256": "26e7a4183629ee70e02f9c94ef14d60e3d0bbca5ad434e9bdc431ca75e29a1a4"
+    },
+    {
+      "src": "corpus-src/education_certs/course_certificate_2.pdf",
+      "out": "education_certs/course_certificate_2.md",
+      "src_sha256": "7df4c569ee22d70300ce07e2ca162f2b23b85df69a1875574e208f30e14a3eb7",
+      "out_sha256": "f602e00db71af2280270d2cec4b947fabfbe993464640385e6bde27c2e5b19c6"
+    },
+    {
+      "src": "corpus-src/education_certs/cv.pdf",
+      "out": "education_certs/cv.md",
+      "src_sha256": "f6a8893542b89e3b40c0be960b299af96de38aa3b80066cc995065f7e62d7802",
+      "out_sha256": "8d466a9cc1eba1fecb470234fd586e10b50616850e239da7efd6a8cb90a678d9"
+    },
+    {
+      "src": "corpus-src/education_certs/degree_diploma.pdf",
+      "out": "education_certs/degree_diploma.md",
+      "src_sha256": "477a77f0eff78a13bd43757d8a39cf35c722773d2b2987bf8d96884b1733b8f1",
+      "out_sha256": "c589c419835dd9dc1f6389a87ebb09360763aba39fd06b064b7662f2329c7ec4"
+    },
+    {
+      "src": "corpus-src/education_certs/degree_transcript.pdf",
+      "out": "education_certs/degree_transcript.md",
+      "src_sha256": "273a775116e540c18bc41285b3815d964beec13bcd4dce21865f2cd8b7d38b5b",
+      "out_sha256": "0f01ac5bd80d3607a419111e42a9a4ba3cb33dc352fc69940d08e10fcf2bf9a8"
+    },
+    {
+      "src": "corpus-src/education_certs/eicr_certificate.pdf",
+      "out": "education_certs/eicr_certificate.md",
+      "src_sha256": "9bedbc88f1a76b4905c5bf80b078687ba1a0dad63575d5f18834fac4581ae0be",
+      "out_sha256": "716ecf309e7b5d5c30542f736a84f3fd3c3267618c15bb2bfd03f72348257fc1"
+    },
+    {
+      "src": "corpus-src/education_certs/epc_certificate.pdf",
+      "out": "education_certs/epc_certificate.md",
+      "src_sha256": "8a20d95f3f609cb7d8c88526e7b48d6d2aaf6c62bec6ff5d905d88b10027be90",
+      "out_sha256": "b47d6006123b90ee6e8e1816b70cded5803d4ad52346f76d728e9925d45d7902"
+    },
+    {
+      "src": "corpus-src/education_certs/museum_eticket.pdf",
+      "out": "education_certs/museum_eticket.md",
+      "src_sha256": "cb1b73b25f6bac89c5ee114f5d3b939ef96e824b7540fa038c37ddd59312aafc",
+      "out_sha256": "9c4e396b01950a320f1ed86dbf368edcd83e74bf47a87c5acd3f3183d8f9c428"
+    },
+    {
+      "src": "corpus-src/education_certs/university_offer_letter.pdf",
+      "out": "education_certs/university_offer_letter.md",
+      "src_sha256": "0f1c803899c3b96d79a089708f990a9fdf9670ac7af42932891a781990ffbf28",
+      "out_sha256": "dc0d9663b0bbcb4a382f3b7d8906dbd38ab3c9aaea94c68938f291fcc2ddf27f"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2025-09.pdf",
+      "out": "energy_bills/energy-2025-09.md",
+      "src_sha256": "dde4c09573e14194fa771e478aa97302ec12098b3b1320c576c0acf5bf001b48",
+      "out_sha256": "78184f53dcf51d02b4138f9debcc6c7cef819425519fa9ec0c9e979fd26a3875"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2025-10.pdf",
+      "out": "energy_bills/energy-2025-10.md",
+      "src_sha256": "79583851aa191c33dbb95862b54e04ddcc959047d2c331e25be557e9d3c4a4ab",
+      "out_sha256": "774bd743ef7bcfb1ebcf85e83cde0eb9d22e3ffa3d1a552ebd5ac1d976d68bea"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2025-11.pdf",
+      "out": "energy_bills/energy-2025-11.md",
+      "src_sha256": "cf6c427fd413525e31257d3305992cf498b10d703596615a23ddddba93b17dfb",
+      "out_sha256": "fae2c514f7eb0bf697f478d3821c8ab26f92931493b431a38f9c64bf1f140fe8"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2025-12.pdf",
+      "out": "energy_bills/energy-2025-12.md",
+      "src_sha256": "ae0221982948c1a62911b133bd68ec3a7dd0aeb5d23cd57a2269c4bb32e093b4",
+      "out_sha256": "01d721a64a6a1c9a39ca41eb78997107af54b83eb2c3ccfb8e30fecac22b94dc"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2026-01.pdf",
+      "out": "energy_bills/energy-2026-01.md",
+      "src_sha256": "4c5bfdbe0412198a36f44bb4bd9fa7c414651ab018c3a3ddd11835913d3ca5e9",
+      "out_sha256": "8868a76f105dba73d57d8e1ff0ae099b3c38903ed54828b5280233f34c3f36d2"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2026-02.pdf",
+      "out": "energy_bills/energy-2026-02.md",
+      "src_sha256": "939b4feed36b684f6afaa0019ba562fcb9ea0d88d4050e486c7a49eafa15fafc",
+      "out_sha256": "eda82d942672d8b2c6b25dc3964ca95db2adb0aa7a6b46d77f3d0eeeb06656d9"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2026-03.pdf",
+      "out": "energy_bills/energy-2026-03.md",
+      "src_sha256": "42b67fb264c77b15c9bf5196722feeec09033c7cd13337f8adb6310ccb78af0f",
+      "out_sha256": "55c90bab148975d70e947bc148c8d5d47dafca329c291cd010bd8529dadedc46"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2026-04.pdf",
+      "out": "energy_bills/energy-2026-04.md",
+      "src_sha256": "f04a1a6c313a606f16a182a14860d7e6c80bdc29adc27fcbb80f5750b8266bdf",
+      "out_sha256": "34cfbb935496f65a0e6904a32794f40097b0237e2ddf7768a8967280c3c95161"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2026-05.pdf",
+      "out": "energy_bills/energy-2026-05.md",
+      "src_sha256": "5ec046a8270036f36ac42c14c5dff25210dbc460b96128c9f11234c92ca64309",
+      "out_sha256": "c46aa4ee1dfc07bff38a3b184e518b503786de167c058a4be1e70e3e32deb079"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2026-06.pdf",
+      "out": "energy_bills/energy-2026-06.md",
+      "src_sha256": "3ddae3c83689c5b06dde8d274827cc5068511ce759e6cb3408eb9c4a260bf70b",
+      "out_sha256": "3bcdb84521cbaa20d638587bd71fb584d107e053dfa6584c4198ec89c08bb435"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2026-07.pdf",
+      "out": "energy_bills/energy-2026-07.md",
+      "src_sha256": "fb57e72ff61bb288073a5f5bca4e492b86764faad2d269838dde65bce5f798ed",
+      "out_sha256": "a069e55c82e966c609e5bc74caff2ddd611dd3b29fe81961633ed19742dd6f7e"
+    },
+    {
+      "src": "corpus-src/energy_bills/energy-2026-08.pdf",
+      "out": "energy_bills/energy-2026-08.md",
+      "src_sha256": "94603d8ff30697895aa188204b6aeab937a62465864fc76663e2eee69bd0560c",
+      "out_sha256": "38b8462f18a2101117d97c2132b38e382b23b8135cd7ad73cc55ce5626c6b0e4"
+    },
+    {
+      "src": "corpus-src/insurance_policies/uk_contents_policy_year1.pdf",
+      "out": "insurance_policies/uk_contents_policy_year1.md",
+      "src_sha256": "b7f4e77aafd082461dd73c342b3d6db5c2c8c4549838ebcf66a8d9e341f4a3e3",
+      "out_sha256": "985a00e14b3cf919311ce15bb569e30db081e89a37a8f54f932d31186229fb64"
+    },
+    {
+      "src": "corpus-src/insurance_policies/uk_contents_policy_year2.pdf",
+      "out": "insurance_policies/uk_contents_policy_year2.md",
+      "src_sha256": "b3e2d27ecf7c6d8979b6269fd6ea338cce775e2987a3e4d55a3bb37b671fc4a2",
+      "out_sha256": "00b7fcc973b1fb414e4501b203c077483cab2061ae834791b30246d13b1df2ee"
+    },
+    {
+      "src": "corpus-src/insurance_policies/us_disability_policy.pdf",
+      "out": "insurance_policies/us_disability_policy.md",
+      "src_sha256": "30fd7091c6ba5a24fb771eef8ddac58f710144e369f8515abd458b6b7ada56b1",
+      "out_sha256": "88f362939f75705d70eee269763281d60f9fdae11d3beb0b319f882236aa05ff"
+    },
+    {
+      "src": "corpus-src/insurance_policies/us_renters_policy_year1.pdf",
+      "out": "insurance_policies/us_renters_policy_year1.md",
+      "src_sha256": "13a0ddf7332c5246b90f464f195832138e85e7e961b8481d889d584dc096591e",
+      "out_sha256": "b469d20e789a0d6245f9830b9cf753bd0894da7e26240d552e50b3b1b44ed2c9"
+    },
+    {
+      "src": "corpus-src/insurance_policies/us_renters_policy_year2.pdf",
+      "out": "insurance_policies/us_renters_policy_year2.md",
+      "src_sha256": "bbda53e5da82a7b4f169928e9d32e16118e00d182787238f5b55ac8a9ebed04e",
+      "out_sha256": "5a07a9f41d3d6951ac32ac8dbab84b025f98566313cffeeeb5e3faba4193e400"
+    },
+    {
+      "src": "corpus-src/letters/bank_account_opening_letter.pdf",
+      "out": "letters/bank_account_opening_letter.md",
+      "src_sha256": "f498c6bf262165d13c9544b8ad24df6a836bfbe55775eb0ac8cf376698f6e5e2",
+      "out_sha256": "1ace46a2df7bbac9495a7aa43e82c60ae50cb0449eaf3fe1fa57f788ea75da0d"
+    },
+    {
+      "src": "corpus-src/letters/bank_notification_of_change.pdf",
+      "out": "letters/bank_notification_of_change.md",
+      "src_sha256": "3256dbc73e5144c3020ebfa16064258d7a3439b31818a00af788048a16c950c4",
+      "out_sha256": "cabe28b0cb62edc99bc89a6877ae700378d91df6a4993998b995a7401450cf07"
+    },
+    {
+      "src": "corpus-src/letters/charity_donation_form.pdf",
+      "out": "letters/charity_donation_form.md",
+      "src_sha256": "ae10494e589081cc13310b7078db64d387cf0c4ea036e28da553edbe858b86dd",
+      "out_sha256": "4a7086d49902f038901266d80d3ac4b318a98934a5dae3632f1d498b5315d135"
+    },
+    {
+      "src": "corpus-src/letters/charity_thanks_letter.pdf",
+      "out": "letters/charity_thanks_letter.md",
+      "src_sha256": "fc893bc1d98a7cea3b0134d5294d2308abbfdd42baccbcc545ced4a87c043ce8",
+      "out_sha256": "58ed7756fbabe1eba406a59d41ccf4e9bdb9037959a2b4c41610224b8c4e2386"
+    },
+    {
+      "src": "corpus-src/letters/council_ctax_moving_letter.pdf",
+      "out": "letters/council_ctax_moving_letter.md",
+      "src_sha256": "1d9bdb96d3314ac2b24d3e703364ac9bf6ce7db373e815eed633a07e5e82e1da",
+      "out_sha256": "592fbd7ec0ecfe560732029b8b516a77466fa88853f97cf290ee2d1bcb52dd1f"
+    },
+    {
+      "src": "corpus-src/letters/council_parking_permit_letter.pdf",
+      "out": "letters/council_parking_permit_letter.md",
+      "src_sha256": "8f1e21000f8fbf96fbe816e16de5eec35e8030d9238f2efd549d76a8e6c89288",
+      "out_sha256": "6d3dba624951f5b887d6e452e7ecee2f40ed5b34ee8f9937916e84a5f70bb93b"
+    },
+    {
+      "src": "corpus-src/letters/covid_vaccination_record.pdf",
+      "out": "letters/covid_vaccination_record.md",
+      "src_sha256": "69b1722ba06ab761792452f00c1530b56a5012ad51830815e61aa3337533beeb",
+      "out_sha256": "e322593ed2dc34654f74cefc5797311b3422ebfba5bcb015c753d782a3a9442c"
+    },
+    {
+      "src": "corpus-src/letters/deposit_scheme_certificate.pdf",
+      "out": "letters/deposit_scheme_certificate.md",
+      "src_sha256": "6f673128fc5e161259a7fee4c4ad348300be5c7a3419af94d638594584e48910",
+      "out_sha256": "ef2509a127a206bf6d87fb484df47574c36f10f31a7eaca3dbffa01c80a8889b"
+    },
+    {
+      "src": "corpus-src/letters/gp_referral_letter.pdf",
+      "out": "letters/gp_referral_letter.md",
+      "src_sha256": "b7b570f176b5d5e169dbb49b572468e4bb8ae253fc5b4d9e8acc3583a4128b21",
+      "out_sha256": "fe92a142d70a68acced96fc69c74954acbeb2faba730957df0d08a0f16a669be"
+    },
+    {
+      "src": "corpus-src/letters/gp_test_results_letter.pdf",
+      "out": "letters/gp_test_results_letter.md",
+      "src_sha256": "d96961fa1cbee455ae8712f476db9ed88cea38dbd5b4e532e743e0bb364b4f46",
+      "out_sha256": "ae66383e262566af595147931476c1f33cfbdc7c527f94b8d43335e0ec1a0f06"
+    },
+    {
+      "src": "corpus-src/letters/hospital_appointment_letter.pdf",
+      "out": "letters/hospital_appointment_letter.md",
+      "src_sha256": "c7a3b26556bfe98ef4b12ac3dde0713d864b27b4bdc095a45e0f161c3cc0f773",
+      "out_sha256": "c01dc50e6b534ef913a2c818d900f04ba51af3d5d9ca5dfafb0173b255f8d3fd"
+    },
+    {
+      "src": "corpus-src/letters/student_finance_interest_letter.pdf",
+      "out": "letters/student_finance_interest_letter.md",
+      "src_sha256": "37116df9141f64c8168a822f92d874ed61e980049397604761cadaa1a5c2ed64",
+      "out_sha256": "4a086e8e552378f0ec0e971e599ac6f6db59e3ed2afb785870f98a9fab2bdaf5"
+    },
+    {
+      "src": "corpus-src/letters/student_finance_repayment_letter.pdf",
+      "out": "letters/student_finance_repayment_letter.md",
+      "src_sha256": "0704de072b3cd6acd0cea08596744fa118c8752f9cfff0d930bf49a181e99683",
+      "out_sha256": "fd20840df552c2c5b5aff15390f9f310f0ef4ee8ff9bb9cfcd2877dbc8bf974d"
+    },
+    {
+      "src": "corpus-src/letters/student_finance_statement_letter.pdf",
+      "out": "letters/student_finance_statement_letter.md",
+      "src_sha256": "2434ef5a39f6126dae5321a3c010df66df04c4b51398d91057840a1b1fd8632a",
+      "out_sha256": "5b4288bc1d3308b3127db3a0b51c85e67043e700e736af1fc31db44c8a849878"
+    },
+    {
+      "src": "corpus-src/letters/us_clinical_note_visit1.pdf",
+      "out": "letters/us_clinical_note_visit1.md",
+      "src_sha256": "f5efe037613a63fa7b02bbf0560fc7b5d251ecbab2dccab8d63ab3d9c1819654",
+      "out_sha256": "5ff29385ea7cfa319e4dd905794a115640a9c0665357cad98d2c4cd54b00d06b"
+    },
+    {
+      "src": "corpus-src/letters/us_clinical_note_visit2.pdf",
+      "out": "letters/us_clinical_note_visit2.md",
+      "src_sha256": "fceff887ba79319ef17d4a449204cb742071404bc4ed71a621341235c08b98eb",
+      "out_sha256": "435cd8ecf5458d937c7c9eaa1af1882f3c2fe879e9d98dab1fb88459324ba19d"
+    },
+    {
+      "src": "corpus-src/office_docs/agency-renewal-letter.docx",
+      "out": "office_docs/agency-renewal-letter.md",
+      "src_sha256": "5ccaeb9dd73b11ac4985b2bc06bc1efbc0485624ccd0e21403a4cc07f7eb5e18",
+      "out_sha256": "f322b311d58d8ef4c93f00d257862f856479dacf99433f31af330b670fda0354"
+    },
+    {
+      "src": "corpus-src/office_docs/bank-address-confirmation.docx",
+      "out": "office_docs/bank-address-confirmation.md",
+      "src_sha256": "34b2b08d84528fe298ee85e273420eeba2784f825e5e951464e34b0039631e6c",
+      "out_sha256": "60e342f8ebc2085311e8fe94bd832eb580e9efe8c394613338a5b8788f040b30"
+    },
+    {
+      "src": "corpus-src/office_docs/grade-calculation.xlsx",
+      "out": "office_docs/grade-calculation.md",
+      "src_sha256": "d5e892518a3eea657a5bf43ac6454e1adae8f6b3934336f80ab3262d31d43289",
+      "out_sha256": "88d31e3eb8a6479ea99f88294409f428e63cdc131be456834077066649680638"
+    },
+    {
+      "src": "corpus-src/office_docs/interest-summary.xlsx",
+      "out": "office_docs/interest-summary.md",
+      "src_sha256": "3bc56eda69ef14f8ebc48870d73f0643dc541c4528d305a45cc9357fac84a222",
+      "out_sha256": "c3f33051d77da5a7dd9611af7d07d42dbcfb2645e8a2e4c174aba8916b5faa0a"
+    },
+    {
+      "src": "corpus-src/office_docs/mattress-invoice.docx",
+      "out": "office_docs/mattress-invoice.md",
+      "src_sha256": "f4632f04a88347ff37c5ae9f2f6d27a482cc19ad4af29e1cfbf3ab113c49f9ad",
+      "out_sha256": "94ada31a1c2b8af162fe3c2caa8db9346f57be18f8b5229ef9626e8d2b488f95"
+    },
+    {
+      "src": "corpus-src/policy_change_notices/policy_change_notice_1.pdf",
+      "out": "policy_change_notices/policy_change_notice_1.md",
+      "src_sha256": "4b491ffa4425064853c02528c166e3db91f539340e0ca2e79bb5f8f7ff138f4b",
+      "out_sha256": "e4854742f3921df957f9b4f418cad7a21242b0297a08c3abfe015bc9452edc37"
+    },
+    {
+      "src": "corpus-src/policy_change_notices/policy_change_notice_2.pdf",
+      "out": "policy_change_notices/policy_change_notice_2.md",
+      "src_sha256": "7196e04d6c1dfbe005190628dfeb9df562b9c5502a89ccad9d617a7ba754e229",
+      "out_sha256": "04458fb91afced812964e4e1d740bfef1b88f0da9561fb2ffa1f20b4d1818db5"
+    },
+    {
+      "src": "corpus-src/policy_change_notices/policy_change_notice_3.pdf",
+      "out": "policy_change_notices/policy_change_notice_3.md",
+      "src_sha256": "1548d258f49ff5d20177d1bd8e2a4a50ad7b0def8c7c178c553af69cf4f6fc8b",
+      "out_sha256": "384e62db88699abfd8aab7563868a73355c73ab4cbdc0dedeb3a82a7a33ba211"
+    },
+    {
+      "src": "corpus-src/quotes_invoices/electrician-invoice-brayfield.pdf",
+      "out": "quotes_invoices/electrician-invoice-brayfield.md",
+      "src_sha256": "fe3864479384e9c9f479c1b4dd1db3a7a5d78446f0296b0dae7ae0bbf09f8a8a",
+      "out_sha256": "8fc676d0851aa6b6912ecddc2e5aca9368d29710a4053e692363630106e1cfcc"
+    },
+    {
+      "src": "corpus-src/quotes_invoices/furniture-invoice-calder-roe.pdf",
+      "out": "quotes_invoices/furniture-invoice-calder-roe.md",
+      "src_sha256": "8d9d2ed111d876f1915b5f99323d9e3cdca77e7a2d42a96a2eeedd45b808c488",
+      "out_sha256": "0bf6ec91aa129e01b0a42d94c6a03de42f4f45373542cbaf6c059241820372f6"
+    },
+    {
+      "src": "corpus-src/quotes_invoices/heatpump-quote-aurellon.pdf",
+      "out": "quotes_invoices/heatpump-quote-aurellon.md",
+      "src_sha256": "e95a68a05d0a4ff5e78b8b49d62c345abb52b171e99ce755188bb006e854990e",
+      "out_sha256": "00af278ef00e7199be8bcb99d06eedace51fac137e51a1a1f4bd94f2222dcf74"
+    },
+    {
+      "src": "corpus-src/quotes_invoices/heatpump-quote-fenwick-dray.pdf",
+      "out": "quotes_invoices/heatpump-quote-fenwick-dray.md",
+      "src_sha256": "68910686b68363795f72562d61c77692b6e1b6a70f52c0ef7c380824d3ae9dce",
+      "out_sha256": "693ede8d3cad30e9a3497a046e84c14cdea78917705bfece4068e8f7b39ca60f"
+    },
+    {
+      "src": "corpus-src/tax_documents/i9_employment_form.pdf",
+      "out": "tax_documents/i9_employment_form.md",
+      "src_sha256": "acd479876a358faf8e074651999122ed963c9f39592922334fc0d34b9ab0f2f3",
+      "out_sha256": "fc2dd313d6bdac295ae17156d3e0db466cb931da644a87742f56ab150af40ae6"
+    },
+    {
+      "src": "corpus-src/tax_documents/p60_year1.pdf",
+      "out": "tax_documents/p60_year1.md",
+      "src_sha256": "5357133250badcb4a71ee08ac231179cdf82d3c31655439164587fab515b22d2",
+      "out_sha256": "7cddbcde975a4810e6969a3ebe6c23ad30b715615d285e0d1aab97a847d43b29"
+    },
+    {
+      "src": "corpus-src/tax_documents/p60_year2.pdf",
+      "out": "tax_documents/p60_year2.md",
+      "src_sha256": "ac239f4df5c6fecc4ce762a71b5185db5e016820172e7d00902939f9ccd59c35",
+      "out_sha256": "8ce535a349e32896657c5073db1a2a6b7287eac60d207445d7ce323b8917a970"
+    },
+    {
+      "src": "corpus-src/tax_documents/uk_self_assessment_year1.pdf",
+      "out": "tax_documents/uk_self_assessment_year1.md",
+      "src_sha256": "e6dc41a9ba252f862d6eec383e00184298fd1cef5d98858dff897e094576bafd",
+      "out_sha256": "700bd8865cca6bf8c2f4efd4a6406ed47ebb6297287cf897169ce90d1932f1cc"
+    },
+    {
+      "src": "corpus-src/tax_documents/uk_self_assessment_year2.pdf",
+      "out": "tax_documents/uk_self_assessment_year2.md",
+      "src_sha256": "ea63b6c93cd25a312475a0897ae2e8341445a9b24dc6ef88fc1d7c5e08d960a9",
+      "out_sha256": "9785ae73429764a08cb92ed54783823d794ba75afa7cb7f8ce72145b1ad39574"
+    },
+    {
+      "src": "corpus-src/tax_documents/us_tax_return_binder.pdf",
+      "out": "tax_documents/us_tax_return_binder.md",
+      "src_sha256": "04f3be2b45cef2b83530290de05abce673851b2d0b9dc8b889df45ff9c2a676c",
+      "out_sha256": "b06a4a4fa70b5a9cd9531aaf6ceec55bd6067bda67f9b56b60c659fad9a67cfc"
+    },
+    {
+      "src": "corpus-src/tax_documents/us_tax_settlement_letter.pdf",
+      "out": "tax_documents/us_tax_settlement_letter.md",
+      "src_sha256": "5636467f165abef3d345a38ce26064315bd7f1f27ed538c7d0f87986c70c6dea",
+      "out_sha256": "e60196d2d3fdded06a91ab03baf0a3204a7fc931ef8954c2e1f11a82ec18e0fc"
+    },
+    {
+      "src": "corpus-src/tax_documents/w2_year1.pdf",
+      "out": "tax_documents/w2_year1.md",
+      "src_sha256": "cbbbd6dda16db5b9f22de9bc4de40a130465712c631bd9edb8d6b3eeaa74e297",
+      "out_sha256": "45e37cb70e27f737f80c9fe2210b60793ef9e69568f1353c8f07d81eb9713903"
+    },
+    {
+      "src": "corpus-src/tax_documents/w2_year2.pdf",
+      "out": "tax_documents/w2_year2.md",
+      "src_sha256": "0c6dc144e834a8dce3019f7bc888a59b25674d3e1eeed28932c16cf558f3a7e0",
+      "out_sha256": "e6263fd2dcdd8f4be93f17e8f940154e2d25277715be208c91719b72a5f5f1b8"
+    },
+    {
+      "src": "corpus-src/tenancy_legal/employment_terms_of_offer.pdf",
+      "out": "tenancy_legal/employment_terms_of_offer.md",
+      "src_sha256": "e34f692ad55182e1ded9ec0aaf5aad555ee727e5cd8629bb3f873649751bb63e",
+      "out_sha256": "84603580374acf0037e5ddf0bf03a206e2d043cdd4cb99b2f1a946aa3c84939e"
+    },
+    {
+      "src": "corpus-src/tenancy_legal/guarantor_deed.pdf",
+      "out": "tenancy_legal/guarantor_deed.md",
+      "src_sha256": "a78b8f24be4a1d1651e01dc22ba546ff6009e5d5fb6612511efdbf85f0e11105",
+      "out_sha256": "b059ac1686caa780ddaaf624cb90f35682134772ef46193ebf8eb6f6f2744073"
+    },
+    {
+      "src": "corpus-src/tenancy_legal/tenancy_agreement.pdf",
+      "out": "tenancy_legal/tenancy_agreement.md",
+      "src_sha256": "3ae0fec802e7dcddbd7615cc3d72408dd54978dc2e2ebd1661593084baf9a044",
+      "out_sha256": "b2a5e020541983e907ee27a7d68a829d81f54a65df91fc825a386321f9ab1e81"
+    },
+    {
+      "src": "corpus-src/tenancy_legal/tenancy_inventory.pdf",
+      "out": "tenancy_legal/tenancy_inventory.md",
+      "src_sha256": "48673cfdf5c38adad02fa06eebbd7716d025cee4491453774d960b09da9273a0",
+      "out_sha256": "40e84c387626f74e067b3db60ee0910ea9313795b6e276cd78a24cbfedbf71b6"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2025-08.pdf",
+      "out": "uk_current_statements/ferrand-current-2025-08.md",
+      "src_sha256": "31e231d6b948081e343e57f859b96abd3cc042865d7d61f0024b721882b8bf26",
+      "out_sha256": "644bf24e78561b673208e582a839bae33023e573fe8c1d0ff25b69efb2ff9f34"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2025-09.pdf",
+      "out": "uk_current_statements/ferrand-current-2025-09.md",
+      "src_sha256": "2ce76c34a905c3c1d21485ba0231c3f4a5571c77459e0e04acdba719175d40c0",
+      "out_sha256": "91763e7abea179162eb55d33493c85b2c3e175a40e9b6861ba99111bff8d8a54"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2025-10.pdf",
+      "out": "uk_current_statements/ferrand-current-2025-10.md",
+      "src_sha256": "10fc4e43495c6f2922f138528a0a5109e7a98292a8105ad0f0e932ee093ab9a1",
+      "out_sha256": "cc73d50613f1844f8d11ab95e9b7c3f9e8bdca5ad6c994a2bc093467ac06d7ed"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2025-11.pdf",
+      "out": "uk_current_statements/ferrand-current-2025-11.md",
+      "src_sha256": "208afd46c0a8f7a45649508addaa133909343cfa7bd71b4ff7e31e6eff9d2cfe",
+      "out_sha256": "3516b5688429f6478592f092e19da63152c9126d412d62335782e75e609890e2"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2025-12.pdf",
+      "out": "uk_current_statements/ferrand-current-2025-12.md",
+      "src_sha256": "95057d7ffef2861188c039addf1162ec0421010da858103cc86eb6ded5ed44e2",
+      "out_sha256": "03b2b98f07098eef31e3978c0002d0a200405363a6ad0804526e4bfea24cafcb"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2026-01.pdf",
+      "out": "uk_current_statements/ferrand-current-2026-01.md",
+      "src_sha256": "e2f53e15cb8f148e2284d16c7139f51bf9390432423dd103052bfc1d67e4fe2f",
+      "out_sha256": "8d24cbcadc07464d2b4d0776f2368db08194cd137eb59bd4d67642e261586f65"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2026-02.pdf",
+      "out": "uk_current_statements/ferrand-current-2026-02.md",
+      "src_sha256": "5d18ec8cab49155e2c3b3cebc63e528fe88e98525c6b543b24c9089132fe2aef",
+      "out_sha256": "f6c6391779dbc1bcdc3e479e155ac0651515fa6e9aab51e00347ea6d9c0eb08b"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2026-03.pdf",
+      "out": "uk_current_statements/ferrand-current-2026-03.md",
+      "src_sha256": "a5ade73b46db313d59719c105ab2e772e5061b00a808f72a29134cf8bbb394f5",
+      "out_sha256": "d8365c25b6351c915c97ffc698e3407923096146b4232c73ab56a97e5ebe08f5"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2026-04.pdf",
+      "out": "uk_current_statements/ferrand-current-2026-04.md",
+      "src_sha256": "35847b36223ca1d842c31d100b0e4817949c131624bef6ebce5b0c37d3242a5a",
+      "out_sha256": "a54216507bfd4436e1bc9233023c7cdf92aac4653b4078523ce68d6f74fa3302"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2026-05.pdf",
+      "out": "uk_current_statements/ferrand-current-2026-05.md",
+      "src_sha256": "d03b49fb8616e0caec0e9960c95c80c5672d0ba625f470f76588a2760eb94d62",
+      "out_sha256": "24210039f036399bf6eff28f8d0265d39682ee3a776895cee125989ccc66f47b"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2026-06.pdf",
+      "out": "uk_current_statements/ferrand-current-2026-06.md",
+      "src_sha256": "ee40e537b228d86cfaa4859a54370c36761f6df772d01e028130790234de8369",
+      "out_sha256": "38ee2ba53037cb739b162fb9e6a06821e1d440f77f8d4a4462803b3696ff4d0c"
+    },
+    {
+      "src": "corpus-src/uk_current_statements/ferrand-current-2026-07.pdf",
+      "out": "uk_current_statements/ferrand-current-2026-07.md",
+      "src_sha256": "175a404139c20e5817027a34f3f35037b992354904d24aa7c37b0ea34f0b9400",
+      "out_sha256": "3a83de55bf73e1041757de5d5ed4e03370a9339d3d2982c625ed62319ff83e20"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2025-08.pdf",
+      "out": "uk_payslips/payslip-2025-08.md",
+      "src_sha256": "90d10d540e3d0fef00125a6df20062c4f26ac42bcdc93b7bd59dfd7d80797306",
+      "out_sha256": "534c7e5b199582e70a2ee80681a29a4426dbf21ef1acefc48c39ad94a33059a5"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2025-09.pdf",
+      "out": "uk_payslips/payslip-2025-09.md",
+      "src_sha256": "d5027f8a4c91c422ca4e790138039241af5f94d58b5e383d10be9fe6a5da4ef8",
+      "out_sha256": "e20b6f7740778286426f28a10085b7afc980ffd7fd1a74ad9e754755f7d1699a"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2025-10.pdf",
+      "out": "uk_payslips/payslip-2025-10.md",
+      "src_sha256": "25b64eb37c6a3c88b392141bd11ccc6fd584800da6b99962eeb50d21ebfb15bb",
+      "out_sha256": "2a333e04a71bc5f26dc7549ad47e123e51fdb9039355af250f37e0cba8c19199"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2025-11.pdf",
+      "out": "uk_payslips/payslip-2025-11.md",
+      "src_sha256": "104ef24e3bf87a326664fa11b3429e753fc3d69cb8ef09aae4875a4b12e552c9",
+      "out_sha256": "28bfd80420da9cce37b3246d9a71dbdae5d444f880b9fa06bdd777750995a0b7"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2025-12.pdf",
+      "out": "uk_payslips/payslip-2025-12.md",
+      "src_sha256": "d8d1da85188868b023f509fd5ee4cd3f7cb9c351554cdbcf12b6385851a4f754",
+      "out_sha256": "e8a9d94e3be0596bd9ef56d2bc8100b5a7aa08a448a29878e9b8eb4bb533e41a"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2026-01.pdf",
+      "out": "uk_payslips/payslip-2026-01.md",
+      "src_sha256": "7c1faa5723d1c18834b0e23ab15d362702a7483f6f03ae8d14db33ae8fee8c90",
+      "out_sha256": "315a1c3d8199f4105a29b41524748f07953852063371c799609df192eab1c3ee"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2026-02.pdf",
+      "out": "uk_payslips/payslip-2026-02.md",
+      "src_sha256": "55d7465a755a1259fabfa286b9c9b81bf289670c3064241fb00527fac9b80869",
+      "out_sha256": "255649b8168705bf8a2d2c762ffce639c477b8abec492694e0f07fc1fd3c9fc4"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2026-03.pdf",
+      "out": "uk_payslips/payslip-2026-03.md",
+      "src_sha256": "e6a388eb808e8b7015768cb359aba6a418784a72ed52d1d8d3bd6095a35a2d73",
+      "out_sha256": "c3e075f6724ef825ec32be8c143f1d08945cfb64645eca9c0084341bca0af72f"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2026-04.pdf",
+      "out": "uk_payslips/payslip-2026-04.md",
+      "src_sha256": "61e3d59a39b2c30b5058ad53114411a3436526d9476884fddaac27ce3ab1283b",
+      "out_sha256": "a55aaedcb16def5d5db182f707f71d38129428e8f59faa148c30b1ce55067000"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2026-05.pdf",
+      "out": "uk_payslips/payslip-2026-05.md",
+      "src_sha256": "84520c8e1ddc8ec8b991228d59e1c87c5780c42c8594702af75b146e75db2bf4",
+      "out_sha256": "7677492082235a5853da684fcab2383b6784eacc6262bda662d5570058d13858"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2026-06.pdf",
+      "out": "uk_payslips/payslip-2026-06.md",
+      "src_sha256": "ec8e00c0eeeba98f55ba3b626cabb73d6ad40f8dce43b045bba22097629d5818",
+      "out_sha256": "62c6efbda920f2b50e69b4fdc1b14dadcbfaecb5daf8dd42e33868fdd523e9ad"
+    },
+    {
+      "src": "corpus-src/uk_payslips/payslip-2026-07.pdf",
+      "out": "uk_payslips/payslip-2026-07.md",
+      "src_sha256": "05d4094663736e5a8d84a58c7b99aebb6b0f3e3fe8b4a7e12db4ef8c2a59f5e4",
+      "out_sha256": "4b1e952c368dccaeb41df07051d96a860896f84edbc1b1487912df0dfb678ade"
+    },
+    {
+      "src": "corpus-src/uk_savings_statements/ferrand-saver-2025-10.pdf",
+      "out": "uk_savings_statements/ferrand-saver-2025-10.md",
+      "src_sha256": "423217a0dfa6e3033d7ccfd24d3ddda7d61431dfc64b3f56c5bf9f3459a180a8",
+      "out_sha256": "5e0b99a7b6d6aedc13fceb1d4f115d378fa69b45c0dddc0e7c2af377b91aa61e"
+    },
+    {
+      "src": "corpus-src/uk_savings_statements/ferrand-saver-2026-01.pdf",
+      "out": "uk_savings_statements/ferrand-saver-2026-01.md",
+      "src_sha256": "41524aaa27a515f1e76724bec33c328698df5d89230d11688843f778554a82f5",
+      "out_sha256": "763ccab128cb1ce7c9397c43c39c498849521faab9381d578af5eaf62be70685"
+    },
+    {
+      "src": "corpus-src/uk_savings_statements/ferrand-saver-2026-04.pdf",
+      "out": "uk_savings_statements/ferrand-saver-2026-04.md",
+      "src_sha256": "6778b5958aee780fbb3dc250fc9b196a189211110aba3c9b498c25ba78ba1243",
+      "out_sha256": "abb51d54a6558a0f56d7e1a812ab2ae5a05c1ade2d5fac5ff1e973c28e09df0a"
+    },
+    {
+      "src": "corpus-src/uk_savings_statements/ferrand-saver-2026-07.pdf",
+      "out": "uk_savings_statements/ferrand-saver-2026-07.md",
+      "src_sha256": "c6c243d5f7d542af9cd60ef664edd341f1a1512f025f24bde607c6251d6203ab",
+      "out_sha256": "0d33a1c00328f6d640300c97a8438bde4aa0cc86da57f44f82e42274e39b60e7"
+    },
+    {
+      "src": "corpus-src/us_checking_statements/harbor-checking-2024-10.pdf",
+      "out": "us_checking_statements/harbor-checking-2024-10.md",
+      "src_sha256": "5a3ed96904adb2097137ad20075daff51fd5b7eb11bf693329a6718e0b6ebda3",
+      "out_sha256": "fff9800fc9f74d66d3e487c6712907f66302514eb2077eedcb74bc795f3b595c"
+    },
+    {
+      "src": "corpus-src/us_checking_statements/harbor-checking-2024-11.pdf",
+      "out": "us_checking_statements/harbor-checking-2024-11.md",
+      "src_sha256": "f591a3b893739cdf0c96413326ea31407befdc00dce1248da7e9661d61dd6a1d",
+      "out_sha256": "2ceb4377bcec7e94768916c396ed3895020d2ea5803abcb61ac95a0832784cd9"
+    },
+    {
+      "src": "corpus-src/us_checking_statements/harbor-checking-2024-12.pdf",
+      "out": "us_checking_statements/harbor-checking-2024-12.md",
+      "src_sha256": "f4cfa2a8079c5f410de8488930793db7dd668a13f433720bf61e20af8fa22886",
+      "out_sha256": "67c3efaef8b8afe2515578eacfdc21b0c5ab14784c562fe0cdbb6e38da502eac"
+    },
+    {
+      "src": "corpus-src/us_checking_statements/harbor-checking-2025-01.pdf",
+      "out": "us_checking_statements/harbor-checking-2025-01.md",
+      "src_sha256": "ad94152f6b2268c652ecf17e42f5814bbff05a19aa1983800caac8e4fe14e40e",
+      "out_sha256": "40aee9766a756adf06148a46be9d04b0387017feee69c5c27a9a6fad775b8377"
+    },
+    {
+      "src": "corpus-src/us_checking_statements/harbor-checking-2025-02.pdf",
+      "out": "us_checking_statements/harbor-checking-2025-02.md",
+      "src_sha256": "7af43127077ae682fb107ff1e5980e538b61db30be01934e1262de2f3f386d96",
+      "out_sha256": "ea8c0ed11caa9515755ad11b83d651735cdadb3bd4d638025978d03aa47a4b58"
+    },
+    {
+      "src": "corpus-src/us_checking_statements/harbor-checking-2025-03.pdf",
+      "out": "us_checking_statements/harbor-checking-2025-03.md",
+      "src_sha256": "6aae10f08c8b6ec8a8fc23c9381048a1c4b879db66c9a5eb4792399e0be1e0be",
+      "out_sha256": "9cba22ea944a82cfe78dbaafed2c13b11a2be7a999661d467fc80b15c4abbae4"
+    },
+    {
+      "src": "corpus-src/us_checking_statements/harbor-checking-2025-04.pdf",
+      "out": "us_checking_statements/harbor-checking-2025-04.md",
+      "src_sha256": "619a2ec1df0d46989be5a61d2159b1d4b555f25a7769ab75ccf9c4482d7958a0",
+      "out_sha256": "eb85b9a2380b54e9795d3d278bee13888d2321e31d7d3f814f17036134739a5b"
+    },
+    {
+      "src": "corpus-src/us_checking_statements/harbor-checking-2025-05.pdf",
+      "out": "us_checking_statements/harbor-checking-2025-05.md",
+      "src_sha256": "595654a5196cdaeb0f746ec4fb508fd4ca96529195008585658e0b015d0e8dda",
+      "out_sha256": "593698e5d1117215ef2eedc5c938a2fa2f14125ddc988d7aebc75761380eb8f7"
+    },
+    {
+      "src": "corpus-src/us_paystubs/paystub-2024-10-04.pdf",
+      "out": "us_paystubs/paystub-2024-10-04.md",
+      "src_sha256": "6180fc01c6640c828923a6e07665eba852351d23da5071bf5d18b6da3e859990",
+      "out_sha256": "8e7fff907257a3393d25e8cac2a09a54019780e87c393e7fb50d367cea8a69b8"
+    },
+    {
+      "src": "corpus-src/us_paystubs/paystub-2024-10-18.pdf",
+      "out": "us_paystubs/paystub-2024-10-18.md",
+      "src_sha256": "fd0ecd62422e934cf4952d0e750d44cf71183cbdc72b879198f6c0f0f86ce6cb",
+      "out_sha256": "8d37a560c7deeb815b476d153915e96f0a3168e8a58cef03e86795f103f499a3"
+    },
+    {
+      "src": "corpus-src/us_paystubs/paystub-2024-11-15.pdf",
+      "out": "us_paystubs/paystub-2024-11-15.md",
+      "src_sha256": "c8e3ce9fc72abebbaf91d27041cb928a8351aba26a10d4b48298164a47d94cf1",
+      "out_sha256": "ee7045b770a7ba562cedffa64f929b203b9bec5d495777b9e324c786400510a9"
+    },
+    {
+      "src": "corpus-src/us_paystubs/paystub-2024-12-27.pdf",
+      "out": "us_paystubs/paystub-2024-12-27.md",
+      "src_sha256": "c0352c4bc1df9ed589937d6ea2a734a6e08db3a959502c9c76f2107a96705a42",
+      "out_sha256": "85f4b1a5cb41fa2c4c34d05b0d06d2a2dae2b46b19adb4b7bb79041509c05bf9"
+    },
+    {
+      "src": "corpus-src/us_paystubs/paystub-2025-01-10.pdf",
+      "out": "us_paystubs/paystub-2025-01-10.md",
+      "src_sha256": "ca433fb06b9c4c1a3a54cb205a48ba3156179fabdd0be5fd6cd0b58a693bc98f",
+      "out_sha256": "6589b536239d10a703187a8e29e6bff53cbcc98819f0c956080a2ecfb916938f"
+    },
+    {
+      "src": "corpus-src/us_paystubs/paystub-2025-02-21.pdf",
+      "out": "us_paystubs/paystub-2025-02-21.md",
+      "src_sha256": "5916919053c26fdd6ee0abda29c1ce1571e24e3df339fa11bd9649d0e67995f9",
+      "out_sha256": "596aa2b50ae306d433c77d32edc04e8e292babe4ccf099e61d0fc34b0d65e1d4"
+    },
+    {
+      "src": "corpus-src/us_paystubs/paystub-2025-04-18.pdf",
+      "out": "us_paystubs/paystub-2025-04-18.md",
+      "src_sha256": "04903cd6cd7c28cceb2d0338ce979cff10792cd5f28076590b65d0f52030da1b",
+      "out_sha256": "16c8d7f0c7dd1aafe405290e8b7303ced7e2b7b5d57bf27409c92d43406f65aa"
+    },
+    {
+      "src": "corpus-src/us_paystubs/paystub-2025-05-30.pdf",
+      "out": "us_paystubs/paystub-2025-05-30.md",
+      "src_sha256": "74a2246e44282ed8384a5d42d945714c9c4cac79991ef44ae6949de7c769343e",
+      "out_sha256": "6fd1ff03150c7a0068db0921fbed30277a78f3092bbb6cf71f9cc2479c2538ac"
+    },
+    {
+      "src": "corpus-src/us_savings_statements/harbor-savings-2024-q4.pdf",
+      "out": "us_savings_statements/harbor-savings-2024-q4.md",
+      "src_sha256": "e581008c979da4e65b626b756dd4e8ccd4ec68dadfae177626150f17ebdbf72c",
+      "out_sha256": "0ae404cb9130dbb51e376d219f69004c2927686f7cfce3a5b9e4cb763cd0fcc2"
+    },
+    {
+      "src": "corpus-src/us_savings_statements/harbor-savings-2025-q1.pdf",
+      "out": "us_savings_statements/harbor-savings-2025-q1.md",
+      "src_sha256": "fc4e546d72f7b2b25a4e9cadb1a65d34bdc1854b58d551bc12337dc893415a72",
+      "out_sha256": "5410e11c67e7ed626547d392972dd644ffd41700aa4721336488ffc2d3409755"
+    },
+    {
+      "src": "corpus-src/us_savings_statements/harbor-savings-2025-q2.pdf",
+      "out": "us_savings_statements/harbor-savings-2025-q2.md",
+      "src_sha256": "774cfc9d6cd29406019b407728253d2498c2b2adad645b92b7ad9c3f9bf2db30",
+      "out_sha256": "d8f7a251953daa551736ffc508fb3a47250c6313fc65abfa15185d41b182787d"
+    },
+    {
+      "src": "corpus-src/water_bills/water-2025-11.pdf",
+      "out": "water_bills/water-2025-11.md",
+      "src_sha256": "3bab125fe5a88d4fdeef11d70fac03af9b71968addf798d3b232efb4a9d32678",
+      "out_sha256": "c62074b21ee1ab977480ae9258e169c04b1bb8eada15ca5f697c2478ad32a536"
+    },
+    {
+      "src": "corpus-src/water_bills/water-2026-02.pdf",
+      "out": "water_bills/water-2026-02.md",
+      "src_sha256": "ee9545e85d60adc4f624641da49d8aa25da1dbedcf1ca2600de415d2466a572f",
+      "out_sha256": "2b2f452d333b2e6e0d94cbf9688a347aec7a4600097a65919b9d0779653770b2"
+    },
+    {
+      "src": "corpus-src/water_bills/water-2026-05.pdf",
+      "out": "water_bills/water-2026-05.md",
+      "src_sha256": "7587862d5bce4c23743aab3cc45f50cbe4aea70334dd937d67cab89e28447a49",
+      "out_sha256": "11256a72b1559ece4e488bbc1273e46df43b328567ea1d60b7d8f851eb838951"
+    },
+    {
+      "src": "corpus-src/water_bills/water-2026-08.pdf",
+      "out": "water_bills/water-2026-08.md",
+      "src_sha256": "9600b3c896657839161708a4957f3a58b28d892e81bc750f83cd4129f3eeb4fd",
+      "out_sha256": "5a1a7e9960f84231ca8c379b630bfa9b7f4001e494a9e731a155c30c10ef31f6"
+    },
+    {
+      "src": "spec/notes/article-notes-home-batteries.md",
+      "out": "notes/article-notes-home-batteries.md",
+      "src_sha256": "8454ba9b5778f27ddfe971a5f4bf6fc84adfda9ddac0bdefe65b4b242f695dfe",
+      "out_sha256": "8454ba9b5778f27ddfe971a5f4bf6fc84adfda9ddac0bdefe65b4b242f695dfe"
+    },
+    {
+      "src": "spec/notes/backup-strategy.md",
+      "out": "notes/backup-strategy.md",
+      "src_sha256": "fe975050409ff607d372fbd4fca2b03cbe418633db0116ac483f5ed2ed06d899",
+      "out_sha256": "fe975050409ff607d372fbd4fca2b03cbe418633db0116ac483f5ed2ed06d899"
+    },
+    {
+      "src": "spec/notes/boiler-pressure-saga.md",
+      "out": "notes/boiler-pressure-saga.md",
+      "src_sha256": "9ebb54d57a30a016f3883c19425922318ae2191b44e754700996a8f81b3158bc",
+      "out_sha256": "9ebb54d57a30a016f3883c19425922318ae2191b44e754700996a8f81b3158bc"
+    },
+    {
+      "src": "spec/notes/book-notes-ninety-days-of-rain.md",
+      "out": "notes/book-notes-ninety-days-of-rain.md",
+      "src_sha256": "80032d0d830db747a2fc9c9c337913d3df1d21ec0c4e1dc857ca74a40c76cf6c",
+      "out_sha256": "80032d0d830db747a2fc9c9c337913d3df1d21ec0c4e1dc857ca74a40c76cf6c"
+    },
+    {
+      "src": "spec/notes/book-notes-the-quiet-grid.md",
+      "out": "notes/book-notes-the-quiet-grid.md",
+      "src_sha256": "68d4ccfe3c77a9f89aa51c07443748a95785a507ff63630784ec592def85353d",
+      "out_sha256": "68d4ccfe3c77a9f89aa51c07443748a95785a507ff63630784ec592def85353d"
+    },
+    {
+      "src": "spec/notes/broadband-outage-jan-2026.md",
+      "out": "notes/broadband-outage-jan-2026.md",
+      "src_sha256": "56cb5a3016c405592c461d667109810456c14e2fe69bf6051991067c8dca2928",
+      "out_sha256": "56cb5a3016c405592c461d667109810456c14e2fe69bf6051991067c8dca2928"
+    },
+    {
+      "src": "spec/notes/brooklyn-apartment-hunt.md",
+      "out": "notes/brooklyn-apartment-hunt.md",
+      "src_sha256": "ff355d106c3b52b8bf665b23e8e12196fd0c5944b1b1ef64f01c4ea4d4f71621",
+      "out_sha256": "ff355d106c3b52b8bf665b23e8e12196fd0c5944b1b1ef64f01c4ea4d4f71621"
+    },
+    {
+      "src": "spec/notes/budget-2026.md",
+      "out": "notes/budget-2026.md",
+      "src_sha256": "9302ff0007fbeee116064f902b86d9970c8a7aca60d6563a202c709a0ac7c0e7",
+      "out_sha256": "9302ff0007fbeee116064f902b86d9970c8a7aca60d6563a202c709a0ac7c0e7"
+    },
+    {
+      "src": "spec/notes/charity-donation.md",
+      "out": "notes/charity-donation.md",
+      "src_sha256": "2dd1952f2e58c8d902838fe57ec4c7c79cd161b28ae50e529635a62757eaac21",
+      "out_sha256": "2dd1952f2e58c8d902838fe57ec4c7c79cd161b28ae50e529635a62757eaac21"
+    },
+    {
+      "src": "spec/notes/conference-notes-2026.md",
+      "out": "notes/conference-notes-2026.md",
+      "src_sha256": "bcf4b6beff18a92814b0d7cfc033effe62c37387bd348ebf288a4a2582492064",
+      "out_sha256": "bcf4b6beff18a92814b0d7cfc033effe62c37387bd348ebf288a4a2582492064"
+    },
+    {
+      "src": "spec/notes/credit-file-cleanup.md",
+      "out": "notes/credit-file-cleanup.md",
+      "src_sha256": "ad091d191c97cfc0562b9c314feb20d70637c1273c079548c3d394d02e76c93b",
+      "out_sha256": "ad091d191c97cfc0562b9c314feb20d70637c1273c079548c3d394d02e76c93b"
+    },
+    {
+      "src": "spec/notes/damp-and-condensation.md",
+      "out": "notes/damp-and-condensation.md",
+      "src_sha256": "5cfdccb3b583c583e182f902508da941e8809119912a5e1d676f8609bdb609dd",
+      "out_sha256": "5cfdccb3b583c583e182f902508da941e8809119912a5e1d676f8609bdb609dd"
+    },
+    {
+      "src": "spec/notes/dns-adblock-setup.md",
+      "out": "notes/dns-adblock-setup.md",
+      "src_sha256": "107d8bc0d82a469e848f3e64dc6fd520bb82fe07f61e443b0c48cf5fb73b1c59",
+      "out_sha256": "107d8bc0d82a469e848f3e64dc6fd520bb82fe07f61e443b0c48cf5fb73b1c59"
+    },
+    {
+      "src": "spec/notes/edinburgh-fringe-idea.md",
+      "out": "notes/edinburgh-fringe-idea.md",
+      "src_sha256": "dd31824f9def8c541ce0c9c3f0e328dc5064c0903f0165591577258ee89f5519",
+      "out_sha256": "dd31824f9def8c541ce0c9c3f0e328dc5064c0903f0165591577258ee89f5519"
+    },
+    {
+      "src": "spec/notes/energy-costs-first-year.md",
+      "out": "notes/energy-costs-first-year.md",
+      "src_sha256": "fd1be2a8e84c71d9d16b59d132bf96371685ba7e23fb06098c173a3836af6de4",
+      "out_sha256": "fd1be2a8e84c71d9d16b59d132bf96371685ba7e23fb06098c173a3836af6de4"
+    },
+    {
+      "src": "spec/notes/flat-snagging-list.md",
+      "out": "notes/flat-snagging-list.md",
+      "src_sha256": "5bb75ef0e10f2472f104659129ac5c7497ba68ec692f89324ec46c9ae407cf9f",
+      "out_sha256": "5bb75ef0e10f2472f104659129ac5c7497ba68ec692f89324ec46c9ae407cf9f"
+    },
+    {
+      "src": "spec/notes/furniture-shortlist.md",
+      "out": "notes/furniture-shortlist.md",
+      "src_sha256": "a00730125fbc0d0805e4a08e74f09155c51aa8cbd4de139cd78fcd5f37922d0d",
+      "out_sha256": "a00730125fbc0d0805e4a08e74f09155c51aa8cbd4de139cd78fcd5f37922d0d"
+    },
+    {
+      "src": "spec/notes/gift-ideas.md",
+      "out": "notes/gift-ideas.md",
+      "src_sha256": "1ee1d41929ffdfb0cb9f62cf1367b82d261c52b04ccb06efdecaf504e4e455ad",
+      "out_sha256": "1ee1d41929ffdfb0cb9f62cf1367b82d261c52b04ccb06efdecaf504e4e455ad"
+    },
+    {
+      "src": "spec/notes/groceries-staples.md",
+      "out": "notes/groceries-staples.md",
+      "src_sha256": "b92f38578b3d73162e9bc935f120fa3b00b6954686ffdece5cb493b4ca7a91d8",
+      "out_sha256": "b92f38578b3d73162e9bc935f120fa3b00b6954686ffdece5cb493b4ca7a91d8"
+    },
+    {
+      "src": "spec/notes/halewick-onboarding.md",
+      "out": "notes/halewick-onboarding.md",
+      "src_sha256": "3c8cda55ab6ecca0fdd060d2b40254372385ec79aa96b194a4bdb3827b23d4db",
+      "out_sha256": "3c8cda55ab6ecca0fdd060d2b40254372385ec79aa96b194a4bdb3827b23d4db"
+    },
+    {
+      "src": "spec/notes/health-sinus-log.md",
+      "out": "notes/health-sinus-log.md",
+      "src_sha256": "5662ae70f69b5ed4e4ed38a3f0d92a32707cc589b7b5edf4880d7493534f46dd",
+      "out_sha256": "5662ae70f69b5ed4e4ed38a3f0d92a32707cc589b7b5edf4880d7493534f46dd"
+    },
+    {
+      "src": "spec/notes/heat-pump-research.md",
+      "out": "notes/heat-pump-research.md",
+      "src_sha256": "b52d1575abc43192fcc9c5daf345671fe67f2db20ad4ef234d5c85b31567b750",
+      "out_sha256": "b52d1575abc43192fcc9c5daf345671fe67f2db20ad4ef234d5c85b31567b750"
+    },
+    {
+      "src": "spec/notes/home-office-setup.md",
+      "out": "notes/home-office-setup.md",
+      "src_sha256": "dcd21f1c828b799c5dc4470f45dc3a2c0d66afafd1bdd5c3121d22f57c006620",
+      "out_sha256": "dcd21f1c828b799c5dc4470f45dc3a2c0d66afafd1bdd5c3121d22f57c006620"
+    },
+    {
+      "src": "spec/notes/homelab-inventory.md",
+      "out": "notes/homelab-inventory.md",
+      "src_sha256": "30c4bc66701894ba8fd4b278679cee85ea703a9ec06edf55eba7459ef2df3d50",
+      "out_sha256": "30c4bc66701894ba8fd4b278679cee85ea703a9ec06edf55eba7459ef2df3d50"
+    },
+    {
+      "src": "spec/notes/interview-prep-halewick.md",
+      "out": "notes/interview-prep-halewick.md",
+      "src_sha256": "e8eccf015e8599be8fae56131e7ac38b790e0d632e09ab157784298f29574e5d",
+      "out_sha256": "e8eccf015e8599be8fae56131e7ac38b790e0d632e09ab157784298f29574e5d"
+    },
+    {
+      "src": "spec/notes/isa-and-savings-notes.md",
+      "out": "notes/isa-and-savings-notes.md",
+      "src_sha256": "98e2313ab461465d873a055614e1e6949e24d424890e133f15df9ac2097745ff",
+      "out_sha256": "98e2313ab461465d873a055614e1e6949e24d424890e133f15df9ac2097745ff"
+    },
+    {
+      "src": "spec/notes/kestrel-depot-capacity-kickoff.md",
+      "out": "notes/kestrel-depot-capacity-kickoff.md",
+      "src_sha256": "4a03fe9c286ba2f4c9c9c897218921376456cf466220dfc54fe7a881293b2da5",
+      "out_sha256": "4a03fe9c286ba2f4c9c9c897218921376456cf466220dfc54fe7a881293b2da5"
+    },
+    {
+      "src": "spec/notes/kestrel-incident-retro.md",
+      "out": "notes/kestrel-incident-retro.md",
+      "src_sha256": "bb8ac2a02377cced41768e5b6cef3ca896d943abcac3564bd10e4ff1d4ab8d71",
+      "out_sha256": "bb8ac2a02377cced41768e5b6cef3ca896d943abcac3564bd10e4ff1d4ab8d71"
+    },
+    {
+      "src": "spec/notes/lake-district-weekend.md",
+      "out": "notes/lake-district-weekend.md",
+      "src_sha256": "d4540404d60553c873bf3fc095435d319845b5ea0f1a801b7a34e2f6b1ab3202",
+      "out_sha256": "d4540404d60553c873bf3fc095435d319845b5ea0f1a801b7a34e2f6b1ab3202"
+    },
+    {
+      "src": "spec/notes/lisbon-trip-plan.md",
+      "out": "notes/lisbon-trip-plan.md",
+      "src_sha256": "9adc94f2498c6fb4492071d5f347ef54e724589217cccbe0f84dc836d2c4d86e",
+      "out_sha256": "9adc94f2498c6fb4492071d5f347ef54e724589217cccbe0f84dc836d2c4d86e"
+    },
+    {
+      "src": "spec/notes/meridian-loft-handover.md",
+      "out": "notes/meridian-loft-handover.md",
+      "src_sha256": "859939350c299ad5fb0dbb88da56301ede29f0ee2eb9fe1e264d54307f15f3e6",
+      "out_sha256": "859939350c299ad5fb0dbb88da56301ede29f0ee2eb9fe1e264d54307f15f3e6"
+    },
+    {
+      "src": "spec/notes/mini-pc-server-setup.md",
+      "out": "notes/mini-pc-server-setup.md",
+      "src_sha256": "f08a1480f29c18a21e510c8f7e72c5076f232aac65a9ae704d46c174f53a60de",
+      "out_sha256": "f08a1480f29c18a21e510c8f7e72c5076f232aac65a9ae704d46c174f53a60de"
+    },
+    {
+      "src": "spec/notes/movies-watchlist.md",
+      "out": "notes/movies-watchlist.md",
+      "src_sha256": "6136807511a04a7701882bb208b52766fae11e72432e248f322180e16548f2cc",
+      "out_sha256": "6136807511a04a7701882bb208b52766fae11e72432e248f322180e16548f2cc"
+    },
+    {
+      "src": "spec/notes/moving-back-to-london.md",
+      "out": "notes/moving-back-to-london.md",
+      "src_sha256": "b58fe0c928e9944e54627445b2a31d63138b17e39ce190f1fec34ed49471a0d4",
+      "out_sha256": "b58fe0c928e9944e54627445b2a31d63138b17e39ce190f1fec34ed49471a0d4"
+    },
+    {
+      "src": "spec/notes/network-cheatsheet.md",
+      "out": "notes/network-cheatsheet.md",
+      "src_sha256": "6d275804651da60e0d865b07d42bb8120dc60450a5677ef865aac84c8edd3d54",
+      "out_sha256": "6d275804651da60e0d865b07d42bb8120dc60450a5677ef865aac84c8edd3d54"
+    },
+    {
+      "src": "spec/notes/nyc-favourites.md",
+      "out": "notes/nyc-favourites.md",
+      "src_sha256": "cbaf8d81358f9d5c9cc9f35d114d53098bbca077c3b5766387595309d1758f04",
+      "out_sha256": "cbaf8d81358f9d5c9cc9f35d114d53098bbca077c3b5766387595309d1758f04"
+    },
+    {
+      "src": "spec/notes/one-to-ones-log.md",
+      "out": "notes/one-to-ones-log.md",
+      "src_sha256": "163cd0c6a5c9c95e4b8094072be6833bb57a29f35c19c70d783a098751fb02d8",
+      "out_sha256": "163cd0c6a5c9c95e4b8094072be6833bb57a29f35c19c70d783a098751fb02d8"
+    },
+    {
+      "src": "spec/notes/quarterly-review-prep.md",
+      "out": "notes/quarterly-review-prep.md",
+      "src_sha256": "7a5b79d0f019b594704a0f31cc809d59924b9e95450e9ae39f4c171958b6b484",
+      "out_sha256": "7a5b79d0f019b594704a0f31cc809d59924b9e95450e9ae39f4c171958b6b484"
+    },
+    {
+      "src": "spec/notes/reading-log-2024.md",
+      "out": "notes/reading-log-2024.md",
+      "src_sha256": "b296643c1d0ceb05d7260ca19cf1fdcaaae7ca3273fce27c7df57b895c5efc48",
+      "out_sha256": "b296643c1d0ceb05d7260ca19cf1fdcaaae7ca3273fce27c7df57b895c5efc48"
+    },
+    {
+      "src": "spec/notes/reading-log-2026.md",
+      "out": "notes/reading-log-2026.md",
+      "src_sha256": "6a682f7bbf68b3225e2d0c29970a5097a550cf4de48b5b9df19bdf9dd680e412",
+      "out_sha256": "6a682f7bbf68b3225e2d0c29970a5097a550cf4de48b5b9df19bdf9dd680e412"
+    },
+    {
+      "src": "spec/notes/recipe-banana-bread.md",
+      "out": "notes/recipe-banana-bread.md",
+      "src_sha256": "fec412b0843bdad40e7f3f23392f6ca4e1e377226d110d9ca5239d04ebe3b42b",
+      "out_sha256": "fec412b0843bdad40e7f3f23392f6ca4e1e377226d110d9ca5239d04ebe3b42b"
+    },
+    {
+      "src": "spec/notes/recipe-one-pan-chicken.md",
+      "out": "notes/recipe-one-pan-chicken.md",
+      "src_sha256": "6b3226e450db13756a694a1fa07404e839467fa934708da6649b5bb606b8dcc4",
+      "out_sha256": "6b3226e450db13756a694a1fa07404e839467fa934708da6649b5bb606b8dcc4"
+    },
+    {
+      "src": "spec/notes/recipe-red-lentil-dal.md",
+      "out": "notes/recipe-red-lentil-dal.md",
+      "src_sha256": "394c8d448954973e642b5c603b7470d1728e56241c4a2fface781432b47719af",
+      "out_sha256": "394c8d448954973e642b5c603b7470d1728e56241c4a2fface781432b47719af"
+    },
+    {
+      "src": "spec/notes/remote-access-vpn.md",
+      "out": "notes/remote-access-vpn.md",
+      "src_sha256": "b3aa7d51feb08cb707c223d6ab4f56bf570dae69c103186cf8cdb9194b1769ec",
+      "out_sha256": "b3aa7d51feb08cb707c223d6ab4f56bf570dae69c103186cf8cdb9194b1769ec"
+    },
+    {
+      "src": "spec/notes/research-heat-pump-noise.md",
+      "out": "notes/research-heat-pump-noise.md",
+      "src_sha256": "c5ee598b51bc9b577e3b10f073a50b4a5f24d0cabb3b46619fcd735b8a121a8a",
+      "out_sha256": "c5ee598b51bc9b577e3b10f073a50b4a5f24d0cabb3b46619fcd735b8a121a8a"
+    },
+    {
+      "src": "spec/notes/self-hosted-photos.md",
+      "out": "notes/self-hosted-photos.md",
+      "src_sha256": "3f760066019f55be739c0390c214f839c39cabbe06afe0e2d3177d7b27b4cde7",
+      "out_sha256": "3f760066019f55be739c0390c214f839c39cabbe06afe0e2d3177d7b27b4cde7"
+    },
+    {
+      "src": "spec/notes/smart-meter-data.md",
+      "out": "notes/smart-meter-data.md",
+      "src_sha256": "5e5d1c949ce82b2952d6c73a378ff2f4fb36f024c3e549707f1ad1d08439791d",
+      "out_sha256": "5e5d1c949ce82b2952d6c73a378ff2f4fb36f024c3e549707f1ad1d08439791d"
+    },
+    {
+      "src": "spec/notes/standing-charge-dispute.md",
+      "out": "notes/standing-charge-dispute.md",
+      "src_sha256": "e42b7f4f4b008b1036024d0c5c377bf8f9be0afc37a02311cb319578cc7cfd27",
+      "out_sha256": "e42b7f4f4b008b1036024d0c5c377bf8f9be0afc37a02311cb319578cc7cfd27"
+    },
+    {
+      "src": "spec/notes/static-ip-and-hosting.md",
+      "out": "notes/static-ip-and-hosting.md",
+      "src_sha256": "a595e1e9fdce0912b529927c0f1a6df47781ebcb9c4db6b7d73fa571a6b10bf1",
+      "out_sha256": "a595e1e9fdce0912b529927c0f1a6df47781ebcb9c4db6b7d73fa571a6b10bf1"
+    },
+    {
+      "src": "spec/notes/student-loan-notes.md",
+      "out": "notes/student-loan-notes.md",
+      "src_sha256": "71089c48ae06bcf88934cb74abd5b2a7b36c0024263e64fef8580366214dbb9a",
+      "out_sha256": "71089c48ae06bcf88934cb74abd5b2a7b36c0024263e64fef8580366214dbb9a"
+    }
+  ]
+}

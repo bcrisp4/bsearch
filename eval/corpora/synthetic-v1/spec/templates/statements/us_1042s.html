@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Form 1042-S style one-pager (shape notes docs 8-9): mailer artifacts
+     up top, dense numbered box grid below. Rendered clean, then
+     rasterised via `scan: true` in the data file. Shared by the
+     checking/savings near-identical pair. */
+  body { page: us-letter; }
+  html { font-size: 8pt; }
+  .mailer { display: flex; justify-content: space-between;
+    margin-bottom: 6mm; }
+  .mailer .return { font-size: 7.5pt; }
+  .mailer .ctrl { font-family: "Doc Mono", monospace; font-size: 7pt;
+    text-align: right; }
+  .dmatrix {
+    width: 9mm; height: 9mm; margin-left: auto; margin-bottom: 1mm;
+    background:
+      repeating-linear-gradient(0deg, #000 0, #000 1mm, #fff 1mm, #fff 2mm),
+      repeating-linear-gradient(90deg, #000 0, #000 1mm, #fff 1mm, #fff 2mm);
+    background-blend-mode: difference;
+  }
+  .recipient-window { font-family: "Doc Mono", monospace; font-size: 8.5pt;
+    margin: 4mm 0 6mm 8mm; }
+  .form-head { display: flex; border: 1pt solid #000; border-bottom: none; }
+  .form-head .band { width: 30mm; border-right: 0.5pt solid #000;
+    padding: 1.5mm; }
+  .form-head .band .formno { font-size: 12pt; font-weight: bold; }
+  .form-head .title { flex: 1; text-align: center; padding: 1.5mm;
+    font-weight: bold; }
+  .form-head .title .sub { font-weight: normal; font-size: 7pt; }
+  .form-head .year { width: 26mm; border-left: 0.5pt solid #000;
+    padding: 1.5mm; text-align: center; }
+  .form-head .year .yr { font-size: 13pt; font-weight: bold; }
+  .ufi-row { display: flex; align-items: center; gap: 2mm;
+    border: 1pt solid #000; border-bottom: none; padding: 1.2mm 1.5mm; }
+  .digit { display: inline-block; width: 4mm; border: 0.5pt solid #000;
+    text-align: center; font-family: "Doc Mono", monospace;
+    padding: 0.4mm 0; margin-right: 0.6mm; }
+  .cbx { display: inline-block; width: 2.6mm; height: 2.6mm;
+    border: 0.5pt solid #000; vertical-align: middle; margin: 0 1mm; }
+  table.grid { width: 100%; border-collapse: collapse; }
+  table.grid td {
+    border: 0.5pt solid #000; padding: 0.8mm 1.2mm; vertical-align: top;
+    height: 7mm;
+  }
+  table.grid .bl { font-size: 6.2pt; color: #222; display: block; }
+  table.grid .bv { font-family: "Doc Mono", monospace; font-size: 8.5pt; }
+  .keep { font-size: 7pt; margin-top: 2mm; }
+  .keep .right { float: right; font-family: "Doc Mono", monospace; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Form 1042-S ({{ issue.form_year }}) &mdash; Copy B for Recipient. Keep for
+  your records. Prepared and filed by the withholding agent shown in box 12.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="mailer">
+  <div class="return">
+    COMMONWEALTH HARBOR BANK, N.A.<br>
+    TAX REPORTING UNIT<br>
+    PO BOX 7729<br>
+    NEW YORK, NY 10008
+  </div>
+  <div class="ctrl">
+    <div class="dmatrix"></div>
+    PRT {{ issue.mail_seq }} &middot; {{ issue.form_year }}TX<br>
+    {{ issue.account_label | upper }}
+  </div>
+</div>
+
+<div class="recipient-window">
+  {{ person.full_name | upper }}<br>
+  {{ addresses.uk_current.line1 | upper }}<br>
+  {{ addresses.uk_current.line2 | upper }}<br>
+  {{ addresses.uk_current.city | upper }} {{ addresses.uk_current.postcode }}<br>
+  UNITED KINGDOM
+</div>
+
+<div class="form-head">
+  <div class="band">
+    <span class="formno">Form 1042-S</span><br>
+    U.S. federal withholding tax form
+  </div>
+  <div class="title">
+    Foreign Person's U.S. Source Income Subject to Withholding<br>
+    <span class="sub">Information about Form 1042-S is available from your
+    withholding agent. Copy B &mdash; for Recipient.</span>
+  </div>
+  <div class="year">
+    <span class="yr">{{ issue.form_year }}</span><br>
+    OMB No. 1545-0096
+  </div>
+</div>
+
+<div class="ufi-row">
+  <span>Unique form identifier</span>
+  {% for ch in issue.form_id %}<span class="digit">{{ ch }}</span>{% endfor %}
+  <span style="margin-left: 6mm">AMENDED <span class="cbx"></span></span>
+  <span>AMENDMENT NO. <span class="cbx"></span></span>
+</div>
+
+<table class="grid">
+  <tr>
+    <td style="width: 20%"><span class="bl">1&nbsp; Income code</span>
+      <span class="bv">29</span></td>
+    <td style="width: 20%"><span class="bl">2&nbsp; Gross income</span>
+      <span class="bv">{{ issue.gross_income }}</span></td>
+    <td style="width: 20%"><span class="bl">3&nbsp; Chapter indicator</span>
+      <span class="bv">3</span></td>
+    <td style="width: 20%"><span class="bl">3a&nbsp; Exemption code</span>
+      <span class="bv">02</span></td>
+    <td style="width: 20%"><span class="bl">3b&nbsp; Tax rate</span>
+      <span class="bv">00.00</span></td>
+  </tr>
+  <tr>
+    <td><span class="bl">4a&nbsp; Exemption code (chapter 4)</span>
+      <span class="bv">15</span></td>
+    <td><span class="bl">4b&nbsp; Tax rate (chapter 4)</span>
+      <span class="bv">00.00</span></td>
+    <td><span class="bl">5&nbsp; Withholding allowance</span>
+      <span class="bv"></span></td>
+    <td><span class="bl">6&nbsp; Net income</span>
+      <span class="bv"></span></td>
+    <td><span class="bl">7a&nbsp; Federal tax withheld</span>
+      <span class="bv">0</span></td>
+  </tr>
+  <tr>
+    <td><span class="bl">8&nbsp; Tax withheld by other agents</span>
+      <span class="bv">0</span></td>
+    <td><span class="bl">9&nbsp; Overwithheld tax repaid to recipient</span>
+      <span class="bv">0</span></td>
+    <td><span class="bl">10&nbsp; Total withholding credit</span>
+      <span class="bv">0</span></td>
+    <td colspan="2"><span class="bl">11&nbsp; Tax paid by withholding
+      agent (amounts not withheld)</span>
+      <span class="bv">0</span></td>
+  </tr>
+  <tr>
+    <td colspan="2"><span class="bl">12a&nbsp; Withholding agent's EIN</span>
+      <span class="bv">38-4402917</span></td>
+    <td><span class="bl">12b&nbsp; Ch. 3 status code</span>
+      <span class="bv">02</span></td>
+    <td colspan="2"><span class="bl">12c&nbsp; Ch. 4 status code</span>
+      <span class="bv">01</span></td>
+  </tr>
+  <tr>
+    <td colspan="3"><span class="bl">12d&nbsp; Withholding agent's name</span>
+      <span class="bv">COMMONWEALTH HARBOR BANK NA</span></td>
+    <td colspan="2"><span class="bl">12f&nbsp; Country code</span>
+      <span class="bv">US</span></td>
+  </tr>
+  <tr>
+    <td colspan="5"><span class="bl">12h&nbsp; Withholding agent's
+      address (city or town, state, ZIP code)</span>
+      <span class="bv">PO BOX 7729, NEW YORK, NY 10008</span></td>
+  </tr>
+  <tr>
+    <td colspan="3"><span class="bl">13a&nbsp; Recipient's name</span>
+      <span class="bv">{{ person.full_name | upper }}</span></td>
+    <td colspan="2"><span class="bl">13b&nbsp; Recipient's country code</span>
+      <span class="bv">UK</span></td>
+  </tr>
+  <tr>
+    <td colspan="5"><span class="bl">13c&nbsp; Recipient's address</span>
+      <span class="bv">{{ addresses.uk_current.line1 | upper }},
+      {{ addresses.uk_current.line2 | upper }},
+      {{ addresses.uk_current.city | upper }}
+      {{ addresses.uk_current.postcode }}, UNITED KINGDOM</span></td>
+  </tr>
+  <tr>
+    <td><span class="bl">13e&nbsp; Recipient's U.S. TIN, if any</span>
+      <span class="bv"></span></td>
+    <td><span class="bl">13f&nbsp; Ch. 3 status code</span>
+      <span class="bv">16</span></td>
+    <td><span class="bl">13g&nbsp; Ch. 4 status code</span>
+      <span class="bv"></span></td>
+    <td colspan="2"><span class="bl">13h&nbsp; Recipient's GIIN</span>
+      <span class="bv"></span></td>
+  </tr>
+  <tr>
+    <td colspan="2"><span class="bl">13i&nbsp; Recipient's foreign tax
+      identification number, if any</span>
+      <span class="bv">{{ person.ni_number }}</span></td>
+    <td><span class="bl">13k&nbsp; Recipient's account
+      number</span>
+      <span class="bv">{{ banks[issue.bank_key].account_number }}</span></td>
+    <td colspan="2"><span class="bl">13l&nbsp; Recipient's date of birth</span>
+      {% for ch in person.date_of_birth.replace('-', '') -%}
+      <span class="digit">{{ ch }}</span>
+      {%- endfor %}</td>
+  </tr>
+  <tr>
+    <td colspan="3"><span class="bl">14a&nbsp; Primary withholding agent's
+      name (if applicable)</span>
+      <span class="bv"></span></td>
+    <td colspan="2"><span class="bl">14b&nbsp; Primary withholding agent's
+      EIN</span>
+      <span class="bv"></span></td>
+  </tr>
+  <tr>
+    <td colspan="3"><span class="bl">15&nbsp; Intermediary or flow-through
+      entity's name</span>
+      <span class="bv"></span></td>
+    <td colspan="2"><span class="bl">16&nbsp; Payer's name and TIN (if
+      different from withholding agent)</span>
+      <span class="bv"></span></td>
+  </tr>
+  <tr>
+    <td><span class="bl">17a&nbsp; State income tax withheld</span>
+      <span class="bv">0</span></td>
+    <td colspan="2"><span class="bl">17b&nbsp; Payer's state tax no.</span>
+      <span class="bv"></span></td>
+    <td colspan="2"><span class="bl">17c&nbsp; Name of state</span>
+      <span class="bv"></span></td>
+  </tr>
+</table>
+
+<p class="keep">(keep for your records)
+  <span class="right">Form 1042-S ({{ issue.form_year }}) &middot;
+  PRT {{ issue.mail_seq }}</span>
+</p>
+
+<p style="font-size: 7pt; color: #333; margin-top: 4mm">
+Explanation of selected codes &mdash; Income code 29: deposit interest.
+Exemption code 02: interest paid on deposits is exempt from withholding
+when paid to a person who is not a resident of the United States.
+Recipient status code 16: individual. Amounts are reported in whole U.S.
+dollars for the calendar year shown. If your country of residence taxes
+this interest, you may need this form when you file there.
+</p>
+
+</body>
+</html>

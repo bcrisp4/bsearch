@@ -1,0 +1,377 @@
+# Per-entry data for the `letters` document set (corpus.yaml). Entries-style:
+# each entry names its own `template` (several templates share this file) and,
+# where the sender is a persona vendor, a `vendor_key` resolved from
+# persona.yaml `vendors`. Entries without a vendor_key use persona context
+# directly (banks.*, supporting_cast.*) and their templates never reference
+# `vendor`. The docx entries (bank_address_confirmation_letter,
+# agency_renewal_letter) are deliberately absent — docx builders are a later
+# pass.
+#
+# Narrative consistency (kept in sync across entries):
+#   - Sinus arc: US clinical notes (Oct 2024 / Jan 2025, Riverside) → GP
+#     referral (Jan 2026) → hospital appointment (Mar 2026, Southmere Park,
+#     Mr Alastair Penhaligon).
+#   - Student loan arc: interest letter (Aug 2025, 4.3%→4.6%) → repayment
+#     letter (Feb 2026, £54/month from Sep 2025) → annual statement
+#     (Jun 2026, rates and 7 × £54 repayments match both).
+#   - Move-in arc: tenancy start 1 Aug 2025 (deposit certificate, council
+#     tax account), bank account opened 4 Aug 2025, visitor parking from
+#     1 Oct 2025.
+entries:
+  - id: gp_referral_letter
+    template: letters/gp_referral_letter.html
+    vendor_key: gp_uk
+    letter_date: "14 January 2026"
+    our_ref: "PR/TM/ENT-0114"
+    practice_id: "CP 88412"
+    recipient:
+      salutation: "Mr Penhaligon"
+      name: "Mr Alastair Penhaligon"
+      dept: "Ear, Nose & Throat Department"
+      hospital: "Southmere Park Hospital"
+      address: "Lakeview Road, London SE28 8WD"
+
+  - id: gp_test_results_letter
+    scan: true
+    template: letters/gp_test_results_letter.html
+    vendor_key: gp_uk
+    letter_date: "20 October 2025"
+    sample_date: "13 October 2025"
+    results:
+      - {test: "Full blood count", result: "Normal", range: "—", flag: "Normal"}
+      - {test: "HbA1c", result: "34 mmol/mol", range: "20–41 mmol/mol", flag: "Normal"}
+      - {test: "Total cholesterol", result: "4.6 mmol/L", range: "below 5.0 mmol/L", flag: "Normal"}
+      - {test: "Ferritin", result: "88 µg/L", range: "30–400 µg/L", flag: "Normal"}
+      - {test: "Vitamin D (25-hydroxy)", result: "42 nmol/L", range: "50–120 nmol/L", flag: "Borderline low"}
+
+  - id: hospital_appointment_letter
+    scan: true
+    template: letters/hospital_appointment_letter.html
+    letter_date: "6 February 2026"
+    hospital_number: "SPH 8841207"
+    clinic: "ENT Outpatients — Clinic 4B"
+    consultant: "Mr Alastair Penhaligon"
+    appointment_date: "Tuesday 10 March 2026"
+    appointment_time: "10:40am"
+    location: "Outpatients East Wing, Level 2, Southmere Park Hospital"
+
+  - id: us_clinical_note_visit1
+    template: letters/us_clinical_note.html
+    vendor_key: hospital_us
+    visit_date: "October 14, 2024"
+    visit_type: "New Patient Office Visit"
+    signed: "10/14/2024 4:32 PM"
+    pcp: "Dana Kellerman, MD"
+    referring: "Dana Kellerman, MD"
+    reasons:
+      - "Nasal obstruction, left greater than right"
+      - "Recurrent sinus infections"
+    chief_complaint: >-
+      I get three or four sinus infections a year and my left nostril is
+      pretty much always blocked, especially at night.
+    hpi:
+      - >-
+        30 y.o. male, new patient, referred by PCP for evaluation of
+        recurrent rhinosinusitis. Reports 3-4 episodes per year x several
+        years with facial pressure, purulent drainage, and congestion, most
+        responding to antibiotics. Baseline left-sided nasal obstruction,
+        worse supine, with mouth breathing and snoring reported by partner.
+      - >-
+        Denies epistaxis, anosmia, facial trauma as an adult. Recalls a
+        soccer injury to the nose in his teens, not treated. OTC oxymetazoline
+        used intermittently, no more than 3 days at a time. No prior sinus
+        imaging. No prior nasal surgery.
+    symptoms:
+      - {name: "Nasal congestion", answer: "Yes"}
+      - {name: "Facial pain or pressure", answer: "Yes"}
+      - {name: "Post-nasal drainage", answer: "Yes"}
+      - {name: "Decreased sense of smell", answer: "No"}
+      - {name: "Nosebleeds", answer: "No"}
+      - {name: "Snoring", answer: "Yes"}
+      - {name: "Ear pain or fullness", answer: "No"}
+      - {name: "Hearing loss", answer: "No"}
+      - {name: "Hoarseness", answer: "No"}
+      - {name: "Nighttime mouth breathing", answer: "Yes"}
+    allergies: "No known drug allergies on file"
+    medications:
+      - "fluticasone propionate (generic) 50 mcg/actuation nasal spray — 2 sprays each nostril daily; Disp: 16 g; Rfl: 3 — STARTED THIS VISIT"
+      - "oxymetazoline 0.05% nasal spray — patient-directed OTC use, counseled to limit to 3 consecutive days"
+    vitals:
+      - {label: "BP", value: "118/74"}
+      - {label: "Pulse", value: "66"}
+      - {label: "Height", value: "5' 11\" (180.3 cm)"}
+      - {label: "Weight", value: "172 lb (78 kg)"}
+      - {label: "BMI", value: "24.0"}
+    exam:
+      - {region: "General", findings: "Well-appearing, no acute distress. Voice normal."}
+      - {region: "Ears", findings: "EACs clear bilaterally; TMs intact with normal light reflex."}
+      - region: "Nose/anterior rhinoscopy"
+        findings: >-
+          Caudal septum deviated to the LEFT with near-contact of the left
+          inferior turbinate; bilateral inferior turbinate hypertrophy,
+          mucosa boggy without polyps. No purulence at middle meatus today.
+      - region: "Nasal endoscopy (diagnostic, in-office)"
+        findings: >-
+          Confirms leftward septal deviation with a posterior septal spur;
+          middle meatus patent bilaterally; nasopharynx clear, no mass.
+      - {region: "Oral cavity/oropharynx", findings: "Moist mucosa, no lesions; tonsils 1+, symmetric."}
+      - {region: "Neck", findings: "No lymphadenopathy, no thyromegaly."}
+    assessment:
+      - {title: "Deviated nasal septum (leftward, with posterior spur)", note: "likely post-traumatic, symptomatic"}
+      - {title: "Recurrent acute rhinosinusitis", note: "3-4 episodes/year by history"}
+      - {title: "Inferior turbinate hypertrophy, bilateral", note: "contributing to obstruction"}
+    plan:
+      - >-
+        Start intranasal fluticasone daily, both nostrils, with technique
+        counseling; continue for a minimum of 8 weeks before assessing
+        benefit. Add daily large-volume saline irrigation.
+      - >-
+        Discontinue habitual decongestant spray use; discussed rebound
+        congestion risk.
+      - >-
+        If symptoms persist on maximal medical therapy, obtain non-contrast
+        sinus CT and discuss septoplasty with inferior turbinate reduction.
+        Surgical anatomy and expectations reviewed in general terms today.
+      - >-
+        Patient education: sleep-position measures, humidification in
+        winter months.
+    follow_up: "Return to clinic in 3 months to reassess on medical therapy, sooner if a sinus infection develops."
+
+  - id: us_clinical_note_visit2
+    template: letters/us_clinical_note.html
+    vendor_key: hospital_us
+    visit_date: "January 21, 2025"
+    visit_type: "Established Patient Office Visit — Follow-up"
+    signed: "01/21/2025 11:05 AM"
+    pcp: "Dana Kellerman, MD"
+    referring: "Dana Kellerman, MD"
+    reasons:
+      - "Follow-up: septal deviation and recurrent rhinosinusitis, on medical therapy"
+    chief_complaint: >-
+      The spray and rinses are helping — I can breathe through the left side
+      most nights now. One mild infection over the holidays but it cleared
+      on its own.
+    hpi:
+      - >-
+        30 y.o. male returns for planned 3-month follow-up of leftward
+        septal deviation with posterior spur and bilateral inferior
+        turbinate hypertrophy documented on endoscopy at his initial visit
+        on 10/14/2024. Since starting daily intranasal fluticasone and
+        saline irrigation he reports meaningful improvement: left-sided
+        obstruction now intermittent rather than constant, snoring reduced
+        per partner, nighttime mouth breathing largely resolved.
+      - >-
+        One URI-associated sinus episode in late December, milder than
+        prior episodes, resolved without antibiotics in about a week.
+        Compliant with sprays; has stopped OTC decongestant entirely.
+    symptoms:
+      - {name: "Nasal congestion", answer: "Yes — improved, intermittent"}
+      - {name: "Facial pain or pressure", answer: "No"}
+      - {name: "Post-nasal drainage", answer: "Occasional"}
+      - {name: "Decreased sense of smell", answer: "No"}
+      - {name: "Nosebleeds", answer: "No — minor crusting only"}
+      - {name: "Snoring", answer: "Improved"}
+    allergies: "No known drug allergies on file"
+    medications:
+      - "fluticasone propionate (generic) 50 mcg/actuation nasal spray — 2 sprays each nostril daily; Disp: 16 g; Rfl: 3 — CONTINUED"
+      - "saline nasal irrigation, large volume — daily, CONTINUED"
+    vitals:
+      - {label: "BP", value: "121/76"}
+      - {label: "Pulse", value: "70"}
+      - {label: "Weight", value: "171 lb (77.6 kg)"}
+      - {label: "BMI", value: "23.8"}
+    exam:
+      - {region: "General", findings: "Well-appearing, no acute distress."}
+      - region: "Nose/anterior rhinoscopy"
+        findings: >-
+          Septal deviation to the LEFT unchanged, as expected; turbinate
+          mucosa notably less edematous than at the 10/14/2024 visit.
+          Improved left-sided airflow on inspection. No purulence, no
+          significant crusting.
+      - {region: "Oral cavity/oropharynx", findings: "Unremarkable."}
+    assessment:
+      - {title: "Deviated nasal septum (leftward, with posterior spur)", note: "anatomically unchanged; symptoms improving on medical therapy"}
+      - {title: "Recurrent acute rhinosinusitis", note: "one mild self-limited episode since last visit — improved trajectory"}
+      - {title: "Inferior turbinate hypertrophy, bilateral", note: "reduced mucosal edema on today's exam"}
+    plan:
+      - >-
+        Continue intranasal fluticasone and daily saline irrigation; good
+        symptomatic response, so no imaging indicated at this time.
+      - >-
+        Deferred septoplasty: given mild residual symptoms and improvement
+        on medical therapy, patient elects to continue conservative
+        management. Revisit surgical discussion if obstruction worsens or
+        infection frequency rebounds.
+      - >-
+        Counseled that anatomic deviation will not change with medication;
+        symptom control is the treatment goal.
+    follow_up: "Return as needed; recommend re-evaluation if more than two sinus infections in the next 12 months. Records available to patient via portal for overseas relocation."
+
+  - id: bank_account_opening_letter
+    scan: true
+    template: letters/bank_account_opening_letter.html
+    letter_date: "4 August 2025"
+    opened_date: "1 August 2025"
+    signatory: "Rosa Ferreday"
+
+  - id: bank_notification_of_change
+    template: letters/bank_notification_of_change.html
+    letter_date: "16 March 2026"
+    effective_date: "18 May 2026"
+    signatory: "Rosa Ferreday"
+    changes:
+      - title: "Arranged overdraft interest is going down"
+        body: >-
+          The interest rate on arranged overdrafts falls from 34.9% EAR
+          (variable) to 33.9% EAR (variable). If you use an arranged
+          overdraft, borrowing will cost slightly less.
+      - title: "Same-day CHAPS payments will cost less"
+        body: >-
+          The fee for sending a same-day CHAPS payment from a branch falls
+          from £25 to £15. CHAPS payments made through the app remain £12.
+      - title: "Free text alerts are switching on for everyone"
+        body: >-
+          From the effective date we will automatically send you a text
+          alert when your balance falls below £50 or an unpaid transaction
+          fee is about to apply. You can change or turn off alerts in the
+          app at any time.
+      - title: "New payees will need app approval"
+        body: >-
+          When you set up a payment to someone new using telephone banking,
+          you will be asked to approve it in the Ferrand Mobile app before
+          it is sent. This protects you if someone impersonates you on the
+          phone.
+      - title: "Cheques will clear faster"
+        body: >-
+          Cheques paid in at a branch or by post will be available by
+          11.59pm on the next working day, in line with cheques paid in
+          through the app.
+
+  - id: council_ctax_moving_letter
+    template: letters/council_ctax_moving_letter.html
+    vendor_key: council
+    letter_date: "15 August 2025"
+    tax_year: "2025/26"
+    moved_in: "1 August 2025"
+    period_end: "31 March 2026"
+    days: "243"
+    # Arithmetic matches data/council_tax_bills.yaml ctax-2025-26: band C
+    # annual 1,712.80 − 25% discount 428.20 = 1,284.60 discounted annual;
+    # × 243/365 days = 855.23 due; instalments 106.93 + 7 × 106.90.
+    annual_charge: "1,712.80"
+    discount: "428.20"
+    discounted_annual: "1,284.60"
+    amount_due: "855.23"
+    instalments:
+      - {due: "1 September 2025", amount: "106.93"}
+      - {due: "1 October 2025", amount: "106.90"}
+      - {due: "1 November 2025", amount: "106.90"}
+      - {due: "1 December 2025", amount: "106.90"}
+      - {due: "1 January 2026", amount: "106.90"}
+      - {due: "1 February 2026", amount: "106.90"}
+      - {due: "1 March 2026", amount: "106.90"}
+      - {due: "1 April 2026", amount: "106.90"}
+
+  - id: council_parking_permit_letter
+    scan: true
+    template: letters/council_parking_permit_letter.html
+    vendor_key: council
+    letter_date: "22 September 2025"
+    permit_ref: "NBC-VP-118804"
+    zone: "Zone RC (Redecombe & Calverley)"
+    valid_from: "1 October 2025"
+    valid_to: "30 September 2026"
+    allowance: "120 hours"
+
+  - id: student_finance_statement_letter
+    template: letters/student_finance_statement.html
+    vendor_key: student_loans
+    letter_date: "12 June 2026"
+    period: "6 April 2025 to 5 April 2026"
+    # Arithmetic: 47,850.00 + 2,156.24 interest − 378.00 repayments
+    # = 49,628.24. Interest rows: 859.94 + 1,296.30 = 2,156.24. The rate
+    # change (4.3% → 4.6% from 1 Sep 2025) matches the interest-rate letter;
+    # 7 × £54.00 PAYE deductions (Sep 2025–Mar 2026) match the repayment
+    # letter.
+    opening_balance: "47,850.00"
+    total_interest: "2,156.24"
+    total_repayments: "378.00"
+    closing_balance: "49,628.24"
+    interest_rows:
+      - {period: "6 April 2025 – 31 August 2025", rate: "4.3", amount: "859.94"}
+      - {period: "1 September 2025 – 5 April 2026", rate: "4.6", amount: "1,296.30"}
+    repayment_count: "seven"
+    repayment_each: "54.00"
+    repayment_span: "September 2025 and March 2026"
+
+  - id: student_finance_repayment_letter
+    template: letters/student_finance_repayment.html
+    vendor_key: student_loans
+    letter_date: "9 February 2026"
+    threshold_annual: "28,470"
+    threshold_monthly: "2,372"
+    payments:
+      - {month: "September 2025", amount: "54.00"}
+      - {month: "October 2025", amount: "54.00"}
+      - {month: "November 2025", amount: "54.00"}
+      - {month: "December 2025", amount: "54.00"}
+      - {month: "January 2026", amount: "54.00"}
+    total_received: "270.00"
+
+  - id: student_finance_interest_letter
+    template: letters/student_finance_interest.html
+    vendor_key: student_loans
+    letter_date: "18 August 2025"
+    change_date: "1 September 2025"
+    old_rate: "4.3"
+    new_rate: "4.6"
+
+  - id: charity_donation_form
+    scan: true
+    template: letters/charity_donation_form.html
+    vendor_key: charity
+    form_date: "14 February 2026"
+    amount_display: "150.00"
+
+  - id: charity_thanks_letter
+    template: letters/charity_thanks_letter.html
+    vendor_key: charity
+    letter_date: "26 February 2026"
+    received_date: "18 February 2026"
+    amount_display: "150.00"
+    # Gift Aid: 150.00 × 25% = 37.50; total value 187.50.
+    gift_aid_value: "37.50"
+    total_value: "187.50"
+    signatory: "Maya Hartfield-Cole"
+
+  - id: deposit_scheme_certificate
+    template: letters/deposit_scheme_certificate.html
+    vendor_key: letting_agency
+    scheme_ref: "SG-25-4471820"
+    deposit_amount: "1,850.00"
+    protected_date: "8 August 2025"
+    tenancy_start: "1 August 2025"
+    tenancy_end: "31 July 2026"
+
+  - id: covid_vaccination_record
+    template: letters/covid_vaccination_record.html
+    issued_date: "15 August 2023"
+    doses:
+      - dose: "Dose 1"
+        date: "12 June 2021"
+        product: "Covantra CV-2"
+        code: "VCV2-68A"
+        batch: "CV2-4471A"
+        centre: "Ottersley Riverside Vaccination Centre"
+      - dose: "Dose 2"
+        date: "4 September 2021"
+        product: "Covantra CV-2"
+        code: "VCV2-68A"
+        batch: "CV2-5108B"
+        centre: "Ottersley Riverside Vaccination Centre"
+      - dose: "Booster"
+        date: "18 December 2021"
+        product: "Covantra CV-2 [Booster]"
+        code: "VCV2-68B"
+        batch: "CV2-6220A"
+        centre: "Millbeck Community Hall Vaccination Centre"

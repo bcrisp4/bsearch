@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  @font-face {
+    font-family: "Doc Serif";
+    font-style: italic;
+    src: url("../fonts/LiberationSerif-Italic.ttf");
+  }
+  body { font-size: 9.8pt; line-height: 1.85; }
+  p, li { text-align: justify; }
+
+  /* Per-page footer: initials rule + template version + page number,
+     with cursive initials in each corner (shape notes doc 6). */
+  .page-footer .init-left, .page-footer .init-right {
+    font-family: "Doc Serif", serif; font-style: italic; font-size: 9pt; color: #333;
+  }
+  .page-footer .init-right { float: right; margin-left: 3mm; }
+  .page-footer .init-left { margin-right: 3mm; }
+  .page-footer .initials-rule { font-weight: bold; }
+
+  /* E-signature certificate page */
+  .esig { border: 0.6pt solid #888; padding: 6mm 7mm; }
+  .esig h1 { font-size: 13pt; }
+  .esig .sig-entry { border-top: 0.4pt solid #bbb; padding: 2.5mm 0; }
+  .esig .sig-entry .who { font-weight: bold; font-size: 10pt; }
+  .esig .kv { font-family: "Doc Mono", monospace; font-size: 8pt; color: #333; }
+
+  /* Prescribed information */
+  .pi-block { border-bottom: 0.5pt solid #999; padding: 2mm 0; }
+  .pi-block .k { font-weight: bold; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.5pt; }
+
+  /* Title page */
+  .title-stack { text-align: center; margin-top: 30mm; }
+  .title-stack .doc-type { font-size: 17pt; font-weight: bold; letter-spacing: 1pt; }
+  .title-stack .between { font-style: italic; margin: 8mm 0 3mm; }
+  .title-stack .party { font-size: 13pt; font-weight: bold; }
+  .warning { border: 1pt solid #1a1a1a; padding: 3.5mm 4mm; margin-top: 24mm;
+             font-weight: bold; font-size: 8.5pt; text-transform: uppercase; line-height: 1.6; }
+
+  /* Particulars */
+  table.partic { width: 100%; border-collapse: collapse; }
+  table.partic td { border: 0.4pt solid #999; padding: 2.2mm 2.5mm; vertical-align: top; }
+  table.partic td.n { width: 8mm; font-weight: bold; text-align: center; }
+  table.partic td.h { width: 34mm; font-weight: bold; text-transform: uppercase; font-size: 8pt; }
+
+  /* Clause tree */
+  h2.clause { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.5pt;
+              margin-top: 7mm; }
+  h3.subclause { font-size: 9.5pt; margin: 4mm 0 1.5mm; }
+  .c2 { margin-left: 8mm; margin-bottom: 3.2mm; }
+  .c3 { margin-left: 16mm; margin-bottom: 2.2mm; }
+  ol.defs { padding-left: 10mm; }
+  ol.defs li { margin-bottom: 2.6mm; }
+
+  .signed-block { border: 0.5pt solid #888; padding: 3.5mm 4mm; margin: 4mm 0; }
+  .signed-block .cursive { font-family: "Doc Serif", serif; font-style: italic;
+                           font-size: 15pt; border-bottom: 0.4pt solid #333;
+                           display: inline-block; min-width: 60mm; padding: 0 4mm 1mm; }
+  .schedule-title { font-size: 11pt; font-weight: bold; text-transform: uppercase;
+                    text-align: center; margin: 5mm 0 3mm; letter-spacing: 1pt; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  <span class="init-left">TM</span>
+  <span class="initials-rule">Initials: ______</span>
+  &nbsp;&middot;&nbsp; {{ issue.template_version }} &middot; {{ vendor.name }} residential tenancy suite
+  <span style="float: right" class="pageno"></span>
+  <span class="init-right">MW</span>
+</div>
+
+<!-- ============ Page 1: e-signature certificate ============ -->
+<div class="esig">
+  <p style="font-size: 8pt; color: #555;">Assured Shorthold Tenancy Agreement &mdash;
+  {{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }},
+  {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }} &mdash;
+  agency reference {{ vendor.tenancy_ref }}</p>
+
+  <h1>This document has been signed electronically.</h1>
+  <p>This certificate is attached by the electronic signing service and forms
+  part of the executed document. It records each party&rsquo;s agreement to
+  the document that follows.</p>
+
+  <h2 style="font-size: 10.5pt;">Signature Log</h2>
+
+  <div class="sig-entry">
+    <div class="who">{{ person.full_name }} &mdash; Tenant</div>
+    <div class="kv">Date Agreed: {{ issue.tenant_signature.date_agreed }}</div>
+    <div class="kv">Logged IP Address: {{ issue.tenant_signature.ip }}</div>
+    <div class="kv">Signature Reference: {{ issue.tenant_signature.reference }}</div>
+  </div>
+
+  <div class="sig-entry">
+    <div class="who">{{ supporting_cast.landlord_signatory }} &mdash; Landlord
+    (for and on behalf of {{ vendors.landlord }})</div>
+    <div class="kv">Date Agreed: {{ issue.landlord_signature.date_agreed }}</div>
+    <div class="kv">Logged IP Address: {{ issue.landlord_signature.ip }}</div>
+    <div class="kv">Signature Reference: {{ issue.landlord_signature.reference }}</div>
+  </div>
+
+  <h2 style="font-size: 10.5pt;">Document Execution</h2>
+  <p>Each party listed above confirmed their identity by responding from the
+  email address held on file by {{ vendor.name }}, reviewed the document in
+  full, and clicked &ldquo;Agree &amp; Sign&rdquo;. A cryptographic digest of
+  the document as at the moment of each signature is held by the signing
+  service and may be used to verify that the document has not been altered
+  since execution.</p>
+  <p>Verification: {{ issue.esign_service }}/verify &mdash; quote either
+  Signature Reference above.</p>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ============ Prescribed information ============ -->
+<div style="text-align: center; font-weight: bold; font-size: 11pt;">
+  PRESCRIBED INFORMATION RELATING TO TENANCY DEPOSITS</div>
+<p style="text-align: center; font-size: 8.5pt;">Information required to be
+given to the tenant and any relevant person under the housing legislation
+where a deposit is protected in an authorised custodial scheme.</p>
+
+<p>(a) The deposit paid under the tenancy agreement to which this notice
+relates is protected by <strong>Tenancy Deposit Safeguard</strong>, an
+authorised custodial tenancy deposit protection scheme (&ldquo;the
+Scheme&rdquo;), operated by Safeguard Deposit Services Ltd, PO Box 770,
+Hedgeford HG98 3JJ; telephone 0113 496 0710; email
+help@tenancydepositsafeguard.example; web tenancydepositsafeguard.example.</p>
+<p>(b) The Scheme is a custodial scheme: the deposit itself is transferred to
+and held by the Scheme administrator for the duration of the tenancy. No
+insurance premium is payable by the tenant.</p>
+<p>(c) Information about the operation of the Scheme, the procedures that
+apply on termination of the tenancy, and the Scheme&rsquo;s free alternative
+dispute resolution service is contained in the Scheme leaflet supplied with
+this agreement and at tenancydepositsafeguard.example/leaflet.</p>
+<p>(d) The deposit has been protected under Scheme reference
+<strong>{{ issue.scheme_ref }}</strong> with effect from
+{{ issue.protected_date }}.</p>
+<p>(e) On termination of the tenancy, the tenant should apply to the Scheme
+for repayment of the deposit, confirming the amount agreed with the
+landlord. Where the parties agree, repayment is normally made within ten
+days of the Scheme receiving instructions from both parties.</p>
+<p>(f) If the parties do not agree, either party may refer the dispute to
+the Scheme&rsquo;s alternative dispute resolution service, which is free to
+use and whose decision is binding on the Scheme. The disputed portion of
+the deposit is retained by the Scheme until the dispute is resolved.</p>
+<p>(g) The deposit may be retained in whole or in part where the landlord is
+entitled to make deductions in the circumstances set out in clause 5.2 of
+the attached agreement, including rent lawfully due and unpaid, damage
+beyond fair wear and tear, cleaning required to restore the premises to
+check-in standard, and replacement of lost keys or security devices.</p>
+
+<div class="pi-block"><span class="k">Deposit Amount</span><br>&pound;{{ issue.deposit }}</div>
+<div class="pi-block"><span class="k">Address of the Premises</span><br>
+  {{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }},
+  {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}</div>
+<div class="pi-block"><span class="k">Name of Landlord(s)</span><br>
+  {{ vendors.landlord }} ({{ issue.landlord_office }})<br>
+  Contact: c/o {{ vendor.name }}, {{ issue.agent_address }} &middot;
+  lettings@penfoldreach.example &middot; 020 7946 0402</div>
+<div class="pi-block"><span class="k">Name of Tenant(s)</span><br>
+  {{ person.title }} {{ person.full_name }}<br>
+  Contact during tenancy: the Premises &middot; {{ person.email }} &middot;
+  {{ person.phone_uk_mobile }}</div>
+<div class="pi-block"><span class="k">Address for contact after the tenancy ends</span><br>
+  As notified in writing by the Tenant before the end of the tenancy, or
+  failing that the Premises.</div>
+<div class="pi-block"><span class="k">Relevant person&rsquo;s contact details</span><br>
+  Not applicable &mdash; the deposit was paid wholly by the Tenant.</div>
+
+<h3 style="text-transform: uppercase;">Circumstances when the deposit may be retained</h3>
+<p>The deposit may be retained by the landlord, in whole or in part, only in
+accordance with clause 5.2 of the attached agreement and following the
+Scheme&rsquo;s procedures summarised at paragraphs (e) to (g) above.</p>
+
+<h3 style="text-transform: uppercase;">Confirmation</h3>
+<p>The landlord (or the landlord&rsquo;s agent) certifies that the
+information provided above is accurate to the best of their knowledge and
+belief, and the tenant confirms having been given the opportunity to sign
+this document and to examine the information in it.</p>
+
+<div class="signed-block">
+  SIGNED BY the Tenant:<br><br>
+  <span class="cursive">{{ person.full_name }}</span><br>
+  {{ person.full_name }}<br><strong>TENANT</strong> &middot; {{ issue.agreement_date }}
+</div>
+<div class="signed-block">
+  SIGNED BY for and on behalf of the Landlord:<br><br>
+  <span class="cursive">{{ supporting_cast.landlord_signatory }}</span><br>
+  {{ supporting_cast.landlord_signatory }}<br><strong>LANDLORD</strong> &middot; {{ issue.agreement_date }}
+</div>
+
+<div class="page-break"></div>
+
+<!-- ============ Title page ============ -->
+<div class="title-stack">
+  <div class="doc-type">ASSURED SHORTHOLD<br>TENANCY AGREEMENT</div>
+  <div class="between">Between</div>
+  <div class="party">{{ vendors.landlord }}</div>
+  <div class="between">AND</div>
+  <div class="party">{{ person.title }} {{ person.full_name }}</div>
+  <div class="between" style="margin-top: 10mm;">Relating to:</div>
+  <div style="font-size: 11pt; font-weight: bold;">
+    {{ addresses.uk_current.line1 }},<br>{{ addresses.uk_current.line2 }},<br>
+    {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}
+  </div>
+</div>
+
+<div class="warning">TO THE TENANT: This is a legally binding document
+creating obligations which a court can enforce. If you do not fully
+understand it, you are strongly advised to take independent legal advice
+&mdash; for example from a solicitor, law centre or an independent advice
+service &mdash; before signing. Do not sign this agreement unless you intend
+to be bound by all of its terms and conditions.</div>
+
+<div class="page-break"></div>
+
+<h2 class="clause">Contents</h2>
+<table class="partic" style="font-size: 9pt;">
+  <tr><td class="n">&mdash;</td><td>Signature Log (electronic execution certificate)</td></tr>
+  <tr><td class="n">&mdash;</td><td>Prescribed Information relating to tenancy deposits</td></tr>
+  <tr><td class="n">&mdash;</td><td>Tenancy Particulars and Recitals</td></tr>
+  <tr><td class="n">1</td><td>Interpretation</td></tr>
+  <tr><td class="n">2</td><td>Tenant&rsquo;s Obligations</td></tr>
+  <tr><td class="n">3</td><td>Landlord&rsquo;s Obligations</td></tr>
+  <tr><td class="n">4</td><td>Statutory Information and Forfeiture</td></tr>
+  <tr><td class="n">5</td><td>It Is Mutually Agreed (Inventory; Deposit; Rent;
+      Abandoned Goods; Uninhabitable Premises; Costs; Agent; Notices)</td></tr>
+  <tr><td class="n">6</td><td>Data Protection</td></tr>
+  <tr><td class="n">7</td><td>Special Tenancy Conditions</td></tr>
+  <tr><td class="n">&mdash;</td><td>Schedule 1 &mdash; The Deposit</td></tr>
+  <tr><td class="n">&mdash;</td><td>Schedule 2 &mdash; Inventory Summary</td></tr>
+  <tr><td class="n">&mdash;</td><td>Schedule 3 &mdash; Documents Provided to the Tenant</td></tr>
+</table>
+<p style="font-size: 8.5pt; color: #555;">Clause headings are for convenience
+only. Defined terms are capitalised and carry the meanings given in clause 1.
+Where a clause of this agreement is inconsistent with a Special Tenancy
+Condition, the Special Tenancy Condition prevails.</p>
+
+<div class="page-break"></div>
+
+<!-- ============ Tenancy particulars ============ -->
+<h2 class="clause">Tenancy Particulars</h2>
+<table class="partic">
+  <tr><td class="n">1</td><td class="h">The Date</td>
+      <td>{{ issue.agreement_date }}</td></tr>
+  <tr><td class="n">2</td><td class="h">The Parties</td>
+      <td>
+        <strong>The Landlord:</strong> {{ vendors.landlord }}, whose
+        registered office is at {{ issue.landlord_office }}.<br>
+        <em>Address for service of Notices (including notices in
+        proceedings):</em> c/o {{ vendor.name }}, {{ issue.agent_address }}.<br><br>
+        <strong>The Tenant:</strong> {{ person.title }} {{ person.full_name }},
+        currently of {{ addresses.uk_previous.line1 }}, {{ addresses.uk_previous.city }},
+        {{ addresses.uk_previous.county }} {{ addresses.uk_previous.postcode }}.<br>
+        <em>Email for service where permitted:</em> {{ person.email }}
+      </td></tr>
+  <tr><td class="n">3</td><td class="h">The Premises</td>
+      <td>The residential flat known as {{ addresses.uk_current.line1 }},
+      {{ addresses.uk_current.line2 }}, {{ addresses.uk_current.city }}
+      {{ addresses.uk_current.postcode }}, together with the fixtures,
+      fittings, furniture and effects listed in the Inventory, and with the
+      right to use, in common with others entitled, the communal entrance
+      hall, stairs, lift and refuse store of Redecombe House.</td></tr>
+  <tr><td class="n">4</td><td class="h">The Term</td>
+      <td>A fixed term of twelve months, from and including
+      <strong>{{ issue.term_start }}</strong> to and including
+      <strong>{{ issue.term_end }}</strong>.</td></tr>
+  <tr><td class="n">5</td><td class="h">The Rent</td>
+      <td>&pound;{{ issue.rent }} ({{ issue.rent_words }}) per calendar
+      month, equivalent to &pound;370.00 per week.<br>
+      <strong>PAYABLE</strong> monthly in advance on the first day of each
+      month, the first payment falling due on {{ issue.term_start }}, by
+      standing order to the client account of the Landlord&rsquo;s agent:
+      {{ vendor.name }} Client Account, sort code {{ issue.agent_client_sort }},
+      account number {{ issue.agent_client_account }}, payment reference
+      {{ vendor.tenancy_ref }}.</td></tr>
+  <tr><td class="n">6</td><td class="h">The Deposit</td>
+      <td>&pound;{{ issue.deposit }}.<br>
+      <strong>HELD BY:</strong> Tenancy Deposit Safeguard (custodial scheme),
+      Scheme reference {{ issue.scheme_ref }} &mdash; see the Prescribed
+      Information annexed to this agreement.</td></tr>
+</table>
+
+<h2 class="clause">Recitals</h2>
+<p class="c2">A. The Landlord is entitled to grant this tenancy of the
+Premises.</p>
+<p class="c2">B. The parties intend that the tenancy created by this
+agreement is an assured shorthold tenancy within the meaning of the housing
+legislation, and that the provisions for the recovery of possession by the
+Landlord apply.</p>
+<p class="c2">C. {{ vendor.name }} acts as the Landlord&rsquo;s managing
+agent under reference {{ vendor.tenancy_ref }} and is authorised to receive
+Rent and to serve and receive notices on the Landlord&rsquo;s behalf.</p>
+<p class="c2">D. The Tenant has paid the Deposit which is protected as set
+out in the Prescribed Information annexed to this agreement.</p>
+<p class="c2">E. Before the grant of this tenancy the Tenant was supplied
+with the current Energy Performance Certificate for the Premises (rating C),
+the current Electrical Installation Condition Report, the current gas safety
+record, and the government&rsquo;s &ldquo;How to Rent&rdquo; guide.</p>
+
+<div class="warning">TO THE TENANT: THIS AGREEMENT WILL BE SIGNED AND
+EXECUTED ELECTRONICALLY. BY PROCEEDING YOU CONSENT TO THE USE OF ELECTRONIC
+SIGNATURES AND AGREE THAT AN ELECTRONIC SIGNATURE HAS THE SAME EFFECT AS A
+SIGNATURE IN WET INK. THE SIGNATURE LOG ATTACHED TO THE FRONT OF THIS
+DOCUMENT FORMS PART OF THE EXECUTED AGREEMENT.</div>
+
+<div class="signed-block">
+  SIGNED BY the Tenant:<br><br>
+  <span class="cursive">{{ person.full_name }}</span><br>
+  {{ person.full_name }} &middot; {{ issue.tenant_signature.date_agreed }}
+</div>
+<div class="signed-block">
+  SIGNED BY for and on behalf of the Landlord, {{ vendors.landlord }}:<br><br>
+  <span class="cursive">{{ supporting_cast.landlord_signatory }}</span><br>
+  {{ supporting_cast.landlord_signatory }} (Director) &middot; {{ issue.landlord_signature.date_agreed }}
+</div>
+
+<div class="page-break"></div>
+
+<!-- ============ General tenancy conditions ============ -->
+<h2 class="clause">General Tenancy Conditions</h2>
+
+<h2 class="clause">1&emsp;Interpretation</h2>
+<p>1.1&emsp;In this agreement the following expressions have the following
+meanings, and the clause headings are for convenience only and do not affect
+interpretation:</p>
+<ol class="defs" type="a">
+  <li>&ldquo;<strong>Agent</strong>&rdquo; means {{ vendor.name }} of
+  {{ issue.agent_address }}, or any other agent the Landlord appoints and
+  notifies to the Tenant in writing;</li>
+  <li>&ldquo;<strong>Agreement</strong>&rdquo; means this tenancy agreement
+  including the Particulars, the Recitals, these General Tenancy Conditions,
+  the Special Tenancy Conditions and the Schedules;</li>
+  <li>&ldquo;<strong>Deposit</strong>&rdquo; means the sum stated in
+  Particular 6, and any interest which the Scheme credits to it;</li>
+  <li>&ldquo;<strong>Emergency</strong>&rdquo; means a situation presenting
+  an immediate risk of injury to persons or of serious damage to the
+  Premises or the Building, including fire, flood and escape of gas;</li>
+  <li>&ldquo;<strong>Fair wear and tear</strong>&rdquo; means the
+  deterioration reasonably to be expected from normal residential use of the
+  Premises by the Tenant, having regard to the length of the tenancy;</li>
+  <li>&ldquo;<strong>Fixtures and Fittings</strong>&rdquo; includes all
+  baths, basins, sinks, radiators, cupboards, worktops, carpets, curtains,
+  blinds, light fittings and other items of a like nature in or serving the
+  Premises;</li>
+  <li>&ldquo;<strong>Building</strong>&rdquo; means Redecombe House, of
+  which the Premises form part, together with its communal areas;</li>
+  <li>&ldquo;<strong>Inventory</strong>&rdquo; means the inventory and
+  schedule of condition of the Premises and its contents prepared at the
+  start of the Term and agreed or deemed agreed under clause 5.1;</li>
+  <li>&ldquo;<strong>Landlord</strong>&rdquo; means the person named in
+  Particular 2 and anyone who later becomes entitled to the reversion of
+  this tenancy;</li>
+  <li>&ldquo;<strong>Month</strong>&rdquo; means calendar month;</li>
+  <li>&ldquo;<strong>Premises</strong>&rdquo; means the property described
+  in Particular 3, including its Fixtures and Fittings;</li>
+  <li>&ldquo;<strong>Rent</strong>&rdquo; means the rent stated in
+  Particular 5;</li>
+  <li>&ldquo;<strong>Scheme</strong>&rdquo; means the authorised tenancy
+  deposit protection scheme named in the Prescribed Information;</li>
+  <li>&ldquo;<strong>Special Tenancy Conditions</strong>&rdquo; means the
+  conditions set out in clause 7;</li>
+  <li>&ldquo;<strong>Term</strong>&rdquo; means the fixed term stated in
+  Particular 4 together with any extension or statutory periodic tenancy
+  arising at its end;</li>
+  <li>&ldquo;<strong>Tenant</strong>&rdquo; means the person named in
+  Particular 2 and includes that person&rsquo;s successors in title;</li>
+  <li>&ldquo;<strong>Utilities</strong>&rdquo; means electricity, gas,
+  water, sewerage, telephone, broadband and television services supplied to
+  the Premises, and includes council tax;</li>
+  <li>words importing one gender include every gender, words in the
+  singular include the plural and vice versa;</li>
+  <li>any obligation on the Tenant not to do a thing includes an obligation
+  not to permit or suffer another person to do that thing;</li>
+  <li>references to legislation include that legislation as amended or
+  re-enacted from time to time and any subordinate legislation made under
+  it;</li>
+  <li>where the Landlord is required to give consent, that consent must be
+  in writing to be effective, and (except where this agreement says
+  otherwise) is not to be unreasonably withheld or delayed;</li>
+  <li>&ldquo;in writing&rdquo; includes email to the addresses given in
+  Particular 2, except for any notice for which legislation prescribes
+  another form of service.</li>
+</ol>
+
+<h2 class="clause">2&emsp;Tenant&rsquo;s Obligations</h2>
+<p>The Tenant agrees with the Landlord as follows.</p>
+
+<h3 class="subclause">2.1&emsp;Rent</h3>
+<p class="c2">2.1.1&emsp;To pay the Rent at the times and in the manner set
+out in Particular 5, whether or not it has been formally demanded.</p>
+<p class="c2">2.1.2&emsp;Not to exercise any right of set-off, counterclaim
+or deduction against the Rent except where legislation gives the Tenant a
+non-excludable right to do so.</p>
+
+<h3 class="subclause">2.2&emsp;Utilities</h3>
+<p class="c2">2.2.1&emsp;To pay promptly all charges for Utilities consumed
+at or supplied to the Premises during the Term, including standing charges,
+and council tax, and to register as the account holder with each supplier at
+the start of the Term.</p>
+<p class="c2">2.2.2&emsp;Not to change the method by which any Utility is
+supplied (including the installation of a prepayment meter) without the
+Landlord&rsquo;s consent, and to notify the Agent of any change of supplier
+within fourteen days.</p>
+<p class="c2">2.2.3&emsp;To provide the Agent with evidence of closing meter
+readings and final accounts at the end of the Term on request.</p>
+
+<h3 class="subclause">2.3&emsp;Condition of Premises, Repair and Cleaning</h3>
+<p class="c2">2.3.1&emsp;To keep the interior of the Premises and the
+Fixtures and Fittings in at least as good a state of repair, decoration and
+cleanliness as recorded in the Inventory, Fair wear and tear excepted.</p>
+<p class="c2">2.3.2&emsp;To keep the Premises adequately ventilated and
+heated so as to prevent condensation and mould growth, and to wipe down and
+treat any condensation promptly.</p>
+<p class="c2">2.3.3&emsp;To report to the Agent promptly, and in any event
+within seven days of the Tenant becoming aware of it, any defect, damage or
+disrepair for which the Landlord is responsible.</p>
+<p class="c2">2.3.4&emsp;To replace all broken glass in doors and windows
+broken during the Term where the breakage is attributable to the act or
+omission of the Tenant or the Tenant&rsquo;s visitors, and to replace
+blown light bulbs, fuses and smoke-alarm batteries (other than in sealed
+units) as they fail.</p>
+<p class="c2">2.3.5&emsp;To take reasonable precautions to prevent frost
+damage, including maintaining background heat in cold weather and, if the
+Premises are to be left empty for more than fourteen days in the months of
+November to March, notifying the Agent in advance.</p>
+
+<h3 class="subclause">2.4&emsp;Access and Inspection</h3>
+<p class="c2">2.4.1&emsp;To permit the Landlord, the Agent and any
+contractor or surveyor authorised by either of them to enter the Premises
+at reasonable times of day on not less than 24 hours&rsquo; written notice
+to inspect the condition of the Premises, to carry out repairs, to test
+alarms and appliances, or to comply with statutory duties.</p>
+<p class="c2">2.4.2&emsp;In an Emergency, to permit immediate entry without
+notice.</p>
+<p class="c2">2.4.3&emsp;During the final two months of the Term, to permit
+viewings by prospective tenants or purchasers accompanied by the Agent at
+reasonable times on not less than 24 hours&rsquo; notice.</p>
+
+<h3 class="subclause">2.5&emsp;Alterations and Decoration</h3>
+<p class="c2">2.5.1&emsp;Not to make any alteration or addition to the
+Premises, nor to redecorate any part of the Premises, without the
+Landlord&rsquo;s consent.</p>
+<p class="c2">2.5.2&emsp;Not to drill into tiling, and to use only
+picture hooks of a proprietary removable type on walls; any holes to be
+made good to the Landlord&rsquo;s reasonable satisfaction at the end of the
+Term.</p>
+
+<h3 class="subclause">2.6&emsp;Affixation of Items and Aerials</h3>
+<p class="c2">2.6.1&emsp;Not to fix any aerial, satellite dish, external
+wiring, sign or notice to the exterior of the Premises or the Building.</p>
+
+<h3 class="subclause">2.7&emsp;Fixtures, Fittings and White Goods</h3>
+<p class="c2">2.7.1&emsp;Not to remove any of the Fixtures and Fittings or
+the Landlord&rsquo;s furniture from the Premises, and not to store any of
+them in any cellar, loft or outbuilding.</p>
+<p class="c2">2.7.2&emsp;To use the supplied appliances only in accordance
+with the manufacturers&rsquo; instructions left at the Premises, to keep
+filters and seals clean, and to report faults promptly. The Landlord is
+responsible for repair of supplied appliances except where the fault
+results from misuse.</p>
+
+<h3 class="subclause">2.8&emsp;Locks and Security</h3>
+<p class="c2">2.8.1&emsp;Not to change or add any lock nor have additional
+keys cut without consent, to keep all keys, fobs and security devices safe,
+and to pay the reasonable cost of replacement (including, where reasonably
+required for security, replacement of the lock) for any lost during the
+Term.</p>
+<p class="c2">2.8.2&emsp;To secure all doors and windows when the Premises
+are unoccupied and to set any alarm in accordance with instructions
+provided.</p>
+
+<h3 class="subclause">2.9&emsp;Nuisance and Noise</h3>
+<p class="c2">2.9.1&emsp;Not to do anything at the Premises or the Building
+which is or may become a nuisance or annoyance to the Landlord or to the
+occupiers of neighbouring premises, and in particular not to play or allow
+to be played amplified music or television audible outside the Premises
+between 11pm and 8am.</p>
+
+<h3 class="subclause">2.10&emsp;Animals and Pets</h3>
+<p class="c2">2.10.1&emsp;Not to keep any animal, bird, reptile or insect
+at the Premises without consent, and see Special Tenancy Condition 7.3.</p>
+
+<h3 class="subclause">2.11&emsp;Use</h3>
+<p class="c2">2.11.1&emsp;To use the Premises only as a private residence
+for the occupation of the Tenant, and not to carry on any trade, business
+or profession there except as permitted by Special Tenancy Condition
+7.4.</p>
+<p class="c2">2.11.2&emsp;Not to part with or share possession or occupation
+of the whole or any part of the Premises, not to sublet the whole or any
+part, and not to take in lodgers or paying guests, and not to advertise or
+list the Premises (or any room in them) on any short-term letting or
+holiday-accommodation platform.</p>
+
+<h3 class="subclause">2.12&emsp;Inflammable and Hazardous Substances</h3>
+<p class="c2">2.12.1&emsp;Not to keep at the Premises any petrol, paraffin,
+bottled gas, firework or other dangerously inflammable or explosive
+substance, and not to use any portable paraffin, bottled-gas or open-flame
+heater.</p>
+<p class="c2">2.12.2&emsp;Not to charge or store e-scooter, e-bike or
+similar lithium batteries in the communal areas of the Building, and not to
+leave any such battery charging unattended overnight within the
+Premises.</p>
+
+<h3 class="subclause">2.13&emsp;Washing</h3>
+<p class="c2">2.13.1&emsp;Not to hang washing or any other article outside
+the Premises or on the balconies, walkways or windows of the Building, and
+to dry clothes indoors only with adequate ventilation.</p>
+
+<h3 class="subclause">2.14&emsp;Illegal or Immoral Use</h3>
+<p class="c2">2.14.1&emsp;Not to use the Premises for any illegal or
+immoral purpose, including the production, supply or consumption of
+controlled drugs, and not to bring onto the Premises any article which is
+unlawfully possessed.</p>
+
+<h3 class="subclause">2.15&emsp;Refuse and Recycling</h3>
+<p class="c2">2.15.1&emsp;To dispose of refuse and recycling in the
+receptacles and refuse store provided for the Building, in accordance with
+the collection arrangements of the local authority, and not to allow refuse
+to accumulate within the Premises or the communal areas.</p>
+
+<h3 class="subclause">2.16&emsp;Drains and Appliance Waste</h3>
+<p class="c2">2.16.1&emsp;To take reasonable care not to block the drains,
+waste pipes, sinks or sanitary apparatus, not to pour fat or oil into any
+drain, and to pay the reasonable cost of clearing any blockage caused by
+the Tenant&rsquo;s act or omission.</p>
+
+<h3 class="subclause">2.17&emsp;Contractors</h3>
+<p class="c2">2.17.1&emsp;Not to instruct any contractor on the
+Landlord&rsquo;s behalf except in an Emergency where the Agent cannot be
+contacted, in which case the Tenant must limit the instruction to work
+reasonably necessary to contain the Emergency and notify the Agent as soon
+as possible.</p>
+
+<h3 class="subclause">2.18&emsp;Assignment</h3>
+<p class="c2">2.18.1&emsp;Not to assign, mortgage or otherwise charge the
+Tenant&rsquo;s interest in this tenancy.</p>
+
+<h3 class="subclause">2.19&emsp;Leaving the Premises Empty</h3>
+<p class="c2">2.19.1&emsp;To notify the Agent in writing if the Premises
+will be left unoccupied for more than 21 consecutive days, and to comply
+with any reasonable security or insurance conditions notified in
+response.</p>
+
+<h3 class="subclause">2.20&emsp;Insurance</h3>
+<p class="c2">2.20.1&emsp;Not to do anything at the Premises which would or
+might invalidate the Landlord&rsquo;s buildings insurance or increase its
+premium, and to pay to the Landlord any increased premium caused by a
+breach of this clause.</p>
+<p class="c2">2.20.2&emsp;The Landlord&rsquo;s insurance does not extend to
+the Tenant&rsquo;s own possessions. The Tenant is responsible for insuring
+the Tenant&rsquo;s own contents if cover is desired.</p>
+
+<h3 class="subclause">2.21&emsp;Infestation</h3>
+<p class="c2">2.21.1&emsp;To keep the Premises free from vermin and pests
+so far as the infestation results from the Tenant&rsquo;s lifestyle or
+housekeeping, and to pay the reasonable cost of eradication in such a
+case.</p>
+
+<h3 class="subclause">2.22&emsp;Notices Affecting the Premises</h3>
+<p class="c2">2.22.1&emsp;To deliver to the Agent within seven days a copy
+of any notice, order or proposal given to the Tenant or left at the
+Premises by any authority, landlord of the Building or third party.</p>
+
+<h3 class="subclause">2.23&emsp;Superior Lease</h3>
+<p class="c2">2.23.1&emsp;To observe the regulations of any superior lease
+of the Building of which written notice has been given to the Tenant, so
+far as they affect the ordinary residential use of the Premises, including
+regulations as to communal areas, noise and refuse.</p>
+
+<h3 class="subclause">2.24&emsp;End of the Term</h3>
+<p class="c2">2.24.1&emsp;To give the Landlord vacant possession of the
+Premises at the end of the Term, to return all keys, fobs and security
+devices to the Agent by midday on the final day, and to remove all the
+Tenant&rsquo;s possessions and refuse.</p>
+<p class="c2">2.24.2&emsp;To leave the Premises and the Fixtures and
+Fittings in the state of repair, decoration and cleanliness required by
+clause 2.3.1, and to attend, or afford access for, a check-out inspection
+against the Inventory.</p>
+<p class="c2">2.24.3&emsp;To provide a forwarding address in writing before
+the end of the Term.</p>
+
+<h3 class="subclause">2.25&emsp;Breach of the Tenancy</h3>
+<p class="c2">2.25.1&emsp;To pay the Landlord&rsquo;s reasonable and
+evidenced costs properly incurred as a consequence of a breach of this
+agreement by the Tenant, so far as the charging of such costs is permitted
+by the legislation regulating tenant fees.</p>
+
+<h3 class="subclause">2.26&emsp;Energy Performance, Gas and Electrical Safety</h3>
+<p class="c2">2.26.1&emsp;To acknowledge receipt before occupation of the
+Energy Performance Certificate for the Premises, the current gas safety
+record, and the current Electrical Installation Condition Report, and to
+permit access under clause 2.4 for the annual gas safety check and any
+electrical inspection or remedial work.</p>
+<p class="c2">2.26.2&emsp;Not to obstruct, cover, remove or interfere with
+any smoke alarm, heat alarm or carbon monoxide alarm, and to test each
+alarm regularly during the Term, reporting any failure promptly.</p>
+
+<h3 class="subclause">2.27&emsp;Television Licence and Subscriptions</h3>
+<p class="c2">2.27.1&emsp;To obtain and maintain any television licence
+required for the Tenant&rsquo;s use of the Premises, and to be responsible
+for all subscription services taken out by the Tenant, ensuring that any
+equipment installed for them is removed and any fixing made good at the end
+of the Term.</p>
+
+<h3 class="subclause">2.28&emsp;Communal Areas</h3>
+<p class="c2">2.28.1&emsp;Not to obstruct the communal entrance hall,
+stairways, walkways or refuse store of the Building, not to store bicycles,
+pushchairs or other items there except in any area designated for the
+purpose, and to comply with reasonable regulations for the communal areas
+notified in writing from time to time.</p>
+
+<h3 class="subclause">2.29&emsp;Parking</h3>
+<p class="c2">2.29.1&emsp;No parking space is let with the Premises. The
+Tenant must not park or keep any vehicle on the forecourt or service areas
+of the Building, and must comply with the local authority&rsquo;s
+controlled parking scheme in respect of any vehicle parked on the highway.</p>
+
+<h3 class="subclause">2.30&emsp;Change of Occupants and Right to Rent</h3>
+<p class="c2">2.30.1&emsp;To notify the Agent in writing before any person
+aged eighteen or over takes up residence at the Premises, and to provide
+such documents as are reasonably required to enable the checks required by
+the immigration legislation to be carried out in respect of that person.
+Occupation by any additional person remains subject to clause 2.11.2.</p>
+
+<h3 class="subclause">2.31&emsp;Smoke Emission and Odour</h3>
+<p class="c2">2.31.1&emsp;Not to do anything at the Premises which causes
+persistent smoke, fumes or strong odour to be emitted into the communal
+areas or neighbouring premises, including the use of oil or solid-fuel
+burners, barbecues on balconies, and deep-fat frying left unattended.</p>
+
+<div class="page-break"></div>
+
+<h2 class="clause">3&emsp;Landlord&rsquo;s Obligations</h2>
+<p class="c2">3.1&emsp;The Landlord agrees that the Tenant may quietly
+possess and enjoy the Premises during the Term without any unlawful
+interruption by the Landlord or any person claiming under or in trust for
+the Landlord.</p>
+<p class="c2">3.2&emsp;The Landlord agrees to comply with the repairing
+obligations imposed on landlords by the housing legislation, including
+keeping in repair the structure and exterior of the Premises and keeping in
+repair and proper working order the installations for the supply of water,
+gas, electricity, sanitation, space heating and water heating.</p>
+<p class="c2">3.3&emsp;The Landlord agrees to keep the Premises fit for
+human habitation at the start of and throughout the Term as required by the
+housing legislation.</p>
+<p class="c2">3.4&emsp;The Landlord agrees to arrange the annual gas safety
+check, to maintain the electrical installation in accordance with the
+electrical safety standards regulations, and to provide the Tenant with
+copies of the resulting records within the statutory timescales.</p>
+<p class="c2">3.5&emsp;The Landlord agrees to insure the Building and the
+Landlord&rsquo;s Fixtures and Fittings against fire and other usual risks,
+and, where the Premises are rendered uninhabitable by an insured risk not
+caused by the Tenant, clause 5.5 applies.</p>
+<p class="c2">3.6&emsp;The Landlord confirms that the Deposit will be dealt
+with in accordance with the Scheme rules and the Prescribed Information.</p>
+<p class="c2">3.7&emsp;The Landlord agrees to maintain in the Premises at
+least one smoke alarm on each storey and a carbon monoxide alarm in any
+room containing a fixed combustion appliance, each in proper working order
+at the start of the Term.</p>
+<p class="c2">3.8&emsp;Where the Landlord is notified of a defect for which
+the Landlord is responsible, the Landlord will begin remedial works within
+a reasonable time having regard to the nature of the defect, and in an
+Emergency will use reasonable endeavours to make the Premises safe within
+24 hours of notification.</p>
+<p class="c2">3.9&emsp;The Landlord will not interrupt or interfere with
+the supply of Utilities to the Premises, except where interruption is
+unavoidable for the purpose of repair, in which case reasonable notice will
+be given other than in an Emergency.</p>
+
+<h2 class="clause">4&emsp;Statutory Information and Forfeiture</h2>
+<p class="c2">4.1&emsp;This agreement creates an assured shorthold tenancy.
+The Landlord may recover possession at the end of the Term by giving not
+less than two months&rsquo; written notice under the statutory shorthold
+procedure.</p>
+<p class="c2">4.2&emsp;The Rent may not be increased during the fixed Term.
+If the tenancy continues as a statutory periodic tenancy, any increase must
+follow the statutory procedure.</p>
+<p class="c2">4.3&emsp;The court may order possession before the end of the
+Term only on the statutory grounds, which include the following (the full
+text of the grounds is set out in the housing legislation):</p>
+<p class="c3">4.3.1&emsp;<strong>Mandatory grounds.</strong> Grounds on
+which the court must order possession if made out, including:</p>
+<p class="c3" style="margin-left: 24mm;">4.3.1.1&emsp;<strong>Ground —
+serious rent arrears:</strong> at both the date of service of notice and the
+date of the hearing, at least two months&rsquo; rent is unpaid;</p>
+<p class="c3" style="margin-left: 24mm;">4.3.1.2&emsp;<strong>Ground —
+mortgagee repossession:</strong> the Building is subject to a mortgage
+granted before the tenancy and the mortgagee requires possession to
+exercise a power of sale;</p>
+<p class="c3" style="margin-left: 24mm;">4.3.1.3&emsp;<strong>Ground —
+landlord&rsquo;s own occupation:</strong> the Landlord previously occupied
+the Premises as a home and requires them again, notice of this possibility
+having been given at the start of the tenancy where required.</p>
+<p class="c3">4.3.2&emsp;<strong>Discretionary grounds.</strong> Grounds on
+which the court may order possession if it is reasonable to do so,
+including:</p>
+<p class="c3" style="margin-left: 24mm;">4.3.2.1&emsp;<strong>Ground —
+rent arrears:</strong> some rent lawfully due is unpaid at service of
+notice and at the commencement of proceedings;</p>
+<p class="c3" style="margin-left: 24mm;">4.3.2.2&emsp;<strong>Ground —
+persistent delay:</strong> the Tenant has persistently delayed paying rent
+which has become lawfully due;</p>
+<p class="c3" style="margin-left: 24mm;">4.3.2.3&emsp;<strong>Ground —
+breach of obligation:</strong> any obligation of this tenancy (other than
+payment of rent) has been broken or not performed;</p>
+<p class="c3" style="margin-left: 24mm;">4.3.2.4&emsp;<strong>Ground —
+deterioration:</strong> the condition of the Premises or the common parts
+has deteriorated owing to the conduct of the Tenant or a person residing
+with the Tenant;</p>
+<p class="c3" style="margin-left: 24mm;">4.3.2.5&emsp;<strong>Ground —
+nuisance or annoyance:</strong> the Tenant or a person residing at or
+visiting the Premises has been guilty of conduct causing or likely to
+cause a nuisance or annoyance, or has been convicted of using the Premises
+for immoral or illegal purposes;</p>
+<p class="c3" style="margin-left: 24mm;">4.3.2.6&emsp;<strong>Ground —
+deterioration of furniture:</strong> the condition of the furniture
+provided has deteriorated owing to ill-treatment;</p>
+<p class="c3" style="margin-left: 24mm;">4.3.2.7&emsp;<strong>Ground —
+false statement:</strong> the tenancy was induced by a false statement made
+knowingly or recklessly by the Tenant or a person acting at the
+Tenant&rsquo;s instigation.</p>
+<p class="c2">4.4&emsp;If the Rent or any part of it is unpaid for 21 days
+after becoming payable (whether formally demanded or not), or if the Tenant
+is in material breach of this agreement, the Landlord may re-enter the
+Premises (subject always to obtaining a court order where one is required
+by law) and this tenancy will then end, without prejudice to the
+Landlord&rsquo;s other rights and remedies.</p>
+<p class="c2">4.5&emsp;Nothing in this agreement affects the Tenant&rsquo;s
+statutory protection from eviction: the Landlord may not recover possession
+of the Premises while anyone is lawfully residing in them without a court
+order.</p>
+
+<h2 class="clause">5&emsp;It Is Mutually Agreed</h2>
+
+<h3 class="subclause">5.1&emsp;Inventory</h3>
+<p class="c2">5.1.1&emsp;An Inventory will be prepared at the start of the
+Term by an independent inventory clerk. The Tenant has seven days from
+receipt to propose amendments; after that period the Inventory (as amended
+by any agreed proposals) is treated as agreed and binding, save for manifest
+error.</p>
+<p class="c2">5.1.2&emsp;A summary of the Inventory appears in Schedule 2;
+the full Inventory including photographs is a separate document referred to
+in this agreement.</p>
+
+<h3 class="subclause">5.2&emsp;Deposit</h3>
+<p class="c2">5.2.1&emsp;The Deposit is held by the Scheme in accordance
+with the Scheme rules and this clause 5.2.</p>
+<p class="c2">5.2.2&emsp;The Deposit is security for the performance of the
+Tenant&rsquo;s obligations under this agreement.</p>
+<p class="c2">5.2.3&emsp;The Landlord may claim from the Deposit at the end
+of the Term such amounts as are reasonably required in respect of:</p>
+<p class="c3">5.2.3.1&emsp;Rent or other sums lawfully due under this
+agreement which remain unpaid;</p>
+<p class="c3">5.2.3.2&emsp;the reasonable cost of repairing damage to the
+Premises or the Fixtures and Fittings for which the Tenant is liable,
+beyond Fair wear and tear;</p>
+<p class="c3">5.2.3.3&emsp;the reasonable cost of cleaning required to
+restore the Premises to the standard recorded in the Inventory;</p>
+<p class="c3">5.2.3.4&emsp;the reasonable cost of replacing keys, fobs or
+security devices lost by the Tenant, and of any consequent lock
+replacement;</p>
+<p class="c3">5.2.3.5&emsp;the reasonable cost of removing and disposing of
+items or refuse left at the Premises after the end of the Term, subject to
+clause 5.4.</p>
+<p class="c2">5.2.4&emsp;The Landlord may not claim from the Deposit for
+Fair wear and tear, nor apply any charge which would amount to a prohibited
+payment under the legislation regulating tenant fees.</p>
+<p class="c2">5.2.5&emsp;At the end of the Term the parties will seek to
+agree the amount (if any) to be deducted from the Deposit within ten
+working days of the check-out inspection.</p>
+<p class="c2">5.2.6&emsp;Any amount agreed as payable to either party will
+be released by the Scheme in accordance with its rules, normally within ten
+days of the Scheme receiving joint instructions.</p>
+<p class="c2">5.2.7&emsp;If the parties cannot agree, either party may
+refer the dispute to the Scheme&rsquo;s alternative dispute resolution
+service, whose decision is binding on the Scheme; the undisputed balance is
+to be released without waiting for the outcome.</p>
+<p class="c2">5.2.8&emsp;No interest is payable by the Landlord to the
+Tenant on the Deposit except any interest the Scheme rules require to be
+credited.</p>
+<p class="c2">5.2.9&emsp;If the Landlord&rsquo;s interest in the Premises
+is transferred, the Landlord will procure that the Deposit is transferred
+within the Scheme or dealt with as the Scheme rules require, and will
+notify the Tenant.</p>
+<p class="c2">5.2.10&emsp;The Tenant must not treat the Deposit as payment
+of Rent, including the final month&rsquo;s Rent.</p>
+<p class="c2">5.2.11&emsp;Where a deduction is claimed for damage to an
+item, the amount claimed must take fair account of the age and condition of
+the item at check-in as recorded in the Inventory, and betterment is not
+recoverable.</p>
+<p class="c2">5.2.12&emsp;The Landlord will support any claim on the
+Deposit with evidence, which may include the check-in and check-out
+reports, photographs, invoices, estimates and rent statements.</p>
+<p class="c2">5.2.13&emsp;If either party&rsquo;s contact details change
+before the Deposit is repaid, that party must promptly notify the other
+and the Scheme.</p>
+<p class="c2">5.2.14&emsp;If the tenancy continues as a statutory periodic
+tenancy, the Deposit continues to be held by the Scheme on the terms of
+this clause 5.2 and no further Prescribed Information is required unless
+legislation requires it.</p>
+<p class="c2">5.2.15&emsp;Nothing in this clause prevents either party
+recovering from the other, by court proceedings or otherwise, any sum
+exceeding the amount of the Deposit.</p>
+<p class="c2">5.2.16&emsp;If the Scheme ceases to be authorised, the
+Landlord will within 30 days protect the Deposit with another authorised
+scheme and provide the Tenant with new prescribed information.</p>
+
+<h3 class="subclause">5.3&emsp;Rent and Interest on Late Payment</h3>
+<p class="c2">5.3.1&emsp;If any Rent remains unpaid fourteen days after the
+due date, the Tenant must pay interest on the overdue amount at the rate of
+3% per annum above the reference bank base rate from the due date until
+payment, as permitted by the legislation regulating tenant fees.</p>
+
+<h3 class="subclause">5.4&emsp;Abandoned Goods</h3>
+<p class="c2">5.4.1&emsp;Any goods left at the Premises after the end of
+the Term will be stored for fourteen days. If not collected within that
+period after written notice to the Tenant&rsquo;s last known address, the
+Landlord may sell or dispose of them, accounting to the Tenant for any
+proceeds of sale less the reasonable costs of storage, notice and sale.</p>
+
+<h3 class="subclause">5.5&emsp;Uninhabitable Premises</h3>
+<p class="c2">5.5.1&emsp;If the Premises are destroyed or made wholly
+uninhabitable by fire, flood or other risk insured by the Landlord, and the
+damage was not caused by the act or omission of the Tenant, the Rent (or a
+fair proportion of it) is suspended until the Premises are rendered fit for
+occupation, and if they remain unfit for more than two months either party
+may end this tenancy by one month&rsquo;s written notice.</p>
+
+<h3 class="subclause">5.6&emsp;Costs and Permitted Charges</h3>
+<p class="c2">5.6.1&emsp;No payment is required from the Tenant in
+connection with this tenancy other than the payments permitted by the
+legislation regulating tenant fees, namely: the Rent; the Deposit (capped
+as required by that legislation); payments in default as set out in clauses
+2.8.1 and 5.3.1; payments on variation, assignment or early termination of
+the tenancy at the Tenant&rsquo;s request (capped as required); and
+Utilities and council tax under clause 2.2.</p>
+
+<h3 class="subclause">5.7&emsp;Agent of the Landlord</h3>
+<p class="c2">5.7.1&emsp;The Agent acts for the Landlord. Payment of Rent
+to the Agent discharges the Tenant&rsquo;s obligation to pay that Rent.
+Notice served on the Agent is treated as served on the Landlord, and notice
+served by the Agent is treated as served by the Landlord.</p>
+
+<h3 class="subclause">5.8&emsp;Notices</h3>
+<p class="c2">5.8.1&emsp;Any notice under this agreement is sufficiently
+served on the Tenant if delivered personally, or left at, or sent by
+first-class post to, the Premises, or sent by email to the address in
+Particular 2; and on the Landlord if left at or sent by first-class post to
+the address for service in Particular 2. Notices sent by first-class post
+are treated as served on the second working day after posting.</p>
+
+<h3 class="subclause">5.9&emsp;Entire Agreement and Variations</h3>
+<p class="c2">5.9.1&emsp;This agreement (including its Schedules and
+annexes) contains the whole agreement between the parties relating to the
+tenancy and supersedes any prior discussions, correspondence or heads of
+terms. No variation is effective unless it is in writing and signed by or
+on behalf of both parties.</p>
+
+<h3 class="subclause">5.10&emsp;Governing Law</h3>
+<p class="c2">5.10.1&emsp;This agreement is governed by the law of England
+and Wales, and the courts of England and Wales have jurisdiction over any
+dispute arising from it.</p>
+
+<h2 class="clause">6&emsp;Data Protection</h2>
+<p class="c2">6.1&emsp;The Landlord and the Agent will each process the
+Tenant&rsquo;s personal data as controllers for the purposes of performing
+this agreement, complying with legal obligations (including deposit
+protection, right-to-rent checks and safety certification), managing the
+tenancy, and pursuing legitimate interests in recovering sums due.</p>
+<p class="c2">6.2&emsp;Personal data may be shared between the Landlord and
+the Agent and with the Scheme, contractors, Utility suppliers, the local
+authority, referencing and rent-guarantee providers, and debt-recovery
+agents or the courts where necessary for those purposes. Personal data is
+retained for six years after the end of the tenancy, after which it is
+deleted or anonymised unless a longer period is required by law.</p>
+<p class="c2">6.3&emsp;The Agent&rsquo;s privacy notice at
+penfoldreach.example/privacy explains the Tenant&rsquo;s rights, including
+the rights of access and rectification and the right to complain to the
+supervisory authority.</p>
+<p class="c2">6.4&emsp;The Tenant agrees to keep the Agent informed of a
+current email address and telephone number for the purposes of tenancy
+administration during the Term.</p>
+
+<h2 class="clause">7&emsp;Special Tenancy Conditions</h2>
+{% for sc in issue.special_conditions %}
+<h3 class="subclause">7.{{ loop.index }}&emsp;{{ sc.title }}</h3>
+<p class="c2">{{ sc.text }}</p>
+{% endfor %}
+
+<div class="page-break"></div>
+
+<!-- ============ Schedules ============ -->
+<div class="schedule-title">Schedule 1 &mdash; The Deposit</div>
+<table class="partic">
+  <tr><td class="h">Amount</td><td>&pound;{{ issue.deposit }}</td></tr>
+  <tr><td class="h">Statutory cap</td><td>Five weeks&rsquo; rent
+      (&pound;370.00 per week &times; 5 = &pound;1,850.00). The Deposit
+      equals, and does not exceed, the statutory cap.</td></tr>
+  <tr><td class="h">Scheme</td><td>Tenancy Deposit Safeguard (custodial),
+      operated by Safeguard Deposit Services Ltd</td></tr>
+  <tr><td class="h">Scheme reference</td><td>{{ issue.scheme_ref }}</td></tr>
+  <tr><td class="h">Date protected</td><td>{{ issue.protected_date }}</td></tr>
+  <tr><td class="h">Certificate</td><td>The Certificate of Deposit
+      Protection has been supplied to the Tenant together with the
+      Prescribed Information annexed to this agreement.</td></tr>
+</table>
+
+<div class="page-break"></div>
+<div class="schedule-title">Schedule 2 &mdash; Inventory Summary</div>
+<p style="font-size: 8.5pt;">Summary only &mdash; the full Inventory and
+Schedule of Condition (ref {{ vendor.tenancy_ref }}, prepared at check-in
+with photographs) is a separate document and prevails over this summary in
+the event of inconsistency.</p>
+<table class="data">
+  <tr><th>Room</th><th>Condition at check-in</th></tr>
+  {% for r in issue.inventory_summary %}
+  <tr><td>{{ r.room }}</td><td>{{ r.condition }}</td></tr>
+  {% endfor %}
+</table>
+<table class="data">
+  <tr><th>Meter</th><th class="num">Reading at check-in</th></tr>
+  <tr><td>Electricity (smart meter)</td><td class="num">{{ issue.checkin_electric }}</td></tr>
+  <tr><td>Gas</td><td class="num">{{ issue.checkin_gas }}</td></tr>
+</table>
+
+<div class="page-break"></div>
+<div class="schedule-title">Schedule 3 &mdash; Documents Provided to the Tenant</div>
+<table class="data">
+  <tr><th>Document</th><th>Detail</th><th>Provided</th></tr>
+  <tr><td>Energy Performance Certificate</td>
+      <td>Rating C (score 72), certificate dated 11 July 2025</td>
+      <td>Before signing</td></tr>
+  <tr><td>Electrical Installation Condition Report</td>
+      <td>Satisfactory, inspection 15 July 2025, next inspection due 2030</td>
+      <td>Before signing</td></tr>
+  <tr><td>Gas safety record</td>
+      <td>Current annual record for the gas installation serving the Premises</td>
+      <td>Before signing</td></tr>
+  <tr><td>&ldquo;How to Rent&rdquo; guide</td>
+      <td>Current edition of the government checklist for renting</td>
+      <td>By email, with the draft of this agreement</td></tr>
+  <tr><td>Deposit protection</td>
+      <td>Certificate of Deposit Protection and the Prescribed Information
+          annexed to this agreement</td>
+      <td>Within 30 days of receipt of the Deposit</td></tr>
+  <tr><td>Inventory &amp; Schedule of Condition</td>
+      <td>Independent check-in report with photographs</td>
+      <td>At check-in</td></tr>
+</table>
+
+<p style="font-size: 8pt; color: #555; margin-top: 6mm;">End of agreement.
+Executed electronically &mdash; see the Signature Log at the front of this
+document. {{ issue.template_version }} &middot; prepared by {{ vendor.name }},
+{{ issue.agent_address }}.</p>
+
+</body>
+</html>

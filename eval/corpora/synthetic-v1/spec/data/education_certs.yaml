@@ -1,0 +1,370 @@
+# Per-entry data for the `education_certs` document set (corpus.yaml).
+# Entries-style: each entry names its own `template`. University entries use
+# vendor_key: university (University of Wexcombe, persona.yaml); the trade
+# certificates (EPC, EICR), tickets and course certificates carry their own
+# invented incidental issuer fields per CONVENTIONS.md.
+#
+# Narrative consistency:
+#   - Degree arc: offer letter (Mar 2012, entry Sep 2012) → transcript
+#     (board 8 Jul 2015, award average 65.7%) → diploma (conferred
+#     22 Jul 2015, Upper Second-Class Honours). Marks add up: level
+#     averages are credit-weighted means of the module marks; the award
+#     average is 30% level 5 + 70% level 6 (65.0*0.3 + 66.0*0.7 = 65.7).
+#   - CV mirrors persona timeline: Wexcombe 2012–15 → Tarnbeck Networks
+#     2015–19 → Quillhaven Hosting 2019–23 → Meridian Loft (NY) 2023–25 →
+#     Halewick Systems 2025–. Course certificates appear on the CV.
+#   - EPC (11 Jul 2025, rating C) and EICR (15 Jul 2025, satisfactory) are
+#     the pre-tenancy compliance pack for Flat 12 Redecombe House, ordered
+#     by Penfold & Reach for Wrenmoor Estates — mirrored in the tenancy
+#     agreement (tenancy_legal.yaml) clause on EPC/electrical safety.
+#   - Conference invoice sits in the US era (Nov 2024, employer Meridian
+#     Loft); museum e-ticket is UK current era (May 2026).
+# The grade_calculation xlsx entry in corpus.yaml is deliberately absent —
+# xlsx builders are a later pass.
+entries:
+  - id: degree_transcript
+    template: education/degree_transcript.html
+    vendor_key: university
+    issue_date: "29 July 2015"
+    transcript_ref: "WX/TR/2015/18227"
+    programme: "BSc (Hons) Computer Networks"
+    school: "School of Computing and Engineering"
+    mode: "Full-time"
+    commencement: "24 September 2012"
+    conferment: "22 July 2015"
+    classification: "Upper Second-Class Honours"
+    award_average: "65.7"
+    registrar: "Dr Constance Aylward"
+    registrar_title: "Academic Registrar"
+    board_rows:
+      - {year: "2012/13", result: "Proceed", board_date: "12 June 2013", credits: "120", average: "61.7"}
+      - {year: "2013/14", result: "Proceed", board_date: "11 June 2014", credits: "120", average: "65.0"}
+      - {year: "2014/15", result: "Award", board_date: "8 July 2015", credits: "120", average: "66.0"}
+    levels:
+      - name: "Level 4 — Academic year 2012/13"
+        credits: "120"
+        average: "61.7"
+        modules:
+          - {code: "CN1101", title: "Computer Systems Fundamentals", credits: "20", mark: "62", result: "Pass"}
+          - {code: "CN1102", title: "Introduction to Networking", credits: "20", mark: "58", result: "Pass"}
+          - {code: "CN1103", title: "Mathematics for Computing", credits: "20", mark: "65", result: "Pass"}
+          - {code: "CN1104", title: "Programming Concepts", credits: "20", mark: "71", result: "Pass"}
+          - {code: "CN1105", title: "Web Technologies", credits: "20", mark: "54", result: "Pass"}
+          - {code: "CN1106", title: "Professional Skills for IT", credits: "20", mark: "60", result: "Pass"}
+      - name: "Level 5 — Academic year 2013/14"
+        credits: "120"
+        average: "65.0"
+        modules:
+          - {code: "CN2201", title: "Routing and Switching", credits: "20", mark: "64", result: "Pass"}
+          - {code: "CN2202", title: "Network Operating Systems", credits: "20", mark: "66", result: "Pass"}
+          - {code: "CN2203", title: "Database Systems", credits: "20", mark: "59", result: "Pass"}
+          - {code: "CN2204", title: "Scripting for Network Automation", credits: "20", mark: "72", result: "Pass"}
+          - {code: "CN2205", title: "Data Communications and Signals", credits: "20", mark: "61", result: "Pass"}
+          - {code: "CN2206", title: "Systems Administration", credits: "20", mark: "68", result: "Pass"}
+      - name: "Level 6 — Academic year 2014/15"
+        credits: "120"
+        average: "66.0"
+        modules:
+          - {code: "CN3399", title: "Final Year Project: Resilient Campus Network Design", credits: "40", mark: "68", result: "Pass"}
+          - {code: "CN3301", title: "Network Security", credits: "20", mark: "63", result: "Pass"}
+          - {code: "CN3302", title: "Enterprise Network Design", credits: "20", mark: "70", result: "Pass"}
+          - {code: "CN3303", title: "Wireless and Mobile Networks", credits: "20", mark: "61", result: "Pass"}
+          - {code: "CN3304", title: "Cloud and Virtualisation Technologies", credits: "20", mark: "66", result: "Pass"}
+
+  - id: degree_diploma
+    scan: true
+    template: education/degree_diploma.html
+    vendor_key: university
+    degree: "Bachelor of Science with Honours"
+    classification: "Upper Second-Class Honours"
+    field: "Computer Networks"
+    conferment_date: "the twenty-second day of July 2015"
+    chancellor: "Dame Rosalind Fetterlane"
+    vice_chancellor: "Professor Edmund Carraway"
+    seal_ref: "WX 2015 07742"
+
+  - id: university_offer_letter
+    scan: true
+    template: education/university_offer_letter.html
+    vendor_key: university
+    letter_date: "15 March 2012"
+    applicant_id: "1214-882-041"
+    course_code: "GN42"
+    year_of_entry: "2012"
+    start_date: "24 September 2012"
+    campus: "Brackenhill Park Campus"
+    conditions:
+      - "Achieve at least 280 UCAS tariff points from three A-levels (or equivalent), including grade C or above in either Mathematics or Computing."
+      - "Achieve grade C or above in GCSE English Language and GCSE Mathematics (or equivalent)."
+    admissions_tutor: "Dr Howard Fenlow"
+    admissions_tutor_title: "Admissions Tutor, School of Computing and Engineering"
+    tuition_fee: "8,500"
+
+  - id: cv
+    template: education/cv.html
+    about: >-
+      Platform and network engineer with ten years across ISP, hosting and
+      product environments in the UK and US. I like boring, reliable
+      infrastructure: small blast radii, well-understood failure modes and
+      automation that a whole team can operate. Recently returned to London
+      after two years running reliability engineering for a New York
+      property-tech scale-up.
+    skills:
+      - {name: "Networking", detail: "BGP, OSPF, IS-IS, MPLS, IPv6, DNS, TLS, load balancing, packet analysis"}
+      - {name: "Platform engineering", detail: "container orchestration, infrastructure as code, CI/CD pipelines, secrets management"}
+      - {name: "Cloud and virtualisation", detail: "public IaaS, private virtualisation clusters, object storage, cost management"}
+      - {name: "Observability and reliability", detail: "SLOs and error budgets, metrics/tracing/log pipelines, incident command, postmortems"}
+      - {name: "Languages and tooling", detail: "Python, Go, Bash; configuration management; version control and code review workflows"}
+      - {name: "Operating systems", detail: "server-grade open-source OS administration, kernel tuning, hardening baselines"}
+    experience:
+      - dates: "Aug 2025 – present"
+        employer: "Halewick Systems Ltd"
+        location: "London, UK"
+        role: "Senior Platform Engineer"
+        bullets:
+          - "Own the internal developer platform serving 14 product teams; cut median deploy time from 41 to 9 minutes."
+          - "Led the migration of build infrastructure to ephemeral runners, halving monthly compute spend."
+          - "Introduced a golden-path service template adopted by every new service since October 2025."
+          - "Share a five-person on-call rota; wrote the incident-command runbook now used org-wide."
+      - dates: "Sep 2023 – Jun 2025"
+        employer: "Meridian Loft Inc."
+        location: "New York, USA"
+        role: "Senior Site Reliability Engineer"
+        bullets:
+          - "Defined and rolled out SLOs for the booking pipeline; sustained 99.95% availability across 2024."
+          - "Re-architected the edge tier across two regions, removing the single point of failure behind three 2023 outages."
+          - "Moved all remaining hand-built infrastructure into code review — 100% of production changes peer-reviewed by mid-2024."
+          - "Mentored four engineers; ran the weekly reliability review."
+      - dates: "May 2019 – Aug 2023"
+        employer: "Quillhaven Hosting Ltd"
+        location: "Winchester, UK"
+        role: "Systems Engineer, then DevOps Engineer (2021)"
+        bullets:
+          - "Automated provisioning for a 400-host managed-hosting estate; rebuild time fell from days to under an hour."
+          - "Built the monitoring and alerting stack that replaced three legacy tools; on-call pages dropped 60%."
+          - "Ran the customer-facing status platform and led the incident communications process."
+      - dates: "Jul 2015 – Apr 2019"
+        employer: "Tarnbeck Networks Ltd"
+        location: "Southampton, UK"
+        role: "Network Engineer"
+        bullets:
+          - "Operated an enterprise WAN of 90+ sites; designed and cut over the dual-homed BGP internet edge."
+          - "Delivered the IPv6 rollout across the access network."
+          - "Second-line escalation for the NOC; wrote the change-control templates still in use when I left."
+    education:
+      - dates: "2012 – 2015"
+        institution: "University of Wexcombe"
+        detail: "BSc (Hons) Computer Networks — Upper Second-Class Honours (2:1). Final-year project: resilient campus network design."
+    courses:
+      - "Cloud Infrastructure Professional (CIP-2), Aldergate Academy — November 2024"
+      - "Advanced Network Automation, Brindlefield Training — June 2021"
+    interests: >-
+      Homelab tinkering (a small rack I insist is “for learning”), sea
+      swimming, film photography, and volunteering as a coding-club mentor
+      at a local library.
+
+  - id: course_certificate_1
+    template: education/course_certificate_1.html
+    provider: "Brindlefield Training"
+    course_title: "Advanced Network Automation"
+    course_detail: "A five-day intensive practitioner course: model-driven configuration, templating, testing and safe rollout of network change at scale."
+    completion_date: "18 June 2021"
+    certificate_no: "BT-2021-08841"
+    duration: "35 hours of guided instruction"
+    instructor: "Marcus Ellerdine"
+    instructor_title: "Principal Instructor"
+    director: "Fiona Casterbray"
+    director_title: "Director of Studies"
+
+  - id: course_certificate_2
+    template: education/course_certificate_2.html
+    provider: "Aldergate Academy"
+    course_title: "Cloud Infrastructure Professional — Level 2 (CIP-2)"
+    course_detail: "Assessed online programme covering multi-region architecture, infrastructure as code, cost governance and platform security."
+    completion_date: "November 14, 2024"
+    certificate_no: "AA-CIP2-24-51077"
+    credential_url: "verify.aldergate.example/AA-CIP2-24-51077"
+    score: "87%"
+    valid_until: "November 14, 2027"
+    signatory: "Dr Lennox Pemberly"
+    signatory_title: "Head of Certification"
+
+  - id: epc_certificate
+    template: education/epc_certificate.html
+    dwelling_type: "Mid-floor flat"
+    assessment_date: "10 July 2025"
+    certificate_date: "11 July 2025"
+    reference_number: "8825-1907-4402-9917-3205"
+    assessment_type: "RdSAP, existing dwelling"
+    floor_area: "54"
+    current_energy: 72
+    potential_energy: 84
+    current_env: 71
+    potential_env: 83
+    assessor_name: "Douglas Trenholm"
+    assessor_number: "EAS/004417"
+    assessor_company: "Netherfield Energy Surveys Ltd"
+    assessor_phone: "020 7946 0871"
+    assessor_email: "surveys@netherfield-energy.example"
+    costs:
+      - {row: "Lighting", current: "174", potential: "129"}
+      - {row: "Heating", current: "1,236", potential: "1,044"}
+      - {row: "Hot water", current: "258", potential: "216"}
+    cost_total_current: "1,668"
+    cost_total_potential: "1,389"
+    cost_saving: "279"
+    features:
+      - {element: "Walls", description: "Cavity wall, as built, insulated (assumed)", rating: "Good"}
+      - {element: "Roof", description: "(another dwelling above)", rating: "—"}
+      - {element: "Floor", description: "(another dwelling below)", rating: "—"}
+      - {element: "Windows", description: "Fully double glazed", rating: "Good"}
+      - {element: "Main heating", description: "Boiler and radiators, mains gas", rating: "Good"}
+      - {element: "Main heating controls", description: "Programmer, room thermostat and TRVs", rating: "Good"}
+      - {element: "Secondary heating", description: "None", rating: "—"}
+      - {element: "Hot water", description: "From main system", rating: "Good"}
+      - {element: "Lighting", description: "Low energy lighting in all fixed outlets", rating: "Very good"}
+    recommendations:
+      - {measure: "Solar water heating", cost: "£4,000 – £6,000", saving: "£55", band: "C 76"}
+      - {measure: "Replace boiler with new condensing boiler", cost: "£2,200 – £3,000", saving: "£38", band: "B 84"}
+
+  - id: eicr_certificate
+    scan: true
+    template: education/eicr_certificate.html
+    report_ref: "EL-25-08834"
+    inspection_date: "15 July 2025"
+    next_inspection: "15 July 2030"
+    contractor: "Elmsworth Electrical Services Ltd"
+    contractor_address: "Unit 9, Ferrier Trading Estate, London SE18 7GP"
+    contractor_phone: "020 7946 0552"
+    contractor_reg: "ECAB 118842"
+    inspector: "D. Castellan"
+    inspector_position: "Approved Inspector"
+    qs_name: "R. Okonedo"
+    qs_position: "Qualified Supervisor"
+    overall: "SATISFACTORY"
+    wiring_age: "Approximately 18 years, partial rewire circa 2014"
+    supply_type: "TN-C-S"
+    nominal_voltage: "230 V"
+    frequency: "50 Hz"
+    pfc: "1.9 kA"
+    ze: "0.21 Ω"
+    main_switch: "100 A BS EN 60947-3"
+    observations:
+      - code: "C3"
+        item: "4.10"
+        text: "Consumer unit enclosure is of thermoplastic construction and is not mounted in an escape route; replacement with a metal-clad unit is recommended at next board change."
+      - code: "C3"
+        item: "5.12"
+        text: "No supplementary bonding visible in bathroom; protective measures rely on RCD and main bonding, which is acceptable — improvement recommended for resilience."
+      - code: "N/A"
+        item: "—"
+        text: "No further observations. No C1 (danger present) or C2 (potentially dangerous) items were recorded."
+    schedule:
+      - section: "1.0 External condition of intake equipment (visual inspection only)"
+        rows:
+          - {"no": "1.1", desc: "Service cable", outcome: "OK"}
+          - {"no": "1.2", desc: "Service head", outcome: "OK"}
+          - {"no": "1.3", desc: "Earthing arrangement", outcome: "OK"}
+          - {"no": "1.4", desc: "Meter tails", outcome: "OK"}
+          - {"no": "1.5", desc: "Metering equipment", outcome: "OK"}
+      - section: "2.0 Parallel or switched alternative sources of supply"
+        rows:
+          - {"no": "2.1", desc: "Adequacy of arrangements where a generating set operates as a switched alternative", outcome: "N/A"}
+      - section: "3.0 Automatic disconnection of supply"
+        rows:
+          - {"no": "3.1", desc: "Main earthing / bonding arrangements", outcome: "OK"}
+          - {"no": "3.2", desc: "Presence of distributor's earthing arrangement", outcome: "OK"}
+          - {"no": "3.3", desc: "Provision of earthing / bonding labels at all appropriate locations", outcome: "OK"}
+          - {"no": "3.4", desc: "Accessibility of main protective bonding connections", outcome: "OK"}
+      - section: "4.0 Consumer unit / distribution board"
+        rows:
+          - {"no": "4.1", desc: "Adequacy of working space / accessibility to consumer unit", outcome: "OK"}
+          - {"no": "4.2", desc: "Security of fixing", outcome: "OK"}
+          - {"no": "4.3", desc: "Condition of enclosure(s) in terms of IP rating", outcome: "OK"}
+          - {"no": "4.4", desc: "Condition of enclosure(s) in terms of fire rating", outcome: "C3"}
+          - {"no": "4.5", desc: "Enclosure not damaged / deteriorated so as to impair safety", outcome: "OK"}
+          - {"no": "4.6", desc: "Presence of main linked switch", outcome: "OK"}
+          - {"no": "4.7", desc: "Operation of main switch (functional check)", outcome: "OK"}
+          - {"no": "4.8", desc: "Manual operation of circuit breakers and RCDs to prove disconnection", outcome: "OK"}
+          - {"no": "4.9", desc: "Correct identification of circuit details and protective devices", outcome: "OK"}
+          - {"no": "4.10", desc: "Presence of RCD six-monthly test notice", outcome: "OK"}
+          - {"no": "4.11", desc: "Presence of non-standard (mixed) cable colour warning notice", outcome: "OK"}
+          - {"no": "4.12", desc: "Protection against mechanical damage where cables enter equipment", outcome: "OK"}
+      - section: "5.0 Distribution circuits and final circuits"
+        rows:
+          - {"no": "5.1", desc: "Identification of conductors", outcome: "OK"}
+          - {"no": "5.2", desc: "Cables correctly supported throughout their run", outcome: "LIM"}
+          - {"no": "5.3", desc: "Condition of insulation of live parts", outcome: "OK"}
+          - {"no": "5.4", desc: "Non-sheathed cables protected by enclosure in conduit, ducting or trunking", outcome: "OK"}
+          - {"no": "5.5", desc: "Adequacy of cables for current-carrying capacity", outcome: "OK"}
+          - {"no": "5.6", desc: "Coordination between conductors and overload protective devices", outcome: "OK"}
+          - {"no": "5.7", desc: "Adequacy of protective devices: type and rated current for fault protection", outcome: "OK"}
+          - {"no": "5.8", desc: "Presence of appropriate circuit protective conductors", outcome: "OK"}
+          - {"no": "5.9", desc: "Wiring systems not in contact with thermal insulation, or suitably derated", outcome: "LIM"}
+          - {"no": "5.10", desc: "Provision of additional protection by 30 mA RCD for socket-outlets", outcome: "OK"}
+          - {"no": "5.11", desc: "Provision of fire barriers, sealing arrangements where necessary", outcome: "LIM"}
+          - {"no": "5.12", desc: "Supplementary bonding in locations containing a bath or shower", outcome: "C3"}
+      - section: "6.0 Isolation and switching"
+        rows:
+          - {"no": "6.1", desc: "Presence and condition of appropriate devices for isolation", outcome: "OK"}
+          - {"no": "6.2", desc: "Acceptable location of devices — readily accessible", outcome: "OK"}
+          - {"no": "6.3", desc: "Capable of being secured in the OFF position where required", outcome: "OK"}
+      - section: "7.0 Current-using equipment (permanently connected)"
+        rows:
+          - {"no": "7.1", desc: "Condition of equipment in terms of IP rating", outcome: "OK"}
+          - {"no": "7.2", desc: "Equipment does not constitute a fire hazard", outcome: "OK"}
+          - {"no": "7.3", desc: "Enclosure not damaged / deteriorated so as to impair safety", outcome: "OK"}
+          - {"no": "7.4", desc: "Suitability for the environment and external influences", outcome: "OK"}
+      - section: "8.0 Location(s) containing a bath or shower"
+        rows:
+          - {"no": "8.1", desc: "30 mA RCD protection for all low-voltage circuits serving the location", outcome: "OK"}
+          - {"no": "8.2", desc: "Equipment suitable for the zone in which it is installed", outcome: "OK"}
+          - {"no": "8.3", desc: "Supplementary bonding of extraneous-conductive parts", outcome: "C3"}
+    circuits:
+      - {"no": "1", desc: "Lighting — hall, living room, bedroom", wiring: "T&E", ref_method: "C", points: "9", live_csa: "1.0", cpc_csa: "1.0", ocpd_bs: "60898", ocpd_type: "B", ocpd_rating: "6", rcd_rating: "30", r1r2: "0.68", ins_ll: ">299", ins_le: ">299", polarity: "OK", zs: "0.89", rcd_ms: "22"}
+      - {"no": "2", desc: "Lighting — kitchen, bathroom", wiring: "T&E", ref_method: "C", points: "6", live_csa: "1.0", cpc_csa: "1.0", ocpd_bs: "60898", ocpd_type: "B", ocpd_rating: "6", rcd_rating: "30", r1r2: "0.54", ins_ll: ">299", ins_le: ">299", polarity: "OK", zs: "0.75", rcd_ms: "24"}
+      - {"no": "3", desc: "Ring final — sockets, living room and bedroom", wiring: "T&E", ref_method: "C", points: "11", live_csa: "2.5", cpc_csa: "1.5", ocpd_bs: "60898", ocpd_type: "B", ocpd_rating: "32", rcd_rating: "30", r1r2: "0.42", ins_ll: ">299", ins_le: ">299", polarity: "OK", zs: "0.63", rcd_ms: "19"}
+      - {"no": "4", desc: "Ring final — sockets, kitchen", wiring: "T&E", ref_method: "C", points: "8", live_csa: "2.5", cpc_csa: "1.5", ocpd_bs: "60898", ocpd_type: "B", ocpd_rating: "32", rcd_rating: "30", r1r2: "0.38", ins_ll: ">299", ins_le: ">299", polarity: "OK", zs: "0.59", rcd_ms: "21"}
+      - {"no": "5", desc: "Cooker", wiring: "T&E", ref_method: "C", points: "1", live_csa: "6.0", cpc_csa: "2.5", ocpd_bs: "60898", ocpd_type: "B", ocpd_rating: "32", rcd_rating: "30", r1r2: "0.24", ins_ll: ">299", ins_le: ">299", polarity: "OK", zs: "0.45", rcd_ms: "20"}
+      - {"no": "6", desc: "Combination boiler (Calorix)", wiring: "T&E", ref_method: "C", points: "1", live_csa: "1.5", cpc_csa: "1.0", ocpd_bs: "60898", ocpd_type: "B", ocpd_rating: "16", rcd_rating: "30", r1r2: "0.51", ins_ll: ">299", ins_le: ">299", polarity: "OK", zs: "0.72", rcd_ms: "23"}
+
+  - id: museum_eticket
+    template: education/museum_eticket.html
+    museum: "Wardley Maritime Museum"
+    museum_address: "Quayside Walk, London SE10 8ZL"
+    product: "Timed General Admission"
+    visit_date: "Saturday 16 May 2026"
+    entry_time: "11:00"
+    ticket_type: "Adult"
+    price: "17.50"
+    booking_ref: "WMM-6650912"
+    barcode_digits: "9 006650 912174"
+    order_date: "2 May 2026"
+    nearest_stations:
+      - "Wardley Pier — riverboat services every 20 minutes"
+      - "Maze Quay DLR — 6 minutes' walk"
+      - "Greenhithe Lane rail — 12 minutes' walk"
+
+  - id: conference_badge_invoice
+    template: education/conference_badge_invoice.html
+    event: "SysCon North America 2024"
+    event_dates: "November 12–14, 2024"
+    venue: "Cascade Center, Portland, OR"
+    organizer: "Beacon Ridge Events LLC"
+    organizer_address: "PO Box 4415, Portland, OR 97208"
+    organizer_email: "registration@beaconridge-events.example"
+    invoice_no: "SC24-18832"
+    order_no: "R-2024-30117"
+    order_date: "September 3, 2024"
+    confirmation_no: "SYSNA24-77012"
+    registration_type: "Full Conference — Early Bird"
+    badge_role: "ATTENDEE"
+    line_items:
+      - {item: "Full Conference Registration (Early Bird)", price: "650.00", qty: "1", amount: "650.00"}
+      - {item: "Hands-on Workshop: Debugging Distributed Systems", price: "150.00", qty: "1", amount: "150.00"}
+    order_total: "800.00"
+    amt_paid: "800.00"
+    amt_due: "0.00"
+    payment_date: "September 3, 2024"
+    payment_type: "Credit card (ending 6620)"
+    payment_ref: "ch_88g22L0074Ax"

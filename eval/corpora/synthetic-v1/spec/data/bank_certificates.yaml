@@ -1,0 +1,44 @@
+# Entry data for the bank_certificates set (corpus.yaml: bank_certificates).
+# Authored here: the UK certificate of interest and the near-identical
+# 1042-S pair (both rasterised via `scan: true` per corpus.yaml). The
+# interest_summary xlsx and the two Fernleaf ISA statements are a later
+# pass and will be appended to this file.
+#
+# Cross-references: the UK certificate's gross interest (47.21) is
+# the sum of the two Instant Saver interest credits inside tax year
+# 2025-26 (31 Oct 2025 + 31 Jan 2026, uk_savings_statements.yaml). The
+# 1042-S forms report calendar-2025 deposit interest on the two
+# Commonwealth Harbor accounts — the Jan-Jun credits visible on the US
+# statements plus the final accrual at the July 2025 account closures —
+# rounded to whole dollars as on the form. Income code 29 (deposit
+# interest), exemption code 02, tax rate 00.00, so no tax was withheld.
+template: null # per-entry `template`
+vendor_key: null
+entries:
+  - id: uk-interest-certificate-2026
+    template: statements/uk_interest_certificate.html
+    bank_key: uk_savings
+    account_type: "Instant Saver"
+    tax_year_ending: "5 April 2026"
+    gross_interest: "47.21"
+    tax_deducted: "0.00"
+    net_received: "47.21"
+    downloaded: "12 April 2026"
+  - id: us-1042s-checking-2025
+    template: statements/us_1042s.html
+    scan: true
+    bank_key: us_checking
+    form_year: "2025"
+    form_id: "2203841177"
+    account_label: "Harbor Advantage Checking"
+    gross_income: "12"
+    mail_seq: "004417-01"
+  - id: us-1042s-savings-2025
+    template: statements/us_1042s.html
+    scan: true
+    bank_key: us_savings
+    form_year: "2025"
+    form_id: "2203841185"
+    account_label: "Harbor High-Yield Savings"
+    gross_income: "196"
+    mail_seq: "004417-02"

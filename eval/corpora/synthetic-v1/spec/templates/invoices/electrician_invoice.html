@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Brayfield Electrical: compact trade job invoice — amber/black, single
+     page, works description up top, certificate reference called out. */
+  .brand { color: #1a1a1a; }
+  .brand .accent { color: #b38600; }
+  .letterhead { border-bottom: 2.2pt solid #b38600; padding-bottom: 2mm; }
+  .invoice-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 4mm 0 3mm;
+  }
+  .invoice-line h1 { margin: 0; }
+  .invoice-line .no { font-family: "Doc Mono", monospace; font-size: 11pt; }
+  table.data th { background: #f4ecd6; }
+  .panel { background: #faf6e8; border-left-color: #b38600; }
+  .totals { width: 66mm; margin-left: auto; border-collapse: collapse; }
+  .totals td { padding: 1.4mm 2mm; border-bottom: 0.3pt solid #ddd; }
+  .totals td.amount { text-align: right; font-variant-numeric: tabular-nums; }
+  .totals tr.grand td {
+    font-weight: bold;
+    font-size: 11pt;
+    border-top: 1.4pt solid #b38600;
+    border-bottom: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Brayfield Electrical Ltd, 27 Tannery Close, London SE99 5RN. Registered in
+  England and Wales, company no. 09984412. VAT no. GB 663 0921 55. Member of
+  a government-authorised competent-person scheme for domestic electrical
+  work.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">BRAYFIELD<span class="accent"> ELECTRICAL</span></div>
+  <div class="contact">
+    27 Tannery Close, London SE99 5RN<br>
+    jobs@brayfield-electrical.example &middot; 07700 900233<br>
+    brayfield-electrical.example
+  </div>
+</div>
+
+<div class="invoice-line">
+  <h1>Invoice</h1>
+  <span class="no">{{ issue.invoice_number }}</span>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    <strong>Customer / site</strong><br>
+    {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Invoice date</td><td class="value">{{ issue.invoice_date }}</td></tr>
+      <tr><td class="label">Date of works</td><td class="value">{{ issue.works_date }}</td></tr>
+      <tr><td class="label">Electrician</td><td class="value">{{ issue.electrician }}</td></tr>
+      <tr><td class="label">Certificate ref</td><td class="value">{{ issue.certificate_ref }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<h2>Description of works</h2>
+<p>{{ issue.work_summary }}</p>
+
+<table class="data">
+  <tr><th>Item</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Amount</th></tr>
+  {% for line in issue.lines %}
+  <tr>
+    <td>{{ line.description }}</td>
+    <td class="num">{{ line.qty }}</td>
+    <td class="num">&pound;{{ line.unit_price }}</td>
+    <td class="num">&pound;{{ line.amount }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<table class="totals">
+  <tr><td>Subtotal</td><td class="amount">&pound;{{ issue.subtotal }}</td></tr>
+  <tr><td>VAT at 20&#37;</td><td class="amount">&pound;{{ issue.vat }}</td></tr>
+  <tr class="grand"><td>Total due</td><td class="amount">&pound;{{ issue.total }}</td></tr>
+</table>
+
+<div class="panel">
+  <h3>Your certificate</h3>
+  <p>A minor electrical installation works certificate
+  ({{ issue.certificate_ref }}) covering this work has been issued and
+  emailed to you — keep it with your property paperwork; a landlord or
+  buyer may ask for it.</p>
+</div>
+
+<h2>Payment</h2>
+<p>Due within 7 days by bank transfer to the account named on your payment
+advice, quoting {{ issue.invoice_number }}, or by card via the link in your
+invoice email. All work guaranteed for 12 months.</p>
+
+<div class="small-print">
+  <p>All works completed and tested in accordance with the current edition
+  of the national wiring regulations and notified under our
+  competent-person scheme membership where required. If you're unhappy with
+  any aspect of the work, contact us within 30 days and we will inspect and
+  make good free of charge.</p>
+</div>
+
+</body>
+</html>

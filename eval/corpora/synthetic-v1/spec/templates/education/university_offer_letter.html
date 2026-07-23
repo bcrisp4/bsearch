@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .uni-brand { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8mm; }
+  .uni-logo {
+    border: 1.2pt solid #3b2a6b; color: #3b2a6b; font-weight: bold;
+    padding: 2mm 3mm; font-size: 12pt; letter-spacing: 1pt;
+  }
+  .faculty { text-align: right; font-size: 8.5pt; color: #3b2a6b; font-weight: bold; }
+  .course-block {
+    margin: 4mm 0 5mm 8mm; font-size: 9.5pt;
+  }
+  .course-block td { padding: 0.8mm 0; }
+  .course-block td.k { font-weight: bold; width: 40mm; }
+  h2 { color: #3b2a6b; }
+  .foot-strip {
+    border-top: 0.5pt solid #3b2a6b; margin-top: 8mm; padding-top: 1.5mm;
+    font-size: 6.5pt; color: #555;
+  }
+  .sig-script { font-style: italic; font-size: 14pt; margin: 6mm 0 1mm; }
+  .social { font-size: 7.5pt; color: #3b2a6b; margin-top: 4mm; }
+  .pid-note { font-size: 7pt; color: #555; margin-top: 2mm; }
+</style>
+</head>
+<body>
+
+<div class="uni-brand">
+  <div class="uni-logo">UNIVERSITY OF<br>WEXCOMBE</div>
+  <div class="faculty">School of Computing and Engineering<br>
+    Admissions Office<br>{{ issue.campus }}, Wexcombe WX2 7AL</div>
+</div>
+
+<div class="addr-window">
+  {{ person.full_name }}<br>
+  {{ addresses.uk_previous.line1 }}<br>
+  {{ addresses.uk_previous.city }}<br>
+  {{ addresses.uk_previous.county }}<br>
+  {{ addresses.uk_previous.postcode }}
+</div>
+
+<p>{{ issue.letter_date }}</p>
+
+<p>Dear {{ person.short_name }},</p>
+
+<p><strong>Congratulations &mdash; we are delighted to offer you a place at the
+{{ vendor.name }}.</strong> Your application impressed the admissions team and
+we very much hope you will join us in September.</p>
+
+<table class="course-block">
+  <tr><td class="k">Course Name</td><td>BSc (Hons) Computer Networks</td></tr>
+  <tr><td class="k">Course Code</td><td>{{ issue.course_code }}</td></tr>
+  <tr><td class="k">Year of Entry</td><td>{{ issue.year_of_entry }}</td></tr>
+  <tr><td class="k">Start Date</td><td>{{ issue.start_date }}</td></tr>
+  <tr><td class="k">Course delivered at</td><td>{{ issue.campus }}</td></tr>
+  <tr><td class="k">Personal ID</td><td>{{ issue.applicant_id }}*</td></tr>
+</table>
+
+<h2>Your Offer</h2>
+<p>This is a <strong>conditional offer</strong>. Your place will be confirmed
+when you meet the following conditions:</p>
+<ul>
+  {% for c in issue.conditions %}<li>{{ c }}</li>{% endfor %}
+</ul>
+
+<h2>Responding to your Offer</h2>
+<p>Please respond through the national admissions applicant tracker by the
+deadline shown in your applicant record. If you make us your firm choice and
+meet the conditions above, your place is guaranteed. If you choose us as your
+insurance choice, we will hold a place for you in the same way.</p>
+
+<h2>What happens next?</h2>
+<p>Once you have responded we will write to you with details of accommodation,
+enrolment week and reading lists. Our admissions team is happy to answer
+questions at any point &mdash; call 0113 496 0219 or email
+admissions@wexcombe.example quoting your Personal ID.</p>
+
+<h2>Tuition fees and funding</h2>
+<p>The tuition fee for {{ issue.year_of_entry }} entry is
+&pound;{{ issue.tuition_fee }} per year. Most UK undergraduates take a tuition
+fee loan which is paid directly to the University &mdash; you do not need to
+pay anything up front. Our funding pages explain bursaries and scholarships,
+including the Wexcombe Achievement Bursary, at wexcombe.example/money.</p>
+
+<div class="foot-strip">
+  {{ vendor.name }}, {{ issue.campus }}, Wexcombe WX2 7AL &middot; 0113 496 0219
+  &middot; wexcombe.example &middot; VAT registration 118 4471 62
+</div>
+
+<div class="page-break"></div>
+
+<h2>Visit Us</h2>
+<p>The best way to choose a university is to walk around it. Offer-holder days
+run every fortnight from March to June &mdash; you will tour the network labs,
+meet the teaching team and current students, and see the halls of residence.
+Book your place at wexcombe.example/visit.</p>
+
+<p>We look forward to welcoming you to Wexcombe.</p>
+
+<p>Yours sincerely,</p>
+
+<div class="sig-script">{{ issue.admissions_tutor }}</div>
+<p><strong>{{ issue.admissions_tutor }}</strong><br>
+{{ issue.admissions_tutor_title }}<br>
+admissions@wexcombe.example &middot; 0113 496 0219</p>
+
+<div class="social">Find us online: wexcombe.example &middot;
+@wexcombeuni on the usual networks &middot; search &ldquo;University of
+Wexcombe&rdquo; for campus tours in video</div>
+
+<div class="pid-note">* Your Personal ID identifies your application in the
+national admissions applicant tracker. Please quote it in all correspondence
+with the Admissions Office.</div>
+
+</body>
+</html>

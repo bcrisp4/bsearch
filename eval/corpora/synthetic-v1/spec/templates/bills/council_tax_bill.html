@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Netherhale Borough Council: statutory-grid look — serif headings, navy
+     rules, boxed panels, all-caps title. Composition unlike the utility bills:
+     no letterhead flex, no reversed banner; everything lives in ruled boxes. */
+  h1, h2 { font-family: "Doc Serif", serif; color: #1f3a6e; }
+  .council-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1.6pt solid #1f3a6e;
+    padding-bottom: 2mm;
+    margin-bottom: 4mm;
+  }
+  .council-name {
+    font-family: "Doc Serif", serif;
+    font-size: 15pt;
+    font-weight: bold;
+    color: #1f3a6e;
+  }
+  .council-name .sub { display: block; font-size: 8pt; font-weight: normal; color: #444; }
+  .doc-title { text-align: right; }
+  .doc-title .t {
+    font-size: 13pt;
+    font-weight: bold;
+    letter-spacing: 0.8pt;
+    text-transform: uppercase;
+    color: #1f3a6e;
+  }
+  .doc-title .issue { font-size: 8.5pt; margin-top: 1mm; }
+  .gridbox {
+    border: 0.6pt solid #1f3a6e;
+    padding: 2.5mm 3mm;
+    margin: 0 0 3mm;
+    font-size: 9pt;
+  }
+  .gridbox h3 {
+    margin: 0 0 1.5mm;
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5pt;
+    color: #1f3a6e;
+  }
+  table.data th { background: #e4e9f2; }
+  .due-box {
+    border: 1.4pt solid #1f3a6e;
+    background: #eef1f7;
+    padding: 3mm 4mm;
+    margin: 3mm 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-weight: bold;
+    font-size: 11pt;
+    color: #1f3a6e;
+  }
+  .due-box .amount { font-size: 15pt; }
+  .ref-mono { font-family: "Doc Mono", monospace; font-size: 9.5pt; }
+  .panel { background: #eef1f7; border-left-color: #1f3a6e; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Netherhale Borough Council, Civic Offices, 1 Guildersfield Way, Netherhale.
+  This demand notice is issued under council tax administration regulations.
+  Keep it — you may need it as proof of residence.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="council-head">
+  <div class="council-name">
+    {{ vendor.name }}
+    <span class="sub">netherhale.example/counciltax &middot; 0113 496 0343</span>
+  </div>
+  <div class="doc-title">
+    <div class="t">Council Tax Demand Notice {{ issue.year_label }}</div>
+    <div class="issue">Date of issue: {{ issue.issue_date }}</div>
+  </div>
+</div>
+
+{% set addr = addresses[issue.address_key] %}
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.full_name }}<br>
+    {{ addr.line1 }}<br>
+    {% if addr.line2 is defined %}{{ addr.line2 }}<br>{% endif %}
+    {{ addr.city }}<br>
+    {% if addr.county is defined %}{{ addr.county }}<br>{% endif %}
+    {{ addr.postcode }}
+  </div>
+  <div class="gridbox" style="width: 58mm;">
+    <h3>Council tax account number</h3>
+    <div class="ref-mono">{{ issue.account_ref | default(vendor.council_tax_ref) }}</div>
+    <h3 style="margin-top: 2.5mm;">Property</h3>
+    {{ addr.line1 }}, {{ addr.postcode }}<br>
+    Valuation band: <strong>{{ vendor.band }}</strong>
+  </div>
+</div>
+
+<div class="gridbox">
+  <h3>Reason for bill</h3>
+  {{ issue.reason }}
+</div>
+
+<div class="gridbox">
+  <h3>How your council tax is made up</h3>
+  <p>The property shown above is in valuation band {{ vendor.band }}. The
+  full council tax for this band for the year {{ issue.year_label }} is
+  <strong>&pound;{{ issue.annual_band_charge }}</strong>, made up as follows:</p>
+  <table class="data" style="margin-bottom: 0;">
+    <tr><th>Element</th><th class="num">Amount</th><th class="num">Change on previous year</th></tr>
+    {% for p in issue.precepts %}
+    <tr>
+      <td>{{ p.label }}</td>
+      <td class="num">&pound;{{ p.amount }}</td>
+      <td class="num">{{ p.change }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p style="font-size: 7.5pt; color: #555; margin: 1.5mm 0 0;">* The adult
+  social care precept is shown separately as required by government rules
+  on council tax demand notices.</p>
+</div>
+
+<h2>Your charge</h2>
+<table class="data">
+  <tr><th>Description</th><th>From</th><th>To</th><th class="num">Amount</th></tr>
+  {% for line in issue.charge_lines %}
+  <tr>
+    <td>{{ line.description }}</td>
+    <td>{{ line.from }}</td>
+    <td>{{ line.to }}</td>
+    <td class="num">{% if line.credit | default(false) %}&minus;{% endif %}&pound;{{ line.amount }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="due-box">
+  <span>Amount due for {{ issue.year_label }}</span>
+  <span class="amount">&pound;{{ issue.amount_due }}</span>
+</div>
+
+<div class="gridbox">
+  <h3>Method of payment &mdash; instalments</h3>
+  <p style="margin: 0;">{{ issue.instalments }}</p>
+</div>
+
+{% if issue.notice is defined %}
+<div class="panel">
+  <h3>{{ issue.notice.title }}</h3>
+  {% for para in issue.notice.body %}<p>{{ para }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<div class="page-break"></div>
+
+<h2>Council tax by valuation band, {{ issue.year_label }}</h2>
+<table class="data">
+  <tr><th>Band</th>{% for b in issue.bands %}<th class="num">{{ b.band }}</th>{% endfor %}</tr>
+  <tr><td>Full-year charge</td>{% for b in issue.bands %}<td class="num">&pound;{{ b.amount }}</td>{% endfor %}</tr>
+</table>
+<p style="font-size: 8pt; color: #555;">Bands are set by the national
+valuation agency based on the value of the property; they are not set by
+the council. You can challenge your band through the valuation agency, but
+you must keep paying while a challenge is considered.</p>
+
+<h2>How to pay</h2>
+<table class="data">
+  <tr><th>Method</th><th>Detail</th></tr>
+  <tr><td>Direct Debit</td><td>The easiest way — choose the 1st, 15th or
+    25th of the month at netherhale.example/counciltax. Instalments adjust
+    automatically if your bill changes.</td></tr>
+  <tr><td>Online by card</td><td>netherhale.example/pay, quoting your
+    account number.</td></tr>
+  <tr><td>24-hour phone line</td><td>0113 496 0344 (automated card
+    payments).</td></tr>
+  <tr><td>Bank transfer</td><td>Pay to the council's account using the
+    details on your payment slip, quoting your account number as the
+    reference.</td></tr>
+</table>
+
+<h2>Discounts, exemptions and support</h2>
+<p>The full charge assumes at least two adults live in the property. If you
+live alone the bill is reduced by 25%. Students, some carers and some other
+groups aren't counted. If your income is low you may qualify for council
+tax reduction of up to 100% — apply at netherhale.example/ctr.</p>
+<p><strong>You must tell us within 21 days</strong> of any change that
+affects your bill — for example someone moving in or out, or losing
+entitlement to a discount. Failing to do so can lead to a penalty.</p>
+
+<div class="small-print">
+  <p><strong>If you don't pay.</strong> If an instalment is missed we send a
+  reminder; if payment isn't brought up to date you lose the right to pay by
+  instalments and the full balance for the year becomes due, and we may seek
+  a liability order with costs added.</p>
+  <p><strong>Struggling to pay?</strong> Contact us before missing a payment
+  — we can reschedule instalments over twelve months and check whether you
+  qualify for council tax reduction.</p>
+  <p><strong>Appeals.</strong> If you think you're not liable, or a discount
+  has been wrongly refused, write to us first. If you disagree with our
+  decision you can appeal to the independent valuation tribunal. Making an
+  appeal does not let you withhold payment.</p>
+  <p><strong>Where the money goes.</strong> A summary of council spending
+  and each precepting authority's share is at
+  netherhale.example/counciltax/spending.</p>
+</div>
+
+</body>
+</html>

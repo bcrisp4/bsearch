@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* Calder & Roe: warm retail VAT invoice — oak-brown accent, centred brand,
+     VAT-inclusive retail pricing with a VAT summary line. */
+  .shop-head { text-align: center; margin-bottom: 5mm; }
+  .shop-head .brand { font-family: "Doc Serif", serif; font-size: 18pt; color: #7a4a21; }
+  .shop-head .strap { font-size: 8pt; letter-spacing: 2pt; text-transform: uppercase; color: #555; margin-top: 1mm; }
+  .shop-head .contact { font-size: 7.5pt; color: #555; margin-top: 1.5mm; }
+  h1, h2 { color: #7a4a21; }
+  table.data th { background: #f2e8dd; }
+  .panel { background: #f8f1e8; border-left-color: #7a4a21; }
+  .totals { width: 70mm; margin-left: auto; border-collapse: collapse; }
+  .totals td { padding: 1.4mm 2mm; border-bottom: 0.3pt solid #ddd; }
+  .totals td.amount { text-align: right; font-variant-numeric: tabular-nums; }
+  .totals tr.grand td {
+    font-weight: bold;
+    font-size: 11pt;
+    color: #7a4a21;
+    border-top: 1pt solid #7a4a21;
+    border-bottom: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Calder &amp; Roe Furniture Ltd, 210&ndash;214 Hazelwick Parade, London SE99 3DP.
+  Registered in England and Wales, company no. 06638842. VAT no. GB 205 8817 39.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="shop-head">
+  <div class="brand">Calder &amp; Roe</div>
+  <div class="strap">Furniture makers since 1968</div>
+  <div class="contact">210&ndash;214 Hazelwick Parade, London SE99 3DP &middot;
+    orders@calderandroe.example &middot; 020 7946 0114</div>
+</div>
+
+<h1>VAT invoice &amp; receipt</h1>
+
+<div class="two-col">
+  <div class="addr-window">
+    <strong>Sold and delivered to</strong><br>
+    {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Order number</td><td class="value">{{ issue.order_number }}</td></tr>
+      <tr><td class="label">Order date</td><td class="value">{{ issue.order_date }}</td></tr>
+      <tr><td class="label">Delivered</td><td class="value">{{ issue.delivery_date }}</td></tr>
+      <tr><td class="label">Payment</td><td class="value">{{ issue.payment_method }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<table class="data">
+  <tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th></tr>
+  {% for line in issue.lines %}
+  <tr>
+    <td>{{ line.description }}</td>
+    <td class="num">{{ line.qty }}</td>
+    <td class="num">&pound;{{ line.amount }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<table class="totals">
+  <tr class="grand"><td>Total paid (incl. VAT)</td><td class="amount">&pound;{{ issue.total }}</td></tr>
+  <tr><td>VAT included at 20&#37;</td><td class="amount">&pound;{{ issue.vat_included }}</td></tr>
+</table>
+
+<div class="panel">
+  <h3>Caring for your velvet upholstery</h3>
+  <p>Brush weekly with a soft clothes brush following the pile, keep out of
+  strong direct sunlight, and blot spills immediately — never rub. Seat
+  cushion pressure marks are normal for velvet and relax with plumping.
+  Professional cleaning only; do not machine wash covers.</p>
+</div>
+
+<h2>Delivery &amp; returns</h2>
+<p>Your items were delivered to the room of your choice and packaging
+removed. If anything isn't right, tell us within 14 days for made-to-order
+pieces or 30 days for stock items and we'll collect, exchange or refund —
+see calderandroe.example/returns. Frames are guaranteed for 10 years,
+cushion interiors and covers for 2 years. Keep this invoice as your proof
+of purchase.</p>
+
+<div class="small-print">
+  <p>Goods remain the property of Calder &amp; Roe Furniture Ltd until paid
+  for in full. Nothing in this invoice affects your statutory rights. Wood
+  is a natural material: grain and tone vary piece to piece, and colour
+  mellows with light and age — this is character, not a defect.</p>
+</div>
+
+</body>
+</html>

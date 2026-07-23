@@ -1,0 +1,175 @@
+# Per-issue data for the Brackenwater quarterly bill series (4 issues,
+# corpus.yaml: water_bills), covering Aug 2025 – Jul 2026 at the current flat.
+# Metered supply. Rates 2025-26: water 2.07/m³ + 12.5p/day standing,
+# wastewater 1.31/m³ + 18.4p/day standing. From 1 Apr 2026: water 2.19/m³ +
+# 13.1p/day, wastewater 1.40/m³ + 19.2p/day — the Feb–Apr bill splits the
+# quarter across both price years (its notice explains). Prose varies per
+# issue: new-account welcome, free water-saving devices, split-year pricing,
+# customer-read confirmation.
+template: bills/water_bill.html
+vendor_key: water
+issues:
+  - id: water-2025-11
+    bill_ref: "BW-Q-25311"
+    bill_date: "10 November 2025"
+    period: "1 Aug – 31 Oct 2025"
+    due_date: "1 December 2025"
+    meter_serial: "BWM 66120-4"
+    reading_previous: "214"
+    reading_latest: "241"
+    reading_type: "Actual (company read)"
+    m3_used: "27"
+    reading_note: "Read by our meter reader on 31 October 2025."
+    lines:
+      - label: "Water supplied"
+        detail: "27 m³ at £2.07 per m³"
+        amount: "55.89"
+      - label: "Wastewater collected and treated"
+        detail: "27 m³ at £1.31 per m³"
+        amount: "35.37"
+      - label: "Water standing charge"
+        detail: "92 days at 12.5p per day"
+        amount: "11.50"
+      - label: "Wastewater standing charge"
+        detail: "92 days at 18.4p per day"
+        amount: "16.93"
+    charges_total: "119.69"
+    previous_balance: "0.00"
+    payments_received: "0.00"
+    total_due: "119.69"
+    notice:
+      title: "Welcome to your new home"
+      body:
+        - >-
+          This is your first bill at this address, covering charges since
+          your account opened on 1 August 2025. Your home is metered, so
+          you only pay for the water you use.
+        - >-
+          Most customers find monthly Direct Debit easiest — we work out a
+          monthly amount from your usage and review it twice a year. Set it
+          up at brackenwater.example/account.
+  - id: water-2026-02
+    bill_ref: "BW-Q-26042"
+    bill_date: "9 February 2026"
+    period: "1 Nov 2025 – 31 Jan 2026"
+    due_date: "2 March 2026"
+    meter_serial: "BWM 66120-4"
+    reading_previous: "241"
+    reading_latest: "272"
+    reading_type: "Actual (company read)"
+    m3_used: "31"
+    reading_note: "Read by our meter reader on 31 January 2026."
+    lines:
+      - label: "Water supplied"
+        detail: "31 m³ at £2.07 per m³"
+        amount: "64.17"
+      - label: "Wastewater collected and treated"
+        detail: "31 m³ at £1.31 per m³"
+        amount: "40.61"
+      - label: "Water standing charge"
+        detail: "92 days at 12.5p per day"
+        amount: "11.50"
+      - label: "Wastewater standing charge"
+        detail: "92 days at 18.4p per day"
+        amount: "16.93"
+    charges_total: "133.21"
+    previous_balance: "119.69"
+    payments_received: "119.69"
+    total_due: "133.21"
+    notice:
+      title: "Free water-saving devices"
+      body:
+        - >-
+          Order free tap aerators, a shower timer and a toilet leak-check
+          kit at brackenwater.example/savewater — fitted in minutes, and a
+          typical flat saves several cubic metres a year.
+        - >-
+          A dripping tap alone can waste over 5,000 litres a year — worth
+          about £17 on a metered bill like yours.
+  - id: water-2026-05
+    bill_ref: "BW-Q-26133"
+    bill_date: "11 May 2026"
+    period: "1 Feb – 30 Apr 2026"
+    due_date: "1 June 2026"
+    meter_serial: "BWM 66120-4"
+    reading_previous: "272"
+    reading_latest: "301"
+    reading_type: "Actual (company read)"
+    m3_used: "29"
+    reading_note: "Read by our meter reader on 30 April 2026."
+    lines:
+      - label: "Water supplied (to 31 March)"
+        detail: "19 m³ at £2.07 per m³"
+        amount: "39.33"
+      - label: "Water supplied (from 1 April)"
+        detail: "10 m³ at £2.19 per m³"
+        amount: "21.90"
+      - label: "Wastewater collected and treated (to 31 March)"
+        detail: "19 m³ at £1.31 per m³"
+        amount: "24.89"
+      - label: "Wastewater collected and treated (from 1 April)"
+        detail: "10 m³ at £1.40 per m³"
+        amount: "14.00"
+      - label: "Water standing charge"
+        detail: "59 days at 12.5p + 30 days at 13.1p per day"
+        amount: "11.31"
+      - label: "Wastewater standing charge"
+        detail: "59 days at 18.4p + 30 days at 19.2p per day"
+        amount: "16.62"
+    charges_total: "128.05"
+    previous_balance: "133.21"
+    payments_received: "133.21"
+    total_due: "128.05"
+    notice:
+      title: "Why this bill shows two sets of prices"
+      body:
+        - >-
+          Water charges are set for each charging year running from 1
+          April. This bill spans the change, so usage up to 31 March is
+          charged at 2025-26 prices and usage from 1 April at 2026-27
+          prices. We split your metered usage between the two periods in
+          proportion to the days in each.
+        - >-
+          From 1 April 2026 the water rate is £2.19 per m³ (was £2.07) and
+          the wastewater rate £1.40 per m³ (was £1.31); daily standing
+          charges rise by 0.6p and 0.8p. For a typical flat that's about
+          £14 a year more.
+  - id: water-2026-08
+    bill_ref: "BW-Q-26224"
+    bill_date: "10 August 2026"
+    period: "1 May – 31 Jul 2026"
+    due_date: "31 August 2026"
+    meter_serial: "BWM 66120-4"
+    reading_previous: "301"
+    reading_latest: "327"
+    reading_type: "Customer reading"
+    m3_used: "26"
+    reading_note: >-
+      You submitted this reading online on 31 July 2026 — thank you. Our
+      next scheduled meter read is in October.
+    lines:
+      - label: "Water supplied"
+        detail: "26 m³ at £2.19 per m³"
+        amount: "56.94"
+      - label: "Wastewater collected and treated"
+        detail: "26 m³ at £1.40 per m³"
+        amount: "36.40"
+      - label: "Water standing charge"
+        detail: "92 days at 13.1p per day"
+        amount: "12.05"
+      - label: "Wastewater standing charge"
+        detail: "92 days at 19.2p per day"
+        amount: "17.66"
+    charges_total: "123.05"
+    previous_balance: "128.05"
+    payments_received: "128.05"
+    total_due: "123.05"
+    notice:
+      title: "Thanks for reading your own meter"
+      body:
+        - >-
+          This bill uses the reading you submitted on 31 July, so it
+          reflects exactly what you used — no estimates. Submitting a
+          reading in the last week of each quarter keeps every bill this
+          accurate; we'll text you a reminder if you opt in at
+          brackenwater.example/account.

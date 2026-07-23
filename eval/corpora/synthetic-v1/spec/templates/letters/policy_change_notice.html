@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand-block {
+    background: #305c33; color: #fff; font-weight: bold;
+    padding: 2.5mm 3.5mm; font-size: 12pt; letter-spacing: 0.5pt;
+  }
+  .headline { font-size: 19pt; font-weight: bold; line-height: 1.15; margin: 7mm 0 5mm; }
+  .headline .grey { color: #6b6b6b; display: block; }
+  .headline .brandc { color: #305c33; display: block; }
+  ul.changes {
+    column-count: 2; column-gap: 7mm; list-style: square;
+    padding-left: 4mm; font-size: 9pt; margin: 3mm 0 5mm;
+  }
+  ul.changes li { margin-bottom: 2.4mm; }
+  .footer-legal { font-size: 6.5pt; color: #555; margin-top: 6mm; }
+  .form-code { text-align: right; font-size: 6.5pt; color: #777; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Alderoak Insurance Ltd &middot; Alderoak House, 12 Foundry Lane, Leeds
+  LS98 7DN &middot; alderoak.example
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div>
+    <div class="addr-window">
+      {{ person.title }} {{ person.full_name }}<br>
+      {{ addresses.uk_previous.line1 }}<br>
+      {{ addresses.uk_previous.city }}<br>
+      {{ addresses.uk_previous.county }}<br>
+      {{ addresses.uk_previous.postcode }}
+    </div>
+  </div>
+  <div style="text-align: right">
+    <span class="brand-block">alderoak</span>
+    <div class="contact" style="margin-top: 2mm">
+      Alderoak House, 12 Foundry Lane, Leeds LS98 7DN<br>
+      0113 496 0330 &middot; alderoak.example<br>
+      Policy number: {{ vendor.policy_number }}<br>
+      {{ issue.letter_date }}
+    </div>
+  </div>
+</div>
+
+<div class="headline">
+  <span class="grey">Important information.</span>
+  <span class="brandc">Changes to your home contents insurance policy.</span>
+</div>
+
+<p>We review the wording of our home contents insurance policies each year.
+This notice describes the changes that will apply to your policy from your
+renewal date on or after <strong>{{ issue.effective_date }}</strong>. Please
+read it alongside your policy booklet and your schedule, and keep it with
+your policy documents. If anything here is unclear, or if a change affects
+how you want to be covered, call us on 0113 496 0330.</p>
+
+<h2>What&rsquo;s changing</h2>
+
+<ul class="changes">
+  {% for change in issue.changes %}
+  <li>{{ change }}</li>
+  {% endfor %}
+</ul>
+
+<p>Everything else about your policy stays the same. Your renewal
+invitation, showing your premium and any changes to your personal details
+or sums insured, will reach you separately around three weeks before your
+renewal date. If you do not wish to renew, tell us at any time before your
+renewal date and your cover will simply end &mdash; there is no charge for
+not renewing.</p>
+
+<div class="footer-legal">
+  Alderoak Insurance Ltd is registered in England and Wales (company
+  no. 04471822). Registered office: Alderoak House, 12 Foundry Lane, Leeds
+  LS98 7DN. Authorised and regulated by the UK&rsquo;s statutory financial
+  regulators. If we cannot resolve a complaint you may refer it to the
+  statutory financial ombudsman free of charge. Calls may be recorded for
+  training and quality purposes.
+</div>
+<div class="form-code">{{ issue.form_code }}</div>
+
+</body>
+</html>

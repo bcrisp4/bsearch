@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .ao-brand { font-size: 15pt; font-weight: bold; color: #3d5a1e; }
+  .ao-brand .leaf { color: #7a9c4a; }
+  h1 { font-size: 14pt; }
+  .sect {
+    background: #3d5a1e; color: #fff; font-weight: bold; font-size: 9.5pt;
+    padding: 1.6mm 3mm; margin: 5mm 0 2mm; letter-spacing: 0.4pt;
+  }
+  table.sched { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  table.sched td { padding: 1.8mm 2.5mm; border-bottom: 0.3pt solid #c5cfb8; vertical-align: top; }
+  table.sched td.k { width: 52mm; font-weight: bold; color: #3d5a1e; }
+  table.cover { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin: 2mm 0 3mm; }
+  table.cover th { background: #e8eedd; text-align: left; padding: 1.6mm 2mm;
+                   border-bottom: 0.6pt solid #3d5a1e; }
+  table.cover td { padding: 1.5mm 2mm; border-bottom: 0.3pt solid #d5ddc8; }
+  table.cover td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .cert-box { border: 1.2pt solid #3d5a1e; padding: 4mm 5mm; margin: 4mm 0; }
+  .panel-note { background: #f0f4e8; border-left: 1.6mm solid #3d5a1e;
+                padding: 3mm 4mm; margin: 3mm 0; font-size: 9pt; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} is a trading name of Alderoak Underwriting Ltd,
+  registered in England and Wales (company no. 05512270), Registered office:
+  Alder House, 2 Pikeworth Lane, Leeds LS98 6QD. Alderoak is authorised and
+  regulated by the UK financial services regulators; details are on the
+  public register. Calls may be recorded.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="ao-brand">alderoak<span class="leaf"> &#10047;</span> insurance</div>
+  <div class="contact">
+    Alder House, 2 Pikeworth Lane, Leeds LS98 6QD<br>
+    hello@alderoak.example &middot; 0113 496 0212<br>
+    Claims (24 hours): 0113 496 0344
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.title }} {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Policy number</td><td class="value">{{ vendor.policy_number }}</td></tr>
+      <tr><td class="label">Schedule issued</td><td class="value">{{ issue.schedule_date }}</td></tr>
+      <tr><td class="label">Period of insurance</td>
+          <td class="value">{{ issue.period_start }} &ndash; {{ issue.period_end }}</td></tr>
+      <tr><td class="label">Product</td><td class="value">Home Contents (tenants)</td></tr>
+    </table>
+  </div>
+</div>
+
+<h1>Your contents insurance schedule</h1>
+
+<div class="panel-note">{{ issue.renewal_note }}</div>
+
+<div class="sect">The home we cover</div>
+<table class="sched">
+  <tr><td class="k">Insured address</td>
+      <td>{{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }},
+          {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}</td></tr>
+  <tr><td class="k">Policyholder</td><td>{{ person.title }} {{ person.full_name }}</td></tr>
+  <tr><td class="k">Cover basis</td><td>Contents of a rented home, new-for-old
+      replacement (except clothing and household linen, where a deduction
+      for wear and tear applies)</td></tr>
+</table>
+
+<div class="sect">What you are covered for</div>
+<table class="cover">
+  <tr><th>Cover</th><th class="num" style="text-align: right;">Limit</th></tr>
+  <tr><td>Contents sum insured</td><td class="num">&pound;{{ issue.sum_insured }}</td></tr>
+  <tr><td>Valuables in total (jewellery, watches, works of art)</td>
+      <td class="num">&pound;{{ issue.valuables_limit }}</td></tr>
+  <tr><td>Single-article limit</td><td class="num">&pound;{{ issue.single_article_limit }}</td></tr>
+  <tr><td>Personal money in the home</td><td class="num">&pound;{{ issue.money_limit }}</td></tr>
+  <tr><td>Pedal cycles kept at home</td><td class="num">&pound;{{ issue.cycle_limit }}</td></tr>
+  <tr><td>Contents temporarily away from home</td><td class="num">{{ issue.away_cover }}</td></tr>
+  <tr><td>Tenant&rsquo;s liability (damage to the landlord&rsquo;s fixtures
+      for which you are legally liable)</td><td class="num">20% of the sum insured</td></tr>
+  <tr><td>Occupier&rsquo;s personal liability</td><td class="num">&pound;2,000,000</td></tr>
+</table>
+
+<div class="sect">Excesses</div>
+<table class="cover">
+  <tr><th>Type of claim</th><th class="num" style="text-align: right;">You pay the first</th></tr>
+  <tr><td>All claims unless shown otherwise below</td><td class="num">&pound;{{ issue.excess_standard }}</td></tr>
+  <tr><td>Escape of water (endorsement AO/E11)</td><td class="num">&pound;{{ issue.excess_water }}</td></tr>
+</table>
+
+<div class="sect">Your premium</div>
+<table class="cover">
+  <tr><td>Premium (excluding Insurance Premium Tax)</td><td class="num">&pound;{{ issue.premium_ex_ipt }}</td></tr>
+  <tr><td>Insurance Premium Tax at 12%</td><td class="num">&pound;{{ issue.ipt }}</td></tr>
+  <tr><td><strong>Total annual premium</strong></td><td class="num"><strong>&pound;{{ issue.premium_total }}</strong></td></tr>
+</table>
+<p style="font-size: 8.5pt;">{{ issue.payment_note }}.</p>
+
+<div class="sect">Endorsements applying to this policy</div>
+<ul style="font-size: 9pt;">
+  {% for e in issue.endorsements %}<li>{{ e }}</li>{% endfor %}
+</ul>
+
+<div class="page-break"></div>
+
+<div class="cert-box">
+  <h2 style="margin-top: 0;">Certificate of insurance</h2>
+  <p style="font-size: 9pt;">This certifies that a contents insurance policy
+  is in force for <strong>{{ person.title }} {{ person.full_name }}</strong>
+  at <strong>{{ addresses.uk_current.line1 }},
+  {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}</strong>
+  for the period <strong>{{ issue.period_start }}</strong> to
+  <strong>{{ issue.period_end }}</strong>, policy number
+  <strong>{{ vendor.policy_number }}</strong>, underwritten by Alderoak
+  Underwriting Ltd. This certificate is provided for landlords, letting
+  agents and other parties who require evidence of cover; it does not vary
+  the policy terms.</p>
+</div>
+
+<div class="sect">Statement of fact</div>
+<p style="font-size: 8.5pt;">Your policy is based on the statements below.
+You must tell us if any of them is or becomes incorrect &mdash; if you do
+not, a claim may be reduced or refused.</p>
+<ul style="font-size: 9pt;">
+  {% for f in issue.statement_of_fact %}<li>{{ f }}</li>{% endfor %}
+</ul>
+
+<div class="sect">Summary of what is not covered</div>
+<p style="font-size: 8.5pt;">The full list is in your policy booklet. The
+main things we do not cover are: damage arising gradually, including wear
+and tear, rot and gradual water damage; the escape-of-water excess shown in
+this schedule; theft from the home unless there is evidence of forced or
+violent entry, where the home is left unoccupied for more than 30
+consecutive days; breakage of electronic items unless accidental damage
+cover has been added; money beyond the limit shown; motor vehicles and
+their accessories; and loss where any part of a claim is deliberately
+exaggerated or supported by false documents, in which case the whole claim
+is forfeit and the policy may be cancelled from the date of the fraud.</p>
+
+<div class="sect">Making a claim</div>
+<p style="font-size: 9pt;">Call our 24-hour claims line on
+<strong>0113 496 0344</strong> or claim in the Alderoak app. Have your
+policy number ready, tell the police first about any theft, vandalism or
+loss away from the home and keep the crime reference, and do not dispose of
+damaged items until we have agreed your claim. Index-linking, where shown
+in your endorsements, adjusts your sum insured automatically &mdash; you do
+not need to tell us about ordinary replacement purchases.</p>
+
+<div class="sect">Important information</div>
+<div class="small-print">
+  <p><strong>Cancellation.</strong> You may cancel within 14 days of the
+  start date or of receiving your documents, whichever is later, for a full
+  refund provided you have not claimed. After that, you may cancel at any
+  time and we refund the premium for the remaining full months, less a
+  &pound;15 administration charge, provided no claim has been made in the
+  current period of insurance.</p>
+  <p><strong>Complaints.</strong> Talk to us first: most concerns are
+  resolved in one call. If you remain unhappy eight weeks after raising a
+  complaint, or we issue a final response you do not accept, you may refer
+  the matter to the statutory ombudsman service for financial services,
+  free of charge, within six months of our final response.</p>
+  <p><strong>Compensation.</strong> Alderoak is covered by the statutory
+  compensation scheme for financial services. You may be entitled to
+  compensation from the scheme if we cannot meet our obligations; general
+  insurance claims are covered for 90% of the claim with no upper limit.</p>
+  <p><strong>Renewal.</strong> We write to you at least 21 days before each
+  renewal date with your new premium. If your premium rises by more than
+  10% we ask you to confirm rather than renewing automatically. Last
+  year&rsquo;s premium is shown alongside the new premium in your renewal
+  invitation.</p>
+  <p><strong>Accessibility.</strong> We can provide your documents in
+  braille, large print or audio &mdash; call 0113 496 0212 or ask in the
+  app and we will set this up for all future documents.</p>
+  <p><strong>Law and language.</strong> This policy is governed by the law
+  of England and Wales and all communication will be in English.</p>
+</div>
+
+</body>
+</html>

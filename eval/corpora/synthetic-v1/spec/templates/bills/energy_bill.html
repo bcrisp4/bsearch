@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .usage-note { font-size: 8pt; color: #555; margin-top: -2mm; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} Ltd is registered in England and Wales (company no. 08814402).
+  Registered office: 2 Kilnworth Park, Leeds LS99 4EF. {{ vendor.name }} is a
+  licensed electricity and gas supplier regulated by the national energy regulator.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">harwood<span class="accent">.energy</span></div>
+  <div class="contact">
+    {{ vendor.name }}, PO Box 884, Leeds LS99 4EF<br>
+    hello@harwood-energy.example &middot; 020 7946 0330<br>
+    harwood-energy.example/myaccount
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Account number</td><td class="value">{{ vendor.account_number }}</td></tr>
+      <tr><td class="label">Bill reference</td><td class="value">{{ issue.bill_ref }}</td></tr>
+      <tr><td class="label">Bill date</td><td class="value">{{ issue.bill_date }}</td></tr>
+      <tr><td class="label">Billing period</td><td class="value">{{ issue.period }}</td></tr>
+      <tr><td class="label">Tariff</td><td class="value">{{ vendor.tariff }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<h1>Your electricity bill</h1>
+
+<div class="total-banner">
+  <span>Total to pay by {{ issue.due_date }}</span>
+  <span class="amount">&pound;{{ issue.total_due }}</span>
+</div>
+
+<table class="summary">
+  <tr><td>Balance from your last bill</td><td class="amount">&pound;{{ issue.previous_balance }}</td></tr>
+  <tr><td>Payments received &mdash; thank you</td><td class="amount">&minus;&pound;{{ issue.payments_received }}</td></tr>
+  <tr><td>Electricity charges this period (incl. VAT)</td><td class="amount">&pound;{{ issue.charges_total }}</td></tr>
+  <tr class="total"><td>New balance</td><td class="amount">&pound;{{ issue.total_due }}</td></tr>
+</table>
+
+<h2>Your electricity use</h2>
+<table class="data">
+  <tr>
+    <th>Meter</th><th class="num">Previous reading</th><th class="num">Latest reading</th>
+    <th>Reading type</th><th class="num">Units used (kWh)</th>
+  </tr>
+  <tr>
+    <td>{{ issue.meter_serial }}</td>
+    <td class="num">{{ issue.reading_previous }}</td>
+    <td class="num">{{ issue.reading_latest }}</td>
+    <td>{{ issue.reading_type }}</td>
+    <td class="num">{{ issue.kwh_used }}</td>
+  </tr>
+</table>
+<p class="usage-note">{{ issue.reading_note }}</p>
+
+<h2>How we worked out your charges</h2>
+<table class="data">
+  <tr><th>Charge</th><th class="num">Units</th><th class="num">Rate</th><th class="num">Amount</th></tr>
+  <tr>
+    <td>Electricity used</td>
+    <td class="num">{{ issue.kwh_used }} kWh</td>
+    <td class="num">{{ issue.unit_rate }}p/kWh</td>
+    <td class="num">&pound;{{ issue.energy_charge }}</td>
+  </tr>
+  <tr>
+    <td>Standing charge</td>
+    <td class="num">{{ issue.days }} days</td>
+    <td class="num">{{ issue.standing_rate }}p/day</td>
+    <td class="num">&pound;{{ issue.standing_charge }}</td>
+  </tr>
+  {% for adj in issue.adjustments | default([]) %}
+  <tr>
+    <td>{{ adj.label }}</td><td class="num"></td><td class="num"></td>
+    <td class="num">&minus;&pound;{{ adj.amount }}</td>
+  </tr>
+  {% endfor %}
+  <tr>
+    <td>VAT at 5%</td><td class="num"></td><td class="num"></td>
+    <td class="num">&pound;{{ issue.vat }}</td>
+  </tr>
+  <tr class="subtotal">
+    <td>Total charges</td><td class="num"></td><td class="num"></td>
+    <td class="num">&pound;{{ issue.charges_total }}</td>
+  </tr>
+</table>
+
+{% if issue.notice %}
+<div class="panel">
+  <h3>{{ issue.notice.title }}</h3>
+  {% for para in issue.notice.body %}<p>{{ para }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<div class="page-break"></div>
+
+<h2>Your tariff in detail</h2>
+<table class="data">
+  <tr><th>Tariff feature</th><th>Detail</th></tr>
+  <tr><td>Tariff name</td><td>{{ vendor.tariff }}</td></tr>
+  <tr><td>Payment method</td><td>Monthly Direct Debit</td></tr>
+  <tr><td>Unit rate</td><td>{{ issue.unit_rate }}p per kWh</td></tr>
+  <tr><td>Standing charge</td><td>{{ issue.standing_rate }}p per day</td></tr>
+  <tr><td>Exit fees</td><td>None</td></tr>
+  <tr><td>Estimated annual use</td><td>{{ issue.estimated_annual_kwh }} kWh</td></tr>
+</table>
+
+<h2>Could you pay less?</h2>
+<p>Our cheapest similar tariff for a household with your usage is
+<strong>{{ issue.cheapest_tariff }}</strong>. Based on your estimated annual use you
+would pay around <strong>&pound;{{ issue.cheapest_annual_cost }}</strong> a year.
+Visit harwood-energy.example/tariffs or call us to switch &mdash; switching is free.</p>
+
+<h2>Need a different format?</h2>
+<p>We can send your bills in braille, large print or audio. Call 020 7946 0330
+or reply to any email from us to set this up.</p>
+
+<div class="small-print">
+  <p><strong>If you have a complaint</strong> talk to us first: most things are
+  sorted in one call. If we can't fix it within eight weeks you can ask the
+  statutory ombudsman for the energy sector to look at it for free.</p>
+  <p><strong>Struggling to pay?</strong> Tell us early. We can set up a payment
+  plan, check you're on our cheapest tariff, and point you to free independent
+  debt advice in your area.</p>
+  <p><strong>Priority Services Register.</strong> If you're of pensionable age,
+  disabled or chronically ill, you may qualify for free extra services.</p>
+  <p><strong>Emergencies.</strong> Power cut? Call 105. Smell gas? Call the
+  24-hour gas emergency line &mdash; the number is printed on your meter box
+  and at harwood-energy.example/emergency.</p>
+</div>
+
+</body>
+</html>

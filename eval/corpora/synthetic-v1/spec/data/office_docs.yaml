@@ -1,0 +1,129 @@
+# docx/xlsx entries (corpus.yaml: the deferred office-format documents).
+# Built by the generic office builders (format+builder keys), values
+# substituted from the persona via Jinja — same persona-only rule as
+# templates. Cross-references: interest figures match
+# bank_certificates.yaml (UK £47.21 tax-year, US $12/$196 calendar-2025);
+# grade averages match education_certs.yaml (L2 65.0, L3 66.0 → 65.6
+# weighted 40:60, Upper Second); renewal rent steps from the canonical
+# £1,603.33; mattress invoice arithmetic: net 561.66 + VAT 112.34 = 674.00.
+entries:
+  - id: bank-address-confirmation
+    format: docx
+    builder: letter
+    vendor_key: null
+    sender_lines:
+      - "Ferrand Bank"
+      - "Customer Correspondence, PO Box 118"
+      - "Leeds LS98 1FD"
+    date: "22 September 2025"
+    recipient_lines:
+      - "{{ person.full_name }}"
+      - "{{ addresses.uk_current.line1 }}"
+      - "{{ addresses.uk_current.line2 }}"
+      - "{{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}"
+    subject: "Confirmation of your registered address"
+    paragraphs:
+      - "Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},"
+      - >-
+        You asked us to confirm the details we hold for you, for use as
+        evidence of address with an overseas tax authority. We confirm that
+        the account below is registered to you at the address shown above,
+        and has been since 4 August 2025.
+      - >-
+        Account: sort code {{ banks.uk_current_account.sort_code }}, account
+        number {{ banks.uk_current_account.account_number }}. This letter
+        was produced at your request and is valid as at its date.
+      - >-
+        If anything above is wrong, please tell us straight away on
+        0113 496 0227 or from the secure messages tab in the app.
+      - "Yours sincerely,"
+    signature_lines:
+      - "Customer Correspondence Team"
+      - "Ferrand Bank"
+  - id: agency-renewal-letter
+    format: docx
+    builder: letter
+    vendor_key: letting_agency
+    sender_lines:
+      - "{{ vendor.name }}"
+      - "14 Speldhurst Parade, London SE12 8GW"
+    date: "11 May 2026"
+    recipient_lines:
+      - "{{ person.full_name }}"
+      - "{{ addresses.uk_current.line1 }}"
+      - "{{ addresses.uk_current.line2 }}"
+      - "{{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}"
+    subject: "Your tenancy renewal — {{ vendor.tenancy_ref }}"
+    paragraphs:
+      - "Dear {{ person.short_name }},"
+      - >-
+        Your fixed term at {{ addresses.uk_current.line1 }} ends on 31 July
+        2026. The landlord, Wrenmoor Estates Ltd, has confirmed they are
+        happy to offer a further twelve-month term.
+      - >-
+        The proposed rent for the new term is £1,655.00 per calendar month,
+        an increase of £51.67 on your current rent of £1,603.33, effective
+        1 August 2026. All other terms remain as in your current agreement.
+      - >-
+        Please reply by 20 June 2026 to confirm whether you would like to
+        renew, move to a rolling periodic tenancy, or serve notice. If we
+        do not hear from you the tenancy will continue as periodic under
+        the terms of your current agreement.
+      - "Kind regards,"
+    signature_lines:
+      - "{{ supporting_cast.letting_agent }}"
+      - "Lettings Manager, {{ vendor.name }}"
+  - id: mattress-invoice
+    format: docx
+    builder: letter
+    vendor_key: null
+    sender_lines:
+      - "Dunloe Sleep Co."
+      - "Unit 9, Farrowgate Trading Estate, Norwich NR77 2AB"
+      - "VAT No. GB 384 2201 87"
+    date: "19 August 2025"
+    recipient_lines:
+      - "{{ person.full_name }}"
+      - "{{ addresses.uk_current.line1 }}"
+      - "{{ addresses.uk_current.line2 }}"
+      - "{{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}"
+    subject: "Invoice DS-26417 — order 19 August 2025"
+    paragraphs:
+      - "Item: Dunloe Hybrid 2000 double mattress — £649.00"
+      - "Two-person delivery, Saturday slot — £25.00"
+      - "Subtotal (ex VAT): £561.66"
+      - "VAT at 20%: £112.34"
+      - "Total paid: £674.00 (card, paid in full)"
+      - >-
+        Delivery booked for Saturday 23 August 2025, 8am–1pm. Your mattress
+        carries a 10-year guarantee; keep this invoice as proof of
+        purchase. 100-night trial: if it isn't right, contact us for a
+        collection and refund, no quibbles.
+    signature_lines:
+      - "Dunloe Sleep Co. — thanks for sleeping on it."
+  - id: interest-summary
+    format: xlsx
+    builder: sheet
+    vendor_key: null
+    sheet_name: "Interest 2025"
+    rows:
+      - ["Interest summary — {{ person.full_name }}", "", "", ""]
+      - ["Account", "Institution", "Period", "Interest"]
+      - ["Instant Saver ({{ banks.uk_savings.account_number }})", "Ferrand Bank", "Tax year 2025/26", "£47.21"]
+      - ["Checking ({{ banks.us_checking.account_number }})", "Commonwealth Harbor Bank", "Calendar 2025", "$12.00"]
+      - ["Savings ({{ banks.us_savings.account_number }})", "Commonwealth Harbor Bank", "Calendar 2025", "$196.00"]
+      - ["", "", "", ""]
+      - ["Notes", "UK figure per bank certificate; US figures per 1042-S forms", "", ""]
+  - id: grade-calculation
+    format: xlsx
+    builder: sheet
+    vendor_key: null
+    sheet_name: "Final grade"
+    rows:
+      - ["Final year grade calculation — {{ person.full_name }} ({{ vendors.university.student_id }})", "", ""]
+      - ["Level", "Credit-weighted average", "Weighting"]
+      - ["Level 5 (2013/14)", "65.0", "40%"]
+      - ["Level 6 (2014/15)", "66.0", "60%"]
+      - ["Weighted mark", "65.6", ""]
+      - ["Classification", "Upper Second-Class Honours (2:1)", ""]
+      - ["Boundary check", "2:1 requires 59.5+ after rounding — clear", ""]

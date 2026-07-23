@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .brand { color: #4a2a6b; }
+  .letter-date { text-align: right; margin: 2mm 0 4mm; }
+  .summary tr.total td { border-bottom: 0.8pt solid #4a2a6b; }
+  table.data th { background: #ece6f2; }
+  .warn { border-left: 1.6mm solid #8a2a2a; background: #f7efef; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  {{ vendor.name }} &middot; Civic Centre, 1 Netherhale Way, London SE28 9BB
+  &middot; netherhale-borough.example &middot; Please quote your council tax
+  account number whenever you contact us.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="letterhead">
+  <div class="brand">{{ vendor.name }}</div>
+  <div class="contact">
+    Council Tax Service, Civic Centre<br>
+    1 Netherhale Way, London SE28 9BB<br>
+    020 7946 0400 &middot; netherhale-borough.example/counciltax
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="addr-window">
+    {{ person.title }} {{ person.full_name }}<br>
+    {{ addresses.uk_current.line1 }}<br>
+    {{ addresses.uk_current.line2 }}<br>
+    {{ addresses.uk_current.city }}<br>
+    {{ addresses.uk_current.postcode }}
+  </div>
+  <div class="meta-box">
+    <table>
+      <tr><td class="label">Council tax account</td><td class="value">{{ vendor.council_tax_ref }}</td></tr>
+      <tr><td class="label">Property band</td><td class="value">{{ vendor.band }}</td></tr>
+      <tr><td class="label">Date of issue</td><td class="value">{{ issue.letter_date }}</td></tr>
+      <tr><td class="label">Tax year</td><td class="value">{{ issue.tax_year }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<h1>Your council tax account has been set up</h1>
+
+<p>Dear {{ person.title }} {{ person.full_name.split(' ')[-1] }},</p>
+
+<p>Thank you for telling us that you moved into
+{{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }} on
+{{ issue.moved_in }}. We have set up a council tax account for you from that
+date. The property is in valuation band {{ vendor.band }}; bands are set by
+the national valuation body, not the council.</p>
+
+<p>You told us you are the only adult living at the property, so we have
+applied the 25% single person discount. Your charge for the rest of the
+{{ issue.tax_year }} year is worked out below.</p>
+
+<table class="summary">
+  <tr><td>Annual charge for a Band {{ vendor.band }} property ({{ issue.tax_year }})</td>
+      <td class="amount">&pound;{{ issue.annual_charge }}</td></tr>
+  <tr><td>Single person discount (25%)</td>
+      <td class="amount">&minus;&pound;{{ issue.discount }}</td></tr>
+  <tr><td>Discounted annual charge</td>
+      <td class="amount">&pound;{{ issue.discounted_annual }}</td></tr>
+  <tr class="total"><td>Amount due for {{ issue.moved_in }} to {{ issue.period_end }} ({{ issue.days }} days)</td>
+      <td class="amount">&pound;{{ issue.amount_due }}</td></tr>
+</table>
+
+<h2>Your instalments</h2>
+
+<table class="data">
+  <tr><th>Instalment due date</th><th class="num">Amount</th></tr>
+  {% for inst in issue.instalments %}
+  <tr><td>{{ inst.due }}</td><td class="num">&pound;{{ inst.amount }}</td></tr>
+  {% endfor %}
+  <tr class="subtotal"><td>Total</td><td class="num">&pound;{{ issue.amount_due }}</td></tr>
+</table>
+
+<h2>How to pay</h2>
+
+<p>The easiest way to pay is by Direct Debit &mdash; set it up in two
+minutes at netherhale-borough.example/counciltax or by calling
+020 7946 0400. You can also pay online by card, by standing order, or at
+any payment-network outlet using the barcode on your bill. Whichever way
+you pay, please quote account number {{ vendor.council_tax_ref }}.</p>
+
+<div class="panel warn">
+  <h3>You must tell us if your circumstances change</h3>
+  <p>The single person discount only applies while you are the sole adult
+  resident. If anyone aged 18 or over moves in, or you move out, you must
+  tell us within 21 days. Failing to report a change that affects your
+  discount can lead to a penalty.</p>
+</div>
+
+<div class="small-print">
+  <p><strong>Think the band is wrong?</strong> You can ask the national
+  valuation body to review your property&rsquo;s band. You must carry on
+  paying while any appeal is considered.</p>
+  <p><strong>Struggling to pay?</strong> Contact us early &mdash; we can
+  spread payments over 12 months, and you may qualify for council tax
+  support depending on your income.</p>
+</div>
+
+</body>
+</html>

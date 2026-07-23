@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .cert { border: 1.4pt solid #14395c; padding: 7mm 8mm; }
+  .scheme-brand {
+    text-align: center; font-size: 17pt; font-weight: bold;
+    color: #14395c; letter-spacing: 1.5pt;
+  }
+  .scheme-sub { text-align: center; font-size: 8.5pt; color: #555; margin-bottom: 5mm; }
+  h1.cert-title { text-align: center; font-size: 14pt; margin: 4mm 0 5mm; }
+  table.cert-data { width: 100%; border-collapse: collapse; margin: 4mm 0 5mm; }
+  table.cert-data td { padding: 1.8mm 2mm; border-bottom: 0.3pt solid #bbb; vertical-align: top; }
+  table.cert-data td.label { width: 44mm; font-weight: bold; color: #14395c; font-size: 8.5pt; }
+  .cert-ref { text-align: center; font-family: "Doc Mono", monospace; font-size: 10pt; margin-bottom: 3mm; }
+  .attest { font-size: 9pt; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Tenancy Deposit Safeguard is operated by Safeguard Deposit Services Ltd,
+  registered in England and Wales (company no. 07118834). Registered office:
+  PO Box 770, Hedgeford HG98 3JJ.
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="cert">
+
+  <div class="scheme-brand">TENANCY DEPOSIT SAFEGUARD</div>
+  <div class="scheme-sub">A custodial tenancy deposit protection scheme</div>
+
+  <h1 class="cert-title">Certificate of Deposit Protection</h1>
+
+  <div class="cert-ref">Scheme reference: {{ issue.scheme_ref }}</div>
+
+  <p class="attest">This is to certify that the tenancy deposit detailed
+  below has been received by Tenancy Deposit Safeguard and is held by the
+  scheme in its custodial account for the duration of the tenancy.</p>
+
+  <table class="cert-data">
+    <tr><td class="label">Deposit protected</td>
+        <td><strong>&pound;{{ issue.deposit_amount }}</strong></td></tr>
+    <tr><td class="label">Date protected</td>
+        <td>{{ issue.protected_date }}</td></tr>
+    <tr><td class="label">Property</td>
+        <td>{{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }},
+            {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }}</td></tr>
+    <tr><td class="label">Tenant</td>
+        <td>{{ person.title }} {{ person.full_name }}</td></tr>
+    <tr><td class="label">Landlord</td>
+        <td>{{ vendors.landlord }}</td></tr>
+    <tr><td class="label">Managing agent</td>
+        <td>{{ vendor.name }} (agent reference {{ vendor.tenancy_ref }})</td></tr>
+    <tr><td class="label">Tenancy term</td>
+        <td>{{ issue.tenancy_start }} to {{ issue.tenancy_end }}</td></tr>
+  </table>
+
+  <p class="attest">At the end of the tenancy the deposit will be repaid as
+  agreed between the parties. If the tenant and the landlord or agent cannot
+  agree how the deposit should be divided, either party may refer the
+  disagreement to the scheme&rsquo;s free alternative dispute resolution
+  service, whose decision is binding on the scheme. The deposit remains
+  protected until any dispute is resolved.</p>
+
+  <p class="attest">The tenant should also have received the prescribed
+  information about how the deposit is protected. This certificate can be
+  verified at any time at
+  <strong>tenancydepositsafeguard.example/verify</strong> by quoting the
+  scheme reference above together with the tenant&rsquo;s surname and the
+  property postcode.</p>
+
+  <p class="attest"><strong>Keep this certificate safe</strong> &mdash; you
+  will need the scheme reference to request repayment of the deposit at the
+  end of the tenancy.</p>
+
+</div>
+
+</body>
+</html>

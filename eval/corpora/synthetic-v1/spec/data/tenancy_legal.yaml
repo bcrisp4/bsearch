@@ -1,0 +1,192 @@
+# Per-entry data for the `tenancy_legal` document set (corpus.yaml).
+# Entries-style: each entry names its own `template`.
+#
+# Narrative consistency (kept in sync across the corpus):
+#   - Tenancy: Wrenmoor Estates Ltd (landlord, signatory Marcus Wrenmoor) /
+#     persona, agent Penfold & Reach (44 Chandlers Row — same address as in
+#     the EICR "person ordering" block), ref PR/RED/1207. Term 1 Aug 2025 –
+#     31 Jul 2026, rent £1,603.33 pcm (exactly £370/week, per the notes
+#     corpus and bank statements; 5 weeks = the £1,850 deposit exactly),
+#     deposit £1,850 held by Tenancy Deposit Safeguard under scheme ref
+#     SG-25-4471820 — all matching the deposit_scheme_certificate entry in
+#     letters.yaml.
+#   - Employment: Halewick Systems offer — salary £37,554 (payslip canon:
+#     payslip series), start 4 Aug 2025, payroll ref HAL/2214, signed by
+#     Elena Vasquez-Reid. Job title matches the CV (education_certs.yaml).
+#   - Referencing: annual rent £19,240 (52 × £370); income £37,554 =
+#     2.0× annual rent, below the 2.5× referencing threshold, so the
+#     agency required rent-guarantee insurance in lieu of a guarantor —
+#     hence the guarantor_deed entry is the rent-guarantee insurance
+#     certificate issued to the landlord after referencing (deliberate
+#     filename/content mismatch, a realistic corpus wart).
+#   - Inventory check-in electricity reading 31,844 matches the opening
+#     reading of the first Harwood Energy bill (energy_bills.yaml).
+entries:
+  - id: tenancy_agreement
+    template: legal/tenancy_agreement.html
+    vendor_key: letting_agency
+    agreement_date: "25 July 2025"
+    term_start: "1 August 2025"
+    term_end: "31 July 2026"
+    rent: "1,603.33"
+    rent_words: "one thousand six hundred and three pounds and thirty-three pence"
+    deposit: "1,850.00"
+    scheme_ref: "SG-25-4471820"
+    protected_date: "8 August 2025"
+    landlord_office: "Suite 4, 18 Copperbeam Lane, London SE3 7RN"
+    agent_address: "44 Chandlers Row, London SE10 9TF"
+    agent_client_sort: "82-44-19"
+    agent_client_account: "44771902"
+    template_version: "AST v11.42s"
+    esign_service: "signfolio.example"
+# Signatory names are not repeated here: the template takes them from
+    # person.full_name and supporting_cast.landlord_signatory (persona rule).
+    tenant_signature:
+      date_agreed: "25 July 2025 at 18:22 BST"
+      ip: "203.0.113.87"
+      reference: "SF-9c41d2ae-77b0-4e19-b2a4-115f08d22c71"
+    landlord_signature:
+      date_agreed: "25 July 2025 at 09:04 BST"
+      ip: "198.51.100.24"
+      reference: "SF-4b17f0c3-2d88-4aa1-9c02-88ea11f4b510"
+    special_conditions:
+      - title: "Professional cleaning"
+        text: >-
+          The Premises were professionally cleaned before the start of the
+          Term as recorded in the Inventory. The Tenant agrees to return the
+          Premises cleaned to the same professional standard at the end of
+          the Term, fair wear and tear excepted, and to provide a receipt on
+          request where a cleaning contractor is used.
+      - title: "No smoking"
+        text: >-
+          The Tenant agrees not to smoke, and not to permit any visitor to
+          smoke, tobacco or any other substance (including electronic
+          cigarettes producing visible vapour) inside the Premises.
+      - title: "Pets"
+        text: >-
+          No pet may be kept at the Premises without the prior written
+          consent of the Landlord, such consent not to be unreasonably
+          refused or delayed. Any consent may be conditional on additional
+          cleaning obligations at the end of the Term.
+      - title: "Working from home"
+        text: >-
+          The Tenant may use one room of the Premises for ordinary desk-based
+          home working, provided this use remains ancillary to residential
+          use, creates no business rates liability, and involves no visits
+          from customers or employees.
+    inventory_summary:
+      - {room: "Hallway", condition: "Good decorative order; oak-effect laminate flooring, no marks recorded"}
+      - {room: "Living room", condition: "Good; two-seat sofa (grey), dining table and two chairs, minor scuff to skirting behind door"}
+      - {room: "Kitchen", condition: "Good; integrated oven, hob, extractor, fridge-freezer and washing machine all tested working at check-in"}
+      - {room: "Bedroom", condition: "Good; double bed frame and mattress (protector fitted), wardrobe, chest of drawers"}
+      - {room: "Bathroom", condition: "Good; resealed around bath August 2025 wear noted to grout at shower corner"}
+    checkin_electric: "31,844"
+    checkin_gas: "04,117"
+
+  - id: employment_terms_of_offer
+    template: legal/employment_terms_of_offer.html
+    offer_date: "16 June 2025"
+    job_title: "Senior Platform Engineer"
+    department: "Platform Engineering"
+    reports_to: "Head of Infrastructure"
+    start_date: "4 August 2025"
+    salary: "37,554"
+    salary_words: "thirty-seven thousand five hundred and fifty-four pounds"
+    holiday_days: "25"
+    pension_employer: "5%"
+    pension_employee: "4%"
+    probation_months: "three"
+    notice_probation: "one week"
+    notice_after: "one month"
+    hours: "37.5 hours per week, Monday to Friday"
+    hybrid: "a minimum of two days each week at the London office"
+    acceptance_deadline: "30 June 2025"
+    accepted_date: "18 June 2025"
+    esign_service: "signfolio.example"
+    candidate_signature:
+      date_agreed: "18 June 2025 at 20:11 BST"
+      ip: "203.0.113.87"
+      reference: "SF-a218cc90-64f1-4f02-8d3e-40b2a7f119e4"
+
+  - id: tenancy_inventory
+    template: legal/tenancy_inventory.html
+    vendor_key: letting_agency
+    checkin_date: "1 August 2025"
+    clerk_company: "Cransley Inventories Ltd"
+    clerk_name: "P. Aldercott"
+    report_ref: "CI/2025/07731"
+    electric_reading: "31,844"
+    electric_serial: "Z19K 044782"
+    gas_reading: "04,117"
+    gas_serial: "G4 887120"
+    water_note: "Water meter located in communal riser cupboard; not accessible at check-in"
+    smoke_alarm: "Hallway ceiling — tested, working"
+    co_alarm: "Kitchen wall adjacent to boiler — tested, working"
+    keys: "2 × front door, 1 × communal entrance fob, 1 × mailbox"
+    rooms:
+      - name: "Hallway"
+        rows:
+          - {item: "Front door", description: "White painted timber, multipoint lock, spyhole", condition: "Good", notes: "Light wear around handle"}
+          - {item: "Flooring", description: "Oak-effect laminate with grey fitted mat at door", condition: "Good", notes: "None"}
+          - {item: "Walls and ceiling", description: "Emulsion, magnolia; pendant light fitting", condition: "Good", notes: "Small filled hole above radiator"}
+          - {item: "Radiator", description: "Single panel with TRV", condition: "Good", notes: "None"}
+          - {item: "Smoke alarm", description: "Ceiling mounted, sealed battery unit", condition: "Good", notes: "Tested at check-in — sounded"}
+      - name: "Living room"
+        rows:
+          - {item: "Flooring", description: "Oak-effect laminate throughout", condition: "Good", notes: "Two light scratches by window, marked on photo 14"}
+          - {item: "Walls and ceiling", description: "Emulsion, magnolia; coving intact", condition: "Good", notes: "Scuff to skirting behind door"}
+          - {item: "Window", description: "uPVC double glazed, two openers, keys present", condition: "Good", notes: "Condensation seal intact"}
+          - {item: "Curtains / blinds", description: "Grey blackout curtains on chrome pole", condition: "Good", notes: "None"}
+          - {item: "Sofa", description: "Two-seat sofa, grey fabric, fire label attached", condition: "Good", notes: "None"}
+          - {item: "Dining table and chairs", description: "Oak-effect table, two grey fabric chairs", condition: "Good", notes: "Minor ring mark to table top"}
+          - {item: "Radiator", description: "Double panel with TRV", condition: "Good", notes: "None"}
+      - name: "Kitchen"
+        rows:
+          - {item: "Flooring", description: "Grey vinyl, sealed edges", condition: "Good", notes: "None"}
+          - {item: "Units and worktops", description: "White gloss units, wood-effect laminate worktop", condition: "Good", notes: "Light knife marks by hob"}
+          - {item: "Oven and hob", description: "Built-in electric fan oven, four-ring ceramic hob", condition: "Good", notes: "Professionally cleaned; tested working"}
+          - {item: "Extractor", description: "Stainless chimney hood with light", condition: "Good", notes: "Filters degreased"}
+          - {item: "Fridge-freezer", description: "Integrated 70/30 fridge-freezer", condition: "Good", notes: "Clean, seals intact, tested working"}
+          - {item: "Washing machine", description: "Integrated 8 kg washing machine", condition: "Good", notes: "Drawer clean; tested on rinse cycle"}
+          - {item: "Boiler", description: "Calorix combination boiler, wall mounted in cupboard", condition: "Good", notes: "Service record left with manuals; CO alarm adjacent"}
+          - {item: "Sink and taps", description: "Stainless single bowl, chrome mixer", condition: "Good", notes: "None"}
+      - name: "Bedroom"
+        rows:
+          - {item: "Flooring", description: "Grey carpet with underlay", condition: "Good", notes: "Professionally cleaned before check-in"}
+          - {item: "Walls and ceiling", description: "Emulsion, magnolia", condition: "Good", notes: "Faint picture-hook marks above bed"}
+          - {item: "Window", description: "uPVC double glazed, one opener, key present", condition: "Good", notes: "None"}
+          - {item: "Bed", description: "Double bed frame, oak-effect, with mattress and protector", condition: "Good", notes: "Mattress unstained under protector"}
+          - {item: "Wardrobe", description: "Double wardrobe, oak-effect, two doors", condition: "Good", notes: "One door catch loose"}
+          - {item: "Chest of drawers", description: "Four-drawer chest, oak-effect", condition: "Good", notes: "None"}
+          - {item: "Radiator", description: "Single panel with TRV", condition: "Good", notes: "None"}
+      - name: "Bathroom"
+        rows:
+          - {item: "Flooring", description: "White vinyl, sealed edges", condition: "Good", notes: "None"}
+          - {item: "Bath and shower", description: "White bath with thermostatic shower over, glass screen", condition: "Good", notes: "Resealed around bath; wear to grout at shower corner"}
+          - {item: "Basin and WC", description: "White ceramic basin and close-coupled WC", condition: "Good", notes: "None"}
+          - {item: "Extractor fan", description: "Ceiling mounted, humidistat", condition: "Good", notes: "Tested working"}
+          - {item: "Towel radiator", description: "Chrome ladder radiator", condition: "Good", notes: "None"}
+
+  - id: guarantor_deed
+    template: legal/rent_guarantee_certificate.html
+    vendor_key: letting_agency
+    insurer: "Merrowfield Rent Protection"
+    insurer_address: "PO Box 2214, Leicester LE87 4XY"
+    certificate_no: "MRP/2025/118834"
+    issue_date: "29 July 2025"
+    period_start: "1 August 2025"
+    period_end: "31 July 2026"
+    monthly_rent: "1,603.33"
+    annual_rent: "19,240.00"
+    referencing_ref: "REF-25-90218"
+    referencing_result: >-
+      Full reference completed 21 July 2025: identity and right-to-rent
+      verified; employer confirmed permanent employment at a gross annual
+      salary of £37,554, equal to 2.0 times the annual rent (below the
+      2.5 times minimum requirement); previous landlord reference
+      satisfactory; no adverse credit records located. Outcome: ACCEPTED
+      SUBJECT TO RENT GUARANTEE INSURANCE (this policy).
+    premium: "312.00"
+    ipt: "37.44"
+    premium_total: "349.44"
+    excess: "Nil"

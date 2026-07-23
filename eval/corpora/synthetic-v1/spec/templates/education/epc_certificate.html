@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../base.css">
+<style>
+  .epc-head { display: flex; justify-content: space-between; align-items: flex-start; }
+  .epc-title { font-size: 15pt; font-weight: bold; }
+  .epc-title .sub { display: block; font-size: 9pt; font-weight: normal; color: #555; }
+  .scheme-logo {
+    border: 1pt solid #8a1538; color: #8a1538; font-weight: bold;
+    padding: 1.6mm 3mm; font-size: 9pt; letter-spacing: 0.8pt;
+  }
+  .sect {
+    background: #8a1538; color: #fff; font-weight: bold; font-size: 10pt;
+    padding: 1.6mm 3mm; margin: 5mm 0 2.5mm;
+  }
+  table.kv { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 3mm; }
+  table.kv td { padding: 1.2mm 2mm; border-bottom: 0.3pt solid #ddd; }
+  table.kv td.k { width: 46mm; color: #555; }
+  table.kv td.v { font-weight: bold; }
+
+  /* A–G arrow charts */
+  .charts { display: flex; gap: 6mm; }
+  .chart { flex: 1; border: 0.5pt solid #999; padding: 2mm; }
+  .chart h3 { margin: 0 0 1.5mm; font-size: 9pt; }
+  .chart .cols-head { display: flex; font-size: 6.5pt; color: #555; }
+  .chart .cols-head .lead { flex-grow: 1; }
+  .chart .cols-head .c { width: 17mm; text-align: center; font-weight: bold; }
+  .band-row { display: flex; align-items: center; height: 7mm; }
+  .bar-zone { flex-grow: 1; display: flex; align-items: center; }
+  .bar {
+    height: 6mm; color: #fff; font-weight: bold; font-size: 7.5pt;
+    display: flex; align-items: center; padding-left: 1.6mm;
+  }
+  .bar.darktext { color: #1a1a1a; }
+  .tip {
+    width: 0; height: 0;
+    border-top: 3mm solid transparent; border-bottom: 3mm solid transparent;
+    border-left-width: 2.6mm; border-left-style: solid;
+  }
+  .mark-col { width: 17mm; display: flex; justify-content: center; }
+  .marker {
+    background: #1a1a1a; color: #fff; font-weight: bold; font-size: 7.5pt;
+    padding: 0.8mm 1.6mm; white-space: nowrap;
+  }
+  .chart .tagline { font-size: 6pt; color: #555; margin-top: 1.5mm; }
+
+  table.data th { background: #f3dbe0; }
+  .star { color: #8a1538; letter-spacing: 1pt; }
+  .running-note { font-size: 7pt; color: #555; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+  Energy Performance Certificate &middot; {{ addresses.uk_current.line1 }},
+  {{ addresses.uk_current.city }} {{ addresses.uk_current.postcode }} &middot;
+  {{ issue.certificate_date }} &middot; RRN {{ issue.reference_number }}
+  <span style="float: right" class="pageno"></span>
+</div>
+
+<div class="epc-head">
+  <div class="epc-title">Energy Performance Certificate
+    <span class="sub">{{ addresses.uk_current.line1 }}, {{ addresses.uk_current.line2 }},
+    {{ addresses.uk_current.city }}, {{ addresses.uk_current.postcode }}</span>
+  </div>
+  <div class="scheme-logo">EPC ASSESS</div>
+</div>
+
+<table class="kv" style="margin-top: 4mm;">
+  <tr><td class="k">Dwelling type</td><td class="v">{{ issue.dwelling_type }}</td>
+      <td class="k">Reference number</td><td class="v">{{ issue.reference_number }}</td></tr>
+  <tr><td class="k">Date of assessment</td><td class="v">{{ issue.assessment_date }}</td>
+      <td class="k">Type of assessment</td><td class="v">{{ issue.assessment_type }}</td></tr>
+  <tr><td class="k">Date of certificate</td><td class="v">{{ issue.certificate_date }}</td>
+      <td class="k">Total floor area</td><td class="v">{{ issue.floor_area }} m&sup2;</td></tr>
+</table>
+
+<p style="font-size: 8.5pt;">This certificate estimates the energy efficiency
+of this home. The higher the rating, the lower your fuel bills are likely to
+be. The ratings are compared band by band below: the current rating reflects
+the home as assessed; the potential rating shows what could be achieved by
+carrying out the recommended measures on page 3.</p>
+
+{% set energy_bands = [
+  {"letter": "A", "range": "(92+)", "low": 92, "high": 100, "w": 24, "color": "#008054", "dark": false},
+  {"letter": "B", "range": "(81–91)",  "low": 81, "high": 91,  "w": 33, "color": "#19b459", "dark": false},
+  {"letter": "C", "range": "(69–80)",  "low": 69, "high": 80,  "w": 42, "color": "#8dce46", "dark": true},
+  {"letter": "D", "range": "(55–68)",  "low": 55, "high": 68,  "w": 51, "color": "#ffd500", "dark": true},
+  {"letter": "E", "range": "(39–54)",  "low": 39, "high": 54,  "w": 60, "color": "#fcaa65", "dark": true},
+  {"letter": "F", "range": "(21–38)",  "low": 21, "high": 38,  "w": 69, "color": "#ef8023", "dark": false},
+  {"letter": "G", "range": "(1–20)",   "low": 1,  "high": 20,  "w": 78, "color": "#e9153b", "dark": false},
+] %}
+{% set env_bands = [
+  {"letter": "A", "range": "(92+)", "low": 92, "high": 100, "w": 24, "color": "#0f3d8a", "dark": false},
+  {"letter": "B", "range": "(81–91)",  "low": 81, "high": 91,  "w": 33, "color": "#2b5cb0", "dark": false},
+  {"letter": "C", "range": "(69–80)",  "low": 69, "high": 80,  "w": 42, "color": "#5c85cc", "dark": false},
+  {"letter": "D", "range": "(55–68)",  "low": 55, "high": 68,  "w": 51, "color": "#8fa9d8", "dark": true},
+  {"letter": "E", "range": "(39–54)",  "low": 39, "high": 54,  "w": 60, "color": "#b7c6e4", "dark": true},
+  {"letter": "F", "range": "(21–38)",  "low": 21, "high": 38,  "w": 69, "color": "#d5dcef", "dark": true},
+  {"letter": "G", "range": "(1–20)",   "low": 1,  "high": 20,  "w": 78, "color": "#aab4c8", "dark": true},
+] %}
+
+{% macro rating_chart(title, bands, current, potential, unit) %}
+<div class="chart">
+  <h3>{{ title }}</h3>
+  <div class="cols-head"><span class="lead">Very efficient &mdash; lower running costs</span>
+    <span class="c">Current</span><span class="c">Potential</span></div>
+  {% for b in bands %}
+  <div class="band-row">
+    <div class="bar-zone">
+      <div class="bar{% if b.dark %} darktext{% endif %}" style="width: {{ b.w }}%; background: {{ b.color }};">
+        {{ b.range }}&nbsp;&nbsp;{{ b.letter }}
+      </div>
+      <div class="tip" style="border-left-color: {{ b.color }};"></div>
+    </div>
+    <div class="mark-col">{% if b.low <= current <= b.high %}<span class="marker">{{ current }} {{ b.letter }}</span>{% endif %}</div>
+    <div class="mark-col">{% if b.low <= potential <= b.high %}<span class="marker">{{ potential }} {{ b.letter }}</span>{% endif %}</div>
+  </div>
+  {% endfor %}
+  <div class="cols-head"><span class="lead">Not efficient &mdash; higher running costs</span></div>
+  <div class="tagline">England &amp; Wales &middot; {{ unit }}</div>
+</div>
+{% endmacro %}
+
+<div class="charts">
+  {{ rating_chart("Energy Efficiency Rating", energy_bands, issue.current_energy, issue.potential_energy, "Rating scale 1–100 (SAP points)") }}
+  {{ rating_chart("Environmental Impact (CO2) Rating", env_bands, issue.current_env, issue.potential_env, "Rating scale 1–100 (CO2 impact)") }}
+</div>
+
+<div class="sect">Estimated energy costs of this home</div>
+<table class="data">
+  <tr><th></th><th class="num">Current costs (3 years)</th>
+      <th class="num">Potential costs (3 years)</th><th>Potential saving</th></tr>
+  {% for c in issue.costs %}
+  <tr><td>{{ c.row }}</td><td class="num">&pound;{{ c.current }}</td>
+      <td class="num">&pound;{{ c.potential }}</td><td></td></tr>
+  {% endfor %}
+  <tr class="subtotal"><td>Totals</td><td class="num">&pound;{{ issue.cost_total_current }}</td>
+      <td class="num">&pound;{{ issue.cost_total_potential }}</td>
+      <td><strong>You could save &pound;{{ issue.cost_saving }} over 3 years</strong></td></tr>
+</table>
+<p class="running-note">These figures show how much the average household
+would spend for heating, lighting and hot water. They are not based on how
+energy is used by the people living in this home, and exclude appliances
+such as TVs and cookers.</p>
+
+<div class="page-break"></div>
+
+<div class="sect">About this document</div>
+<p style="font-size: 8.5pt;">This Energy Performance Certificate was produced
+following an energy assessment undertaken by a certified domestic energy
+assessor, accredited by the EPC Assess scheme. A copy has been lodged on the
+national register. You can obtain further information on the assessment, or
+raise a complaint, using the contact details below.</p>
+<table class="kv">
+  <tr><td class="k">Assessor&rsquo;s name</td><td class="v">{{ issue.assessor_name }}</td></tr>
+  <tr><td class="k">Assessor&rsquo;s accreditation number</td><td class="v">{{ issue.assessor_number }}</td></tr>
+  <tr><td class="k">Company name</td><td class="v">{{ issue.assessor_company }}</td></tr>
+  <tr><td class="k">Phone</td><td class="v">{{ issue.assessor_phone }}</td></tr>
+  <tr><td class="k">E-mail</td><td class="v">{{ issue.assessor_email }}</td></tr>
+  <tr><td class="k">Related party disclosure</td><td class="v">No related party</td></tr>
+</table>
+
+<div class="sect">About the ratings</div>
+<p style="font-size: 8.5pt;">The energy efficiency rating is a measure of the
+overall efficiency of a home on a scale of 1 to 100: the higher the number,
+the lower the running costs. The environmental impact rating is a measure of
+the home&rsquo;s impact on the environment in terms of carbon dioxide
+emissions &mdash; again, the higher the rating, the lower the impact. The
+average rating for a dwelling in England and Wales is band D.</p>
+
+<div class="sect">Summary of this home&rsquo;s energy performance related features</div>
+<table class="data">
+  <tr><th>Element</th><th>Description</th><th>Current performance</th></tr>
+  {% for f in issue.features %}
+  <tr><td>{{ f.element }}</td><td>{{ f.description }}</td>
+      <td>{% if f.rating == "Very good" %}<span class="star">&#9679;&#9679;&#9679;&#9679;&#9679;</span>
+          {% elif f.rating == "Good" %}<span class="star">&#9679;&#9679;&#9679;&#9679;&#9675;</span>
+          {% elif f.rating == "Average" %}<span class="star">&#9679;&#9679;&#9679;&#9675;&#9675;</span>
+          {% endif %} {{ f.rating }}</td></tr>
+  {% endfor %}
+</table>
+
+<div class="sect">Recommended measures to improve this home&rsquo;s energy performance</div>
+<table class="data">
+  <tr><th>Recommended measure</th><th>Indicative cost</th>
+      <th class="num">Typical yearly saving</th><th>Rating after improvement</th></tr>
+  {% for r in issue.recommendations %}
+  <tr><td>{{ r.measure }}</td><td>{{ r.cost }}</td>
+      <td class="num">{{ r.saving }}</td><td>{{ r.band }}</td></tr>
+  {% endfor %}
+</table>
+<p class="running-note">Measures are cumulative: the rating after improvement
+assumes the measures above it in the table have already been installed.
+Actual savings depend on how the home is used and on fuel prices.</p>
+
+<div class="sect">What can I do today?</div>
+<ul style="font-size: 8.5pt;">
+  <li>Check that your heating system thermostat is not set too high and that
+  radiators in unused rooms are turned down.</li>
+  <li>Wash laundry at lower temperatures and only run full loads.</li>
+  <li>Turn off lights and appliances at the wall rather than leaving them on
+  standby.</li>
+  <li>Close curtains at dusk to keep heat in, and check that they do not
+  drape over radiators.</li>
+</ul>
+
+</body>
+</html>
