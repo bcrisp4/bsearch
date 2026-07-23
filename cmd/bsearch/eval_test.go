@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -310,10 +313,141 @@ func TestEvalCompare_WrongArgCount(t *testing.T) {
 	}
 }
 
-func TestRunEvalSummarizeNotImplemented(t *testing.T) {
-	var out strings.Builder
-	err := run([]string{"eval", "summarize"}, &out)
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("run(eval summarize) = %v, want not-implemented error", err)
+// fakeChatServer duplicates evalharness's sseServer test helper (unexported
+// there, so cmd/bsearch can't import it): serves body verbatim as the SSE
+// response, flushing after every line so the client observes a stream
+// rather than one buffered read.
+func fakeChatServer(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatalf("ResponseWriter does not support flushing")
+		}
+		for _, line := range strings.Split(body, "\n") {
+			fmt.Fprintln(w, line)
+			flusher.Flush()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestEvalSummarize_EndToEnd(t *testing.T) {
+	sse := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"Summary: "}}]}`,
+		"",
+		`data: {"choices":[{"delta":{"content":"stuff."}}]}`,
+		"",
+		`data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	srv := fakeChatServer(t, sse)
+
+	dir := t.TempDir()
+	corpusDir := writeEvalCorpus(t)
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	outDir := filepath.Join(dir, "summaries")
+
+	var buf strings.Builder
+	err := run([]string{
+		"eval", "summarize",
+		"--corpus", corpusDir,
+		"--config", cfgPath,
+		"--model", "test-sum",
+		"--out-dir", outDir,
+		"--docs", "2",
+	}, &buf)
+	if err != nil {
+		t.Fatalf("run(eval summarize) = %v\noutput:\n%s", err, buf.String())
+	}
+
+	wantSummary := "Summary: stuff."
+	for _, name := range []string{"invoices-boiler.md", "letters-renewal.md"} {
+		content, err := os.ReadFile(filepath.Join(outDir, name))
+		if err != nil {
+			t.Fatalf("read summary %s: %v", name, err)
+		}
+		if string(content) != wantSummary {
+			t.Errorf("summary %s = %q, want %q", name, content, wantSummary)
+		}
+	}
+
+	var metrics struct {
+		Model string `json:"model"`
+		Docs  []struct {
+			Path             string  `json:"path"`
+			PromptTokens     int     `json:"prompt_tokens"`
+			CompletionTokens int     `json:"completion_tokens"`
+			WallSeconds      float64 `json:"wall_seconds"`
+			TokensPerSec     float64 `json:"tokens_per_sec"`
+		} `json:"docs"`
+		Aggregate struct {
+			TotalCompletionTokens int     `json:"total_completion_tokens"`
+			MeanTokensPerSec      float64 `json:"mean_tokens_per_sec"`
+		} `json:"aggregate"`
+	}
+	metricsBytes, err := os.ReadFile(filepath.Join(outDir, "metrics.json"))
+	if err != nil {
+		t.Fatalf("read metrics.json: %v", err)
+	}
+	if err := json.Unmarshal(metricsBytes, &metrics); err != nil {
+		t.Fatalf("decode metrics.json: %v\n%s", err, metricsBytes)
+	}
+	if metrics.Model != "test-sum" {
+		t.Errorf("Model = %q, want %q", metrics.Model, "test-sum")
+	}
+	if len(metrics.Docs) != 2 {
+		t.Fatalf("len(Docs) = %d, want 2", len(metrics.Docs))
+	}
+	if metrics.Docs[0].Path != "corpus/invoices/boiler.md" || metrics.Docs[1].Path != "corpus/letters/renewal.md" {
+		t.Errorf("Docs paths = %q, %q, want corpus/invoices/boiler.md, corpus/letters/renewal.md",
+			metrics.Docs[0].Path, metrics.Docs[1].Path)
+	}
+	for _, d := range metrics.Docs {
+		if d.CompletionTokens != 5 {
+			t.Errorf("Docs[%s].CompletionTokens = %d, want 5", d.Path, d.CompletionTokens)
+		}
+		if d.TokensPerSec <= 0 {
+			t.Errorf("Docs[%s].TokensPerSec = %v, want > 0", d.Path, d.TokensPerSec)
+		}
+	}
+	if metrics.Aggregate.TotalCompletionTokens != 10 {
+		t.Errorf("TotalCompletionTokens = %d, want 10", metrics.Aggregate.TotalCompletionTokens)
+	}
+	if metrics.Aggregate.MeanTokensPerSec <= 0 {
+		t.Errorf("MeanTokensPerSec = %v, want > 0", metrics.Aggregate.MeanTokensPerSec)
+	}
+
+	out := buf.String()
+	if n := strings.Count(out, "summarized "); n != 2 {
+		t.Errorf("output has %d %q lines, want 2\noutput:\n%s", n, "summarized ", out)
+	}
+	if strings.Contains(out, wantSummary) {
+		t.Errorf("output = %q, must not contain summary text", out)
+	}
+	if !strings.Contains(out, "wrote 2 summaries + metrics.json to") {
+		t.Errorf("output = %q, want final wrote-summary line", out)
+	}
+}
+
+func TestEvalSummarize_MissingModel(t *testing.T) {
+	dir := t.TempDir()
+	corpusDir := writeEvalCorpus(t)
+
+	var buf strings.Builder
+	err := run([]string{
+		"eval", "summarize",
+		"--corpus", corpusDir,
+		"--out-dir", filepath.Join(dir, "summaries"),
+	}, &buf)
+	if err == nil {
+		t.Fatal("run(eval summarize) without --model = nil, want usage error")
+	}
+	if !strings.Contains(err.Error(), "model") {
+		t.Errorf("error = %v, want it to mention --model", err)
 	}
 }

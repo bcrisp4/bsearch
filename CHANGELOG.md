@@ -33,8 +33,15 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   recording recall@k, MRR, success@1, and per-stage latency. Results are
   written as JSON (`--out`, default under `~/bsearch-eval/results/`) for
   later comparison; a headline summary prints to the terminal. Never prints
-  query text or document content. `bsearch eval summarize` is not yet
-  implemented.
+  query text or document content.
+
+- New `bsearch eval summarize` command: benches a summarizer LLM's
+  throughput over a sample of the golden corpus (`--corpus <dir>`,
+  `--model <name>`, `--docs` sample size, default 10). Streams a chat
+  completion per sampled document, writes each summary to `--out-dir`
+  (default under `~/bsearch-eval/summaries/`), and records per-doc and
+  aggregate tokens/second in `metrics.json`. Never prints document content
+  or summary text — only paths and throughput numbers.
 
 - New `bsearch eval compare <a.json> <b.json>` command: compares two
   `bsearch eval run` results files scored against the same corpus version

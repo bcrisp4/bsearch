@@ -469,8 +469,164 @@ func formatSigned(v float64) string {
 	return fmt.Sprintf("%+.3f", v)
 }
 
-// runEvalSummarize will bench a summarizer LLM's throughput and quality over
-// the golden corpus (evalharness.ChatClient) — Task 9.
+// evalSummarizeTimeout bounds a single doc's summarize call — long enough
+// for a slow local model on a long document, short enough that a hung
+// server doesn't stall the whole bench indefinitely.
+const evalSummarizeTimeout = 5 * time.Minute
+
+// evalSummarizeDocMetrics is one doc's line in metrics.json: ChatMetrics
+// plus the corpus-relative path identifying which doc it timed. A wrapper
+// rather than an embedded field so ChatMetrics itself stays untouched by
+// this command's on-disk shape.
+type evalSummarizeDocMetrics struct {
+	Path             string  `json:"path"`
+	PromptTokens     int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	WallSeconds      float64 `json:"wall_seconds"`
+	TokensPerSec     float64 `json:"tokens_per_sec"`
+}
+
+// evalSummarizeAggregate summarizes the run across all sampled docs.
+type evalSummarizeAggregate struct {
+	TotalCompletionTokens int     `json:"total_completion_tokens"`
+	MeanTokensPerSec      float64 `json:"mean_tokens_per_sec"`
+}
+
+// evalSummarizeMetrics is the on-disk shape of <out-dir>/metrics.json.
+type evalSummarizeMetrics struct {
+	Model     string                    `json:"model"`
+	Docs      []evalSummarizeDocMetrics `json:"docs"`
+	Aggregate evalSummarizeAggregate    `json:"aggregate"`
+}
+
+// runEvalSummarize benches a summarizer LLM's throughput over a sample of
+// the golden corpus (DESIGN.md: eval harness): for each sampled document,
+// stream a chat completion (evalharness.ChatClient.Summarize), write the
+// summary text to disk, and record per-doc token/second metrics. Never
+// prints document content or summary text (DESIGN.md: Privacy) — only
+// paths and throughput numbers.
 func runEvalSummarize(args []string, out io.Writer) error {
-	return errors.New("eval summarize is not implemented yet")
+	fs := flag.NewFlagSet("eval summarize", flag.ContinueOnError)
+	fs.SetOutput(out)
+	corpusDir := fs.String("corpus", "", "golden corpus directory (must contain a corpus/ subdirectory)")
+	configPath := fs.String("config", config.DefaultPath(), "config file (inference.endpoint is used)")
+	model := fs.String("model", "", "summarizer model name")
+	outDirFlag := fs.String("out-dir", "", "output directory (default ~/bsearch-eval/summaries/<model>-<timestamp>/)")
+	docs := fs.Int("docs", 10, "number of documents to sample from the corpus")
+	fs.Usage = func() {
+		fmt.Fprintln(out, "usage: bsearch eval summarize --corpus <dir> --model <name> [--config <path>] [--out-dir <dir>] [--docs <n>]")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("eval summarize takes no positional arguments (got %q)", fs.Arg(0))
+	}
+	if *corpusDir == "" {
+		return errors.New("eval summarize requires --corpus <dir>")
+	}
+	if *model == "" {
+		return errors.New("eval summarize requires --model <name>")
+	}
+	if *docs < 1 {
+		return fmt.Errorf("--docs %d out of range, must be >= 1", *docs)
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+
+	sampled, err := evalharness.SampleDocs(*corpusDir, *docs)
+	if err != nil {
+		return err
+	}
+	if len(sampled) == 0 {
+		return errors.New("eval summarize: corpus has no documents to sample")
+	}
+
+	home, homeErr := os.UserHomeDir()
+	resolvedOutDir := *outDirFlag
+	if resolvedOutDir == "" {
+		if homeErr != nil {
+			return fmt.Errorf("cannot resolve the default output directory (no home directory?) — pass --out-dir: %w", homeErr)
+		}
+		timestamp := time.Now().UTC().Format("20060102T150405Z")
+		resolvedOutDir = filepath.Join(home, "bsearch-eval", "summaries",
+			fmt.Sprintf("%s-%s", sanitizeModelName(*model), timestamp))
+	}
+	if err := os.MkdirAll(resolvedOutDir, 0o700); err != nil {
+		return err
+	}
+
+	client := &evalharness.ChatClient{Endpoint: cfg.Inference.Endpoint, Model: *model}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	docMetrics := make([]evalSummarizeDocMetrics, 0, len(sampled))
+	for _, relPath := range sampled {
+		content, err := os.ReadFile(filepath.Join(*corpusDir, relPath))
+		if err != nil {
+			return err
+		}
+
+		docCtx, cancel := context.WithTimeout(ctx, evalSummarizeTimeout)
+		summary, metrics, err := client.Summarize(docCtx, string(content))
+		cancel()
+		// Abort on the first failure rather than limping on: a partial
+		// bench (some docs summarized, one silently missing) would
+		// misreport throughput as if the run were complete, and
+		// metrics.json is only meaningful once every sampled doc succeeded.
+		if err != nil {
+			return fmt.Errorf("eval summarize: %s: %w", relPath, err)
+		}
+
+		category := filepath.Base(filepath.Dir(relPath))
+		basename := filepath.Base(relPath)
+		summaryPath := filepath.Join(resolvedOutDir, category+"-"+basename)
+		if err := os.WriteFile(summaryPath, []byte(summary), 0o600); err != nil { // #nosec G703 -- category/basename come from evalharness.SampleDocs's corpus-relative path, filtered through filepath.Base twice; not attacker input
+			return err
+		}
+
+		fmt.Fprintf(out, "summarized %s (%.1f tok/s)\n", relPath, metrics.TokensPerSec)
+
+		docMetrics = append(docMetrics, evalSummarizeDocMetrics{
+			Path:             relPath,
+			PromptTokens:     metrics.PromptTokens,
+			CompletionTokens: metrics.CompletionTokens,
+			WallSeconds:      metrics.WallSeconds,
+			TokensPerSec:     metrics.TokensPerSec,
+		})
+	}
+
+	var totalCompletionTokens int
+	var sumTokensPerSec float64
+	for _, d := range docMetrics {
+		totalCompletionTokens += d.CompletionTokens
+		sumTokensPerSec += d.TokensPerSec
+	}
+
+	result := evalSummarizeMetrics{
+		Model: *model,
+		Docs:  docMetrics,
+		Aggregate: evalSummarizeAggregate{
+			TotalCompletionTokens: totalCompletionTokens,
+			MeanTokensPerSec:      sumTokensPerSec / float64(len(docMetrics)),
+		},
+	}
+	payload, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(resolvedOutDir, "metrics.json"), payload, 0o600); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "wrote %d summaries + metrics.json to %s\n", len(docMetrics), resolvedOutDir)
+	return nil
 }
