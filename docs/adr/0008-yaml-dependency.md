@@ -1,6 +1,6 @@
 # 0008 — YAML dependency for the eval harness
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-22
 - **Confidence:** high
 
