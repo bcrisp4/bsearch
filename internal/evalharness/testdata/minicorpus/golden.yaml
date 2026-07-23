@@ -1,0 +1,22 @@
+queries:
+  - id: q001
+    query: that letter about the rent going up
+    relevant:
+      - corpus/letters/renewal.md
+    tags: [recall, letters, converted]
+  - id: q002
+    query: how much was the boiler service
+    relevant:
+      - corpus/invoices/boiler.md
+    acceptable:
+      - corpus/letters/renewal.md
+    tags: [nl, invoices, native]
+  - id: q003
+    query: invoice DS-26417
+    relevant:
+      - corpus/invoices/boiler.md
+    tags: [exact, invoices, native]
+  - id: q004
+    query: car insurance renewal
+    relevant: []
+    tags: [kw, zero-answer]
