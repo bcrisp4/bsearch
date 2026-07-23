@@ -178,6 +178,76 @@ class TestValidateGolden:
 
         assert any("both relevant and acceptable" in e for e in errors)
 
+    def test_absolute_path_rejected(self, corpus_dir: Path) -> None:
+        text = (corpus_dir / "golden.yaml").read_text(encoding="utf-8")
+        (corpus_dir / "golden.yaml").write_text(
+            text.replace("corpus/letters/renewal.md", "/etc/passwd", 1),
+            encoding="utf-8",
+        )
+
+        errors = validate_golden(corpus_dir)
+
+        assert any("corpus-relative" in e for e in errors)
+
+    def test_parent_traversal_rejected(self, corpus_dir: Path) -> None:
+        text = (corpus_dir / "golden.yaml").read_text(encoding="utf-8")
+        (corpus_dir / "golden.yaml").write_text(
+            text.replace("corpus/letters/renewal.md", "../outside.md", 1),
+            encoding="utf-8",
+        )
+
+        errors = validate_golden(corpus_dir)
+
+        assert any("corpus-relative" in e for e in errors)
+
+    def test_escape_via_corpus_prefix_rejected(self, corpus_dir: Path) -> None:
+        text = (corpus_dir / "golden.yaml").read_text(encoding="utf-8")
+        (corpus_dir / "golden.yaml").write_text(
+            text.replace(
+                "corpus/letters/renewal.md", "corpus/../../etc/hosts", 1
+            ),
+            encoding="utf-8",
+        )
+
+        errors = validate_golden(corpus_dir)
+
+        assert any("corpus-relative" in e for e in errors)
+
+    def test_duplicate_relevant_path_rejected(self, corpus_dir: Path) -> None:
+        text = (corpus_dir / "golden.yaml").read_text(encoding="utf-8")
+        (corpus_dir / "golden.yaml").write_text(
+            text.replace(
+                "relevant:\n      - corpus/letters/renewal.md\n"
+                "    tags: [recall, letters, converted]",
+                "relevant:\n      - corpus/letters/renewal.md\n"
+                "      - corpus/letters/renewal.md\n"
+                "    tags: [recall, letters, converted]",
+            ),
+            encoding="utf-8",
+        )
+
+        errors = validate_golden(corpus_dir)
+
+        assert any("duplicate path in relevant" in e for e in errors)
+
+    def test_duplicate_acceptable_path_rejected(self, corpus_dir: Path) -> None:
+        text = (corpus_dir / "golden.yaml").read_text(encoding="utf-8")
+        text += (
+            "  - id: q004\n"
+            '    query: "boiler service annual cost"\n'
+            "    relevant:\n"
+            "      - corpus/letters/renewal.md\n"
+            "    acceptable:\n"
+            "      - corpus/letters/nope.md\n"
+            "      - corpus/letters/nope.md\n"
+            "    tags: [nl, letters, converted]\n"
+        )
+        (corpus_dir / "golden.yaml").write_text(text, encoding="utf-8")
+
+        errors = validate_golden(corpus_dir)
+
+        assert any("duplicate path in acceptable" in e for e in errors)
+
     def test_zero_answer_with_relevant_rejected(self, corpus_dir: Path) -> None:
         text = (corpus_dir / "golden.yaml").read_text(encoding="utf-8")
         (corpus_dir / "golden.yaml").write_text(

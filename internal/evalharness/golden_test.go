@@ -146,6 +146,84 @@ func TestLoadGolden_RelevantAcceptableOverlap(t *testing.T) {
 	}
 }
 
+func TestLoadGolden_AbsolutePathRejected(t *testing.T) {
+	dir := copyFixture(t)
+	editGolden(t, dir, "corpus/letters/renewal.md", "/etc/passwd")
+
+	_, err := LoadGolden(dir)
+	if err == nil {
+		t.Fatal("LoadGolden() error = nil, want error naming the absolute path")
+	}
+	if !strings.Contains(err.Error(), "q001") {
+		t.Errorf("error %q does not contain %q", err.Error(), "q001")
+	}
+	if !strings.Contains(err.Error(), "corpus-relative") {
+		t.Errorf("error %q does not contain %q", err.Error(), "corpus-relative")
+	}
+}
+
+func TestLoadGolden_ParentTraversalRejected(t *testing.T) {
+	dir := copyFixture(t)
+	editGolden(t, dir, "corpus/letters/renewal.md", "../outside.md")
+
+	_, err := LoadGolden(dir)
+	if err == nil {
+		t.Fatal("LoadGolden() error = nil, want error naming the traversal path")
+	}
+	if !strings.Contains(err.Error(), "corpus-relative") {
+		t.Errorf("error %q does not contain %q", err.Error(), "corpus-relative")
+	}
+}
+
+func TestLoadGolden_EscapeViaCorpusPrefixRejected(t *testing.T) {
+	dir := copyFixture(t)
+	editGolden(t, dir, "corpus/letters/renewal.md", "corpus/../../etc/hosts")
+
+	_, err := LoadGolden(dir)
+	if err == nil {
+		t.Fatal("LoadGolden() error = nil, want error naming the escaping path")
+	}
+	if !strings.Contains(err.Error(), "corpus-relative") {
+		t.Errorf("error %q does not contain %q", err.Error(), "corpus-relative")
+	}
+}
+
+func TestLoadGolden_DuplicateRelevantPath(t *testing.T) {
+	dir := copyFixture(t)
+	editGolden(t, dir,
+		"relevant:\n      - corpus/letters/renewal.md\n    tags: [recall, letters, converted]",
+		"relevant:\n      - corpus/letters/renewal.md\n      - corpus/letters/renewal.md\n    tags: [recall, letters, converted]")
+
+	_, err := LoadGolden(dir)
+	if err == nil {
+		t.Fatal("LoadGolden() error = nil, want error naming the duplicate relevant path")
+	}
+	if !strings.Contains(err.Error(), "q001") {
+		t.Errorf("error %q does not contain %q", err.Error(), "q001")
+	}
+	if !strings.Contains(err.Error(), "duplicate path in relevant") {
+		t.Errorf("error %q does not contain %q", err.Error(), "duplicate path in relevant")
+	}
+}
+
+func TestLoadGolden_DuplicateAcceptablePath(t *testing.T) {
+	dir := copyFixture(t)
+	editGolden(t, dir,
+		"acceptable:\n      - corpus/letters/renewal.md\n    tags: [nl, invoices, native]",
+		"acceptable:\n      - corpus/letters/renewal.md\n      - corpus/letters/renewal.md\n    tags: [nl, invoices, native]")
+
+	_, err := LoadGolden(dir)
+	if err == nil {
+		t.Fatal("LoadGolden() error = nil, want error naming the duplicate acceptable path")
+	}
+	if !strings.Contains(err.Error(), "q002") {
+		t.Errorf("error %q does not contain %q", err.Error(), "q002")
+	}
+	if !strings.Contains(err.Error(), "duplicate path in acceptable") {
+		t.Errorf("error %q does not contain %q", err.Error(), "duplicate path in acceptable")
+	}
+}
+
 func TestLoadGolden_EmptyQueryText(t *testing.T) {
 	dir := copyFixture(t)
 	editGolden(t, dir, "query: that letter about the rent going up", "query: ''")

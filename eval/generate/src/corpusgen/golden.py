@@ -10,6 +10,7 @@ stratum).
 
 from __future__ import annotations
 
+import posixpath
 from typing import TYPE_CHECKING, Any, cast
 
 import yaml
@@ -65,6 +66,21 @@ def novel_term_rate(query: str, docs: list[str]) -> float:
     return len(terms - doc_terms) / len(terms)
 
 
+def _path_confined(rel: str) -> bool:
+    """Mirrors the Go loader's checkPathConfined (internal/evalharness/golden.go).
+
+    A path outside corpus/ can still resolve to a real file (Path.__truediv__
+    with an absolute operand silently discards corpus_dir entirely, and
+    "../" climbs out just as readily) yet can never equal one of the
+    "corpus/..." paths bsearch eval run actually produces — caught here at
+    authoring time instead of surfacing later as silent scoring corruption.
+    posixpath, not os.path: golden.yaml paths are always "/"-separated.
+    """
+    if posixpath.isabs(rel):
+        return False
+    return posixpath.normpath(rel).startswith("corpus/")
+
+
 def _load_queries(golden_path: Path) -> list[dict[str, Any]]:
     data: Any = yaml.safe_load(golden_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -96,7 +112,19 @@ def validate_golden(corpus_dir: Path) -> list[str]:
         if "zero-answer" in tags and relevant:
             errors.append(f"{qid}: zero-answer query has relevant documents")
 
+        seen_relevant: set[str] = set()
+        for rel in relevant:
+            if rel in seen_relevant:
+                errors.append(f"{qid}: duplicate path in relevant: {rel}")
+            seen_relevant.add(rel)
+
         acceptable = [str(p) for p in q.get("acceptable", [])]
+        seen_acceptable: set[str] = set()
+        for rel in acceptable:
+            if rel in seen_acceptable:
+                errors.append(f"{qid}: duplicate path in acceptable: {rel}")
+            seen_acceptable.add(rel)
+
         relevant_set = set(relevant)
         for rel in acceptable:
             if rel in relevant_set:
@@ -104,6 +132,11 @@ def validate_golden(corpus_dir: Path) -> list[str]:
 
         doc_texts: list[str] = []
         for rel in [*relevant, *acceptable]:
+            if not _path_confined(rel):
+                errors.append(
+                    f"{qid}: path must be corpus-relative under corpus/: {rel}"
+                )
+                continue
             path = corpus_dir / rel
             if not path.is_file():
                 errors.append(f"{qid}: path does not exist: {rel}")

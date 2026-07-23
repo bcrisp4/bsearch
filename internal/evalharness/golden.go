@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -45,12 +47,19 @@ type goldenFile struct {
 // surfaces every problem instead of stopping at the first.
 //
 // Rejected: duplicate query ids; empty query text; a relevant/acceptable
-// path that doesn't exist under corpusDir; a path listed in both Relevant
-// and Acceptable for the same query (ScoreQuery condenses it out of the
-// ranking before hit-counting, so it can never score a hit, yet it would
-// still inflate the recall denominator); the "zero-answer" tag combined
-// with a non-empty Relevant (the tag asserts the corpus has no correct
-// answer for the query).
+// path that doesn't exist under corpusDir; a relevant/acceptable path that
+// isn't corpus-relative under corpus/ (absolute, or escaping via "../" —
+// such a path could still stat successfully yet never match the
+// "corpus/..." paths eval run produces, silently corrupting scoring, and
+// stats arbitrary filesystem locations besides); a duplicate path within
+// Relevant or within Acceptable (ScoreQuery's hit map dedupes ranked hits,
+// but len(q.Relevant) is the recall denominator — a duplicate would deflate
+// recall without ever being able to inflate the hit count to compensate); a
+// path listed in both Relevant and Acceptable for the same query (ScoreQuery
+// condenses it out of the ranking before hit-counting, so it can never score
+// a hit, yet it would still inflate the recall denominator); the
+// "zero-answer" tag combined with a non-empty Relevant (the tag asserts the
+// corpus has no correct answer for the query).
 func LoadGolden(corpusDir string) ([]Query, error) {
 	data, err := os.ReadFile(filepath.Join(corpusDir, "golden.yaml"))
 	if err != nil {
@@ -80,12 +89,36 @@ func LoadGolden(corpusDir string) ([]Query, error) {
 
 		relevantSet := make(map[string]bool, len(q.Relevant))
 		for _, rel := range q.Relevant {
+			if relevantSet[rel] {
+				errs = append(errs, fmt.Errorf("%s: duplicate path in relevant: %s", q.ID, rel))
+			}
 			relevantSet[rel] = true
+
+			// A path outside corpus/ can still stat successfully (it just
+			// points somewhere on the real filesystem) yet can never equal
+			// one of eval run's produced "corpus/..." paths — silently
+			// corrupting scoring rather than failing loudly. Reject before
+			// stat'ing rather than after: statting an unconfined path is
+			// itself the second half of the problem.
+			if err := checkPathConfined(rel); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", q.ID, err))
+				continue
+			}
 			if err := checkPathExists(corpusDir, rel); err != nil {
 				errs = append(errs, fmt.Errorf("%s: relevant path %q: %w", q.ID, rel, err))
 			}
 		}
+		acceptableSet := make(map[string]bool, len(q.Acceptable))
 		for _, rel := range q.Acceptable {
+			if acceptableSet[rel] {
+				errs = append(errs, fmt.Errorf("%s: duplicate path in acceptable: %s", q.ID, rel))
+			}
+			acceptableSet[rel] = true
+
+			if err := checkPathConfined(rel); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", q.ID, err))
+				continue
+			}
 			if err := checkPathExists(corpusDir, rel); err != nil {
 				errs = append(errs, fmt.Errorf("%s: acceptable path %q: %w", q.ID, rel, err))
 			}
@@ -110,6 +143,29 @@ func LoadGolden(corpusDir string) ([]Query, error) {
 func checkPathExists(corpusDir, rel string) error {
 	if _, err := os.Stat(filepath.Join(corpusDir, rel)); err != nil {
 		return err
+	}
+	return nil
+}
+
+// checkPathConfined reports an error unless rel is a corpus-relative path
+// under corpus/ — the shape eval run's ranked-hit paths always take (see
+// runEvalRun in cmd/bsearch/eval.go: "corpus/" + relativized path). An
+// absolute path, or one that climbs out via "../" (even by first descending
+// into corpus/ and climbing back out, e.g. "corpus/../../etc/hosts"), would
+// still stat successfully — filepath.Join+os.Stat don't care where a path
+// points — but can never come out equal to a produced "corpus/..." path, so
+// it would silently never match and never score, while also having stat'd
+// an arbitrary filesystem location on the caller's behalf.
+//
+// path.Clean (not filepath.Clean) is deliberate: golden.yaml paths are
+// always "/"-separated, matching path.Join("corpus", ...) in eval.go, not
+// the OS path separator.
+func checkPathConfined(rel string) error {
+	if filepath.IsAbs(rel) {
+		return fmt.Errorf("path must be corpus-relative under corpus/: %s", rel)
+	}
+	if !strings.HasPrefix(path.Clean(rel), "corpus/") {
+		return fmt.Errorf("path must be corpus-relative under corpus/: %s", rel)
 	}
 	return nil
 }

@@ -99,6 +99,46 @@ func TestSummarize_FallbackTokenCountWithoutUsage(t *testing.T) {
 	}
 }
 
+// TestSummarize_AcceptsSSEDataWithoutSpace asserts that "data:" with no
+// following space is accepted per the SSE spec (only a single leading
+// U+0020 after the field name is stripped as framing; it isn't required).
+// Some OpenAI-compatible servers emit this form, and the space-only prefix
+// check previously skipped every such line, producing an empty summary.
+func TestSummarize_AcceptsSSEDataWithoutSpace(t *testing.T) {
+	sse := strings.Join([]string{
+		`data:{"choices":[{"delta":{"content":"A "}}]}`,
+		"",
+		`data:{"choices":[{"delta":{"content":"B "}}]}`,
+		"",
+		`data:{"choices":[{"delta":{"content":"C"}}]}`,
+		"",
+		`data:{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3}}`,
+		"",
+		"data:[DONE]",
+		"",
+	}, "\n")
+	srv := sseServer(t, sse)
+	defer srv.Close()
+
+	c := &ChatClient{Endpoint: srv.URL, Model: "test-model"}
+	text, metrics, err := c.Summarize(context.Background(), "some document")
+	if err != nil {
+		t.Fatalf("Summarize() error = %v, want nil", err)
+	}
+	if text != "A B C" {
+		t.Errorf("text = %q, want %q", text, "A B C")
+	}
+	if metrics.CompletionTokens != 3 {
+		t.Errorf("CompletionTokens = %d, want 3", metrics.CompletionTokens)
+	}
+	if metrics.PromptTokens != 10 {
+		t.Errorf("PromptTokens = %d, want 10", metrics.PromptTokens)
+	}
+	if !metrics.UsageReported {
+		t.Error("UsageReported = false, want true (server sent a usage object)")
+	}
+}
+
 func TestSummarize_HTTPErrorSurfaced(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

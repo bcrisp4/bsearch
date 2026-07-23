@@ -132,12 +132,18 @@ func (c *ChatClient) Summarize(ctx context.Context, doc string) (string, ChatMet
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		data, ok := strings.CutPrefix(line, "data: ")
+		data, ok := strings.CutPrefix(line, "data:")
 		if !ok {
 			// Blank lines and `: comment` lines are part of the SSE
 			// framing, not data — skip rather than error.
 			continue
 		}
+		// Per the SSE spec, a single leading U+0020 after the field name is
+		// framing and stripped; it is not required. Some OpenAI-compatible
+		// servers emit "data:{...}" with no space at all — TrimPrefix only
+		// removes one occurrence, so a genuine leading space in the JSON
+		// payload (there isn't one) would be untouched anyway.
+		data = strings.TrimPrefix(data, " ")
 		lastEvent = time.Now()
 		if data == "[DONE]" {
 			break

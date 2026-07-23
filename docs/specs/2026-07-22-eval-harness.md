@@ -1,6 +1,6 @@
 # Eval harness: `bsearch eval` (issue #9)
 
-**Status:** approved design, pre-implementation
+**Status:** implemented (issue #9, PR #48)
 **Companions:** `2026-07-20-eval-corpus-generation.md` (corpus + `golden.yaml`
 format), `2026-07-22-golden-query-methodology.md` (how queries were authored)
 
@@ -194,6 +194,13 @@ JSON, one file per run:
 
 Per-query records are the input to `compare` and to any future slicing not
 anticipated here — aggregates are derivable, records are not.
+
+The `*_at_10` JSON keys (`recall_at_10`, `mrr_at_10`, `success_at_1`,
+`acceptable_at_10`) are fixed schema names — they do not change if a run is
+scored at a `--limit` other than 10. The metrics themselves are always
+computed at the run's actual `--limit` (`run.limit` in this same file);
+human-readable output (`eval run`'s summary line, `eval compare`'s table)
+labels them `recall@<limit>` / `MRR@<limit>` accordingly.
 
 ## Summarizer bench (`eval summarize`)
 

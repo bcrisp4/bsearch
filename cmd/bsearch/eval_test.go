@@ -767,6 +767,39 @@ func TestEvalCompare_EndToEnd(t *testing.T) {
 	}
 }
 
+// TestEvalCompare_LabelsUseRunLimit asserts the human-readable compare table
+// labels its recall/MRR columns with the run's actual --limit rather than a
+// hardcoded "10" — CompareResults already gates on both runs sharing one
+// limit, but that shared limit need not be 10.
+func TestEvalCompare_LabelsUseRunLimit(t *testing.T) {
+	dir := t.TempDir()
+	resA := evalCompareResult("sha256:abc", "model-a", "fpA", 0.5, 1.0, 0)
+	resA.Run.Limit = 5
+	resB := evalCompareResult("sha256:abc", "model-b", "fpB", 1.0, 1.0, 1)
+	resB.Run.Limit = 5
+	aPath, bPath := writeCompareResults(t, dir, resA, resB)
+
+	var buf strings.Builder
+	err := run([]string{"eval", "compare", aPath, bPath}, &buf)
+	if err != nil {
+		t.Fatalf("run(eval compare) = %v\noutput:\n%s", err, buf.String())
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "recall@5") {
+		t.Errorf("output = %q, want it to contain %q", out, "recall@5")
+	}
+	if !strings.Contains(out, "MRR@5") {
+		t.Errorf("output = %q, want it to contain %q", out, "MRR@5")
+	}
+	if strings.Contains(out, "recall@10") {
+		t.Errorf("output = %q, must not contain the hardcoded %q", out, "recall@10")
+	}
+	if strings.Contains(out, "MRR@10") {
+		t.Errorf("output = %q, must not contain the hardcoded %q", out, "MRR@10")
+	}
+}
+
 func TestEvalCompare_JSON(t *testing.T) {
 	dir := t.TempDir()
 	resA := evalCompareResult("sha256:abc", "model-a", "fpA", 0.5, 1.0, 0)
@@ -995,6 +1028,139 @@ func TestEvalSummarize_WarnsWhenUsageNotReported(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "warning: server did not report token usage for 2 doc(s)") {
 		t.Errorf("output = %q, want a warning naming the affected doc count", out)
+	}
+}
+
+// writeSummarizeExtCorpus builds a single-document corpus whose only
+// document has a non-markdown extension (.txt) — Item 6's regression case:
+// eval summarize output must always be named "<category>-<stem>.md"
+// regardless of the source extension, since summaries are prose/markdown
+// regardless of the source document's format (spec: Summarizer bench).
+func writeSummarizeExtCorpus(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	notes := filepath.Join(root, "corpus", "notes")
+	if err := os.MkdirAll(notes, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(notes, "todo.txt"), []byte("Buy milk and bread.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	golden := `queries:
+  - id: q1
+    query: zero answer probe
+    relevant: []
+    tags: [zero-answer]
+`
+	if err := os.WriteFile(filepath.Join(root, "golden.yaml"), []byte(golden), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestEvalSummarize_OutputIsAlwaysMarkdown(t *testing.T) {
+	sse := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"Summary: "}}]}`,
+		"",
+		`data: {"choices":[{"delta":{"content":"stuff."}}]}`,
+		"",
+		`data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	srv := fakeChatServer(t, sse)
+
+	dir := t.TempDir()
+	corpusDir := writeSummarizeExtCorpus(t)
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	outDir := filepath.Join(dir, "summaries")
+
+	var buf strings.Builder
+	err := run([]string{
+		"eval", "summarize",
+		"--corpus", corpusDir,
+		"--config", cfgPath,
+		"--model", "test-sum",
+		"--out-dir", outDir,
+		"--docs", "1",
+	}, &buf)
+	if err != nil {
+		t.Fatalf("run(eval summarize) = %v\noutput:\n%s", err, buf.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(outDir, "notes-todo.md")); err != nil {
+		t.Errorf("expected notes-todo.md to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "notes-todo.txt")); err == nil {
+		t.Error("notes-todo.txt exists — output kept the source extension, want .md")
+	}
+}
+
+// writeSummarizeCollisionCorpus builds a corpus with two documents in the
+// same category that differ only by extension ("todo.txt" and "todo.md"):
+// stripping the source extension and appending ".md" (Item 6's fix) maps
+// both to the same output filename "notes-todo.md". SampleDocs's round-robin
+// sampling (alphabetical within a category) picks "todo.md" then "todo.txt"
+// for --docs 2 against a single "notes" category.
+func writeSummarizeCollisionCorpus(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	notes := filepath.Join(root, "corpus", "notes")
+	if err := os.MkdirAll(notes, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(notes, "todo.txt"), []byte("Buy milk.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(notes, "todo.md"), []byte("# Todo\nBuy bread.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	golden := `queries:
+  - id: q1
+    query: zero answer probe
+    relevant: []
+    tags: [zero-answer]
+`
+	if err := os.WriteFile(filepath.Join(root, "golden.yaml"), []byte(golden), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// TestEvalSummarize_CollisionErrors asserts Item 6's cheap collision guard:
+// two sampled docs that map to the same category+stem output name (differing
+// only by source extension) must error rather than silently overwrite one
+// summary with the other. The general name-collision design is tracked in
+// issue #49 and deliberately not solved further here.
+func TestEvalSummarize_CollisionErrors(t *testing.T) {
+	sse := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"Summary."}}]}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	srv := fakeChatServer(t, sse)
+
+	dir := t.TempDir()
+	corpusDir := writeSummarizeCollisionCorpus(t)
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	outDir := filepath.Join(dir, "summaries")
+
+	var buf strings.Builder
+	err := run([]string{
+		"eval", "summarize",
+		"--corpus", corpusDir,
+		"--config", cfgPath,
+		"--model", "test-sum",
+		"--out-dir", outDir,
+		"--docs", "2",
+	}, &buf)
+	if err == nil {
+		t.Fatalf("run(eval summarize) = nil, want a collision error\noutput:\n%s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "notes-todo.md") {
+		t.Errorf("error = %v, want it to name the colliding output file", err)
 	}
 }
 

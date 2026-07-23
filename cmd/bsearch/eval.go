@@ -463,18 +463,26 @@ func runEvalCompare(args []string, out io.Writer) error {
 	if *asJSON {
 		return json.NewEncoder(out).Encode(cmp)
 	}
-	printComparison(out, cmp)
+	// a.Run.Limit and b.Run.Limit are guaranteed equal by CompareResults'
+	// gate above (it errors out otherwise), but that shared limit need not
+	// be 10 — the printed column headers must reflect the run's actual
+	// --limit, not a hardcoded figure (spec: "*_at_10 JSON keys are fixed
+	// schema names" — the human-readable labels are not).
+	printComparison(out, cmp, a.Run.Limit)
 	return nil
 }
 
 // printComparison renders a Comparison as a human-readable table: headline
 // rows (with and without exact-match queries), then one row per slice tag
 // in alphabetical order for determinism, then the significance caveat.
-// Aggregate-only — never prints query text (DESIGN.md: Privacy).
-func printComparison(out io.Writer, c evalharness.Comparison) {
+// Aggregate-only — never prints query text (DESIGN.md: Privacy). limit is
+// the shared --limit the compared runs were scored at, used only to label
+// the recall/MRR columns — the JSON field names stay recall_at_10/mrr_at_10
+// regardless (fixed schema, see spec's Results file section).
+func printComparison(out io.Writer, c evalharness.Comparison, limit int) {
 	fmt.Fprintf(out, "corpus %s (%s)  A: %s  B: %s\n", c.Corpus.Name, c.Corpus.Version, c.ModelA.Name, c.ModelB.Name)
 	fmt.Fprintf(out, "%-20s %-18s %-18s %-14s %-13s %s\n",
-		"", "recall@10", "MRR@10", "success@1", "win/loss/tie", "p(MRR)")
+		"", fmt.Sprintf("recall@%d", limit), fmt.Sprintf("MRR@%d", limit), "success@1", "win/loss/tie", "p(MRR)")
 	printCompareRow(out, "overall (no exact)", c.OverallNoExact)
 	printCompareRow(out, "overall", c.Overall)
 
@@ -558,6 +566,19 @@ type evalSummarizeMetrics struct {
 	Aggregate evalSummarizeAggregate    `json:"aggregate"`
 }
 
+// summaryOutputName derives eval summarize's output filename for a sampled
+// document: "<category>-<stem>.md". Summaries are always prose/markdown
+// regardless of the source document's format (spec: Summarizer bench "writes
+// each summary to <out-dir>/<category>-<doc>.md"), so the source extension
+// is stripped rather than preserved — a .txt or .docx source must not leave
+// its extension on the summary file.
+func summaryOutputName(relPath string) string {
+	category := filepath.Base(filepath.Dir(relPath))
+	basename := filepath.Base(relPath)
+	stem := strings.TrimSuffix(basename, filepath.Ext(basename))
+	return category + "-" + stem + ".md"
+}
+
 // runEvalSummarize benches a summarizer LLM's throughput over a sample of
 // the golden corpus (DESIGN.md: eval harness): for each sampled document,
 // stream a chat completion (evalharness.ChatClient.Summarize), write the
@@ -627,8 +648,21 @@ func runEvalSummarize(args []string, out io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// seenNames maps an output filename back to the first sampled doc that
+	// produced it — used only to build the collision error message below.
+	// Two sampled docs colliding (same category+stem, different source
+	// extension) is a known theoretical gap tracked in issue #49; not
+	// solved here, just refused rather than silently overwritten.
+	seenNames := make(map[string]string, len(sampled))
+
 	docMetrics := make([]evalSummarizeDocMetrics, 0, len(sampled))
 	for _, relPath := range sampled {
+		outName := summaryOutputName(relPath)
+		if prior, dup := seenNames[outName]; dup {
+			return fmt.Errorf("eval summarize: %s and %s both map to output file %s (see issue #49)", prior, relPath, outName)
+		}
+		seenNames[outName] = relPath
+
 		content, err := os.ReadFile(filepath.Join(*corpusDir, relPath))
 		if err != nil {
 			return err
@@ -645,10 +679,8 @@ func runEvalSummarize(args []string, out io.Writer) error {
 			return fmt.Errorf("eval summarize: %s: %w", relPath, err)
 		}
 
-		category := filepath.Base(filepath.Dir(relPath))
-		basename := filepath.Base(relPath)
-		summaryPath := filepath.Join(resolvedOutDir, category+"-"+basename)
-		if err := os.WriteFile(summaryPath, []byte(summary), 0o600); err != nil { // #nosec G703 -- category/basename come from evalharness.SampleDocs's corpus-relative path, filtered through filepath.Base twice; not attacker input
+		summaryPath := filepath.Join(resolvedOutDir, outName)
+		if err := os.WriteFile(summaryPath, []byte(summary), 0o600); err != nil { // #nosec G703 -- outName is derived from evalharness.SampleDocs's corpus-relative path, filtered through filepath.Base twice; not attacker input
 			return err
 		}
 
