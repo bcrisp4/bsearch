@@ -1054,3 +1054,848 @@ queries:
   tags:
   - kw
   - zero-answer
+- id: h001
+  query: how much interest did i earn in my ferrand account in 2026?
+  relevant:
+  - corpus/bank_certificates/uk-interest-certificate-2026.md
+  - corpus/office_docs/interest-summary.md
+  acceptable:
+  - corpus/tax_documents/uk_self_assessment_year1.md
+  tags:
+  - nl
+  - bank_certificates
+  - converted
+  - human
+- id: h002
+  query: ferrand bank certificate of interest
+  relevant:
+  - corpus/bank_certificates/uk-interest-certificate-2026.md
+  acceptable:
+  - corpus/office_docs/interest-summary.md
+  - corpus/uk_savings_statements/ferrand-saver-2026-04.md
+  - corpus/tax_documents/uk_self_assessment_year1.md
+  tags:
+  - kw
+  - bank_certificates
+  - converted
+  - human
+- id: h003
+  query: ferrand bank savings coi 2026
+  relevant:
+  - corpus/bank_certificates/uk-interest-certificate-2026.md
+  acceptable:
+  - corpus/office_docs/interest-summary.md
+  - corpus/uk_savings_statements/ferrand-saver-2026-04.md
+  - corpus/tax_documents/uk_self_assessment_year1.md
+  tags:
+  - kw
+  - bank_certificates
+  - converted
+  - human
+- id: h004
+  query: commonwealth harbor 1042-S 2025
+  relevant:
+  - corpus/bank_certificates/us-1042s-savings-2025.md
+  - corpus/bank_certificates/us-1042s-checking-2025.md
+  acceptable:
+  - corpus/office_docs/interest-summary.md
+  tags:
+  - exact
+  - bank_certificates
+  - ocr
+  - human
+- id: h005
+  query: commonwealth harbor savings account interest 2025
+  relevant:
+  - corpus/bank_certificates/us-1042s-savings-2025.md
+  - corpus/office_docs/interest-summary.md
+  acceptable:
+  - corpus/us_savings_statements/harbor-savings-2025-q1.md
+  - corpus/us_savings_statements/harbor-savings-2025-q2.md
+  tags:
+  - kw
+  - bank_certificates
+  - ocr
+  - human
+- id: h006
+  query: plumber invoice 2025
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2025.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-10.md
+  - corpus/notes/boiler-pressure-saga.md
+  tags:
+  - kw
+  - boiler_service_invoices
+  - ocr
+  - human
+- id: h007
+  query: plumber invoice october
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2025.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-10.md
+  - corpus/notes/boiler-pressure-saga.md
+  tags:
+  - kw
+  - boiler_service_invoices
+  - ocr
+  - human
+- id: h008
+  query: heating engineer invoice
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2025.md
+  - corpus/boiler_service_invoices/boiler-service-2024.md
+  - corpus/boiler_service_invoices/boiler-service-2026.md
+  acceptable:
+  - corpus/notes/boiler-pressure-saga.md
+  - corpus/uk_current_statements/ferrand-current-2025-10.md
+  - corpus/uk_current_statements/ferrand-current-2026-06.md
+  tags:
+  - kw
+  - boiler_service_invoices
+  - ocr
+  - human
+- id: h009
+  query: boiler quote october 2025
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2025.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-10.md
+  - corpus/notes/boiler-pressure-saga.md
+  tags:
+  - kw
+  - boiler_service_invoices
+  - ocr
+  - human
+- id: h010
+  query: june 2026 plumber how much
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2026.md
+  - corpus/notes/boiler-pressure-saga.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2026-06.md
+  tags:
+  - nl
+  - boiler_service_invoices
+  - converted
+  - human
+- id: h011
+  query: plumber boiler low pressure
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2026.md
+  - corpus/notes/boiler-pressure-saga.md
+  tags:
+  - kw
+  - boiler_service_invoices
+  - converted
+  - human
+- id: h012
+  query: feb braodband bill
+  relevant:
+  - corpus/broadband_bills/broadband-2026-02.md
+  acceptable:
+  - corpus/notes/broadband-outage-jan-2026.md
+  - corpus/uk_current_statements/ferrand-current-2026-02.md
+  tags:
+  - kw
+  - broadband_bills
+  - converted
+  - human
+- id: h013
+  query: feb broadband bill
+  relevant:
+  - corpus/broadband_bills/broadband-2026-02.md
+  acceptable:
+  - corpus/notes/broadband-outage-jan-2026.md
+  - corpus/uk_current_statements/ferrand-current-2026-02.md
+  tags:
+  - kw
+  - broadband_bills
+  - converted
+  - human
+- id: h014
+  query: loopfibre overcharge bill
+  relevant:
+  - corpus/broadband_bills/broadband-2026-02.md
+  acceptable:
+  - corpus/notes/broadband-outage-jan-2026.md
+  tags:
+  - kw
+  - broadband_bills
+  - converted
+  - human
+- id: h015
+  query: loopfibre bill for service callout
+  relevant:
+  - corpus/broadband_bills/broadband-2026-02.md
+  acceptable:
+  - corpus/notes/broadband-outage-jan-2026.md
+  tags:
+  - kw
+  - broadband_bills
+  - converted
+  - human
+- id: h016
+  query: broadband price increase how much
+  relevant:
+  - corpus/broadband_bills/broadband-2026-03.md
+  - corpus/broadband_bills/broadband-2026-04.md
+  acceptable:
+  - corpus/notes/static-ip-and-hosting.md
+  tags:
+  - nl
+  - broadband_bills
+  - converted
+  - human
+- id: h017
+  query: broadband bill march
+  relevant:
+  - corpus/broadband_bills/broadband-2026-03.md
+  tags:
+  - kw
+  - broadband_bills
+  - converted
+  - human
+- id: h018
+  query: broadband bill march 2026
+  relevant:
+  - corpus/broadband_bills/broadband-2026-03.md
+  tags:
+  - kw
+  - broadband_bills
+  - converted
+  - human
+- id: h019
+  query: broadband price increased
+  relevant:
+  - corpus/broadband_bills/broadband-2026-03.md
+  - corpus/broadband_bills/broadband-2026-04.md
+  acceptable:
+  - corpus/notes/static-ip-and-hosting.md
+  tags:
+  - kw
+  - broadband_bills
+  - converted
+  - human
+- id: h020
+  query: Netherhale council tax bil march 2026
+  relevant:
+  - corpus/council_tax_bills/ctax-2026-27.md
+  tags:
+  - kw
+  - council_tax_bills
+  - converted
+  - human
+- id: h021
+  query: Netherhale council tax bill unoccupied discount
+  relevant:
+  - corpus/council_tax_bills/ctax-2024-25.md
+  tags:
+  - kw
+  - council_tax_bills
+  - ocr
+  - human
+- id: h022
+  query: first council tax bill london
+  relevant:
+  - corpus/council_tax_bills/ctax-2025-26.md
+  - corpus/letters/council_ctax_moving_letter.md
+  tags:
+  - kw
+  - council_tax_bills
+  - converted
+  - human
+- id: h023
+  query: council tax london flat 2026
+  relevant:
+  - corpus/council_tax_bills/ctax-2025-26.md
+  - corpus/council_tax_bills/ctax-2026-27.md
+  tags:
+  - kw
+  - council_tax_bills
+  - converted
+  - human
+- id: h024
+  query: credit report downgraded
+  relevant:
+  - corpus/credit_reports/credit_report_date1.md
+  acceptable:
+  - corpus/notes/credit-file-cleanup.md
+  tags:
+  - kw
+  - credit_reports
+  - converted
+  - human
+- id: h025
+  query: what was my credit score in 2025
+  relevant:
+  - corpus/credit_reports/credit_report_date1.md
+  tags:
+  - nl
+  - credit_reports
+  - converted
+  - human
+- id: h026
+  query: Harwood Energy bill 2025 overcharged
+  relevant:
+  - corpus/energy_bills/energy-2025-10.md
+  - corpus/notes/standing-charge-dispute.md
+  acceptable:
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - kw
+  - energy_bills
+  - converted
+  - human
+- id: h027
+  query: Harwood Energy bill 2025 oct
+  relevant:
+  - corpus/energy_bills/energy-2025-10.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-10.md
+  - corpus/notes/standing-charge-dispute.md
+  tags:
+  - kw
+  - energy_bills
+  - converted
+  - human
+- id: h028
+  query: high energy bill
+  relevant:
+  - corpus/energy_bills/energy-2026-01.md
+  - corpus/energy_bills/energy-2026-02.md
+  acceptable:
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - kw
+  - energy_bills
+  - converted
+  - human
+- id: h029
+  query: energy bill winter 2026
+  relevant:
+  - corpus/energy_bills/energy-2026-01.md
+  - corpus/energy_bills/energy-2026-02.md
+  - corpus/energy_bills/energy-2026-03.md
+  acceptable:
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - kw
+  - energy_bills
+  - converted
+  - human
+- id: h030
+  query: biggest energy bill
+  relevant:
+  - corpus/energy_bills/energy-2026-02.md
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - kw
+  - energy_bills
+  - converted
+  - human
+- id: h031
+  query: abnormally high enerygy bill for last winter
+  relevant:
+  - corpus/energy_bills/energy-2026-01.md
+  - corpus/energy_bills/energy-2026-02.md
+  acceptable:
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - recall
+  - energy_bills
+  - converted
+  - human
+- id: h032
+  query: how much disability cover do I have? for 2024
+  relevant:
+  - corpus/insurance_policies/us_disability_policy.md
+  tags:
+  - nl
+  - insurance_policies
+  - converted
+  - human
+- id: h033
+  query: how much excess did i pay for the water leak
+  relevant:
+  - corpus/insurance_policies/uk_contents_policy_year2.md
+  - corpus/insurance_policies/uk_contents_policy_year1.md
+  acceptable:
+  - corpus/policy_change_notices/policy_change_notice_1.md
+  tags:
+  - nl
+  - insurance_policies
+  - converted
+  - human
+- id: h034
+  query: blood test result low vitamin d
+  relevant:
+  - corpus/letters/gp_test_results_letter.md
+  - corpus/notes/health-sinus-log.md
+  tags:
+  - kw
+  - letters
+  - ocr
+  - human
+- id: h035
+  query: ENT referral
+  relevant:
+  - corpus/letters/hospital_appointment_letter.md
+  - corpus/letters/gp_referral_letter.md
+  acceptable:
+  - corpus/notes/health-sinus-log.md
+  tags:
+  - kw
+  - letters
+  - ocr
+  - human
+- id: h036
+  query: ENT first appt
+  relevant:
+  - corpus/letters/hospital_appointment_letter.md
+  - corpus/letters/us_clinical_note_visit1.md
+  acceptable:
+  - corpus/notes/health-sinus-log.md
+  tags:
+  - kw
+  - letters
+  - ocr
+  - human
+- id: h037
+  query: when did I see ENT for the first time
+  relevant:
+  - corpus/letters/hospital_appointment_letter.md
+  - corpus/notes/health-sinus-log.md
+  - corpus/letters/us_clinical_note_visit1.md
+  tags:
+  - nl
+  - letters
+  - ocr
+  - human
+- id: h038
+  query: TDS certificate for london flat
+  relevant:
+  - corpus/letters/deposit_scheme_certificate.md
+  acceptable:
+  - corpus/tenancy_legal/tenancy_agreement.md
+  - corpus/notes/moving-back-to-london.md
+  tags:
+  - kw
+  - letters
+  - converted
+  - human
+- id: h039
+  query: how much did rent increase on my flat when i renewed
+  relevant:
+  - corpus/office_docs/agency-renewal-letter.md
+  tags:
+  - nl
+  - office_docs
+  - converted
+  - human
+- id: h040
+  query: 2026 rent increase how much
+  relevant:
+  - corpus/office_docs/agency-renewal-letter.md
+  tags:
+  - nl
+  - office_docs
+  - converted
+  - human
+- id: h041
+  query: when does guarantee end for mattress
+  relevant:
+  - corpus/office_docs/mattress-invoice.md
+  tags:
+  - nl
+  - office_docs
+  - converted
+  - human
+- id: h042
+  query: how much was new mattress in 2025
+  relevant:
+  - corpus/office_docs/mattress-invoice.md
+  tags:
+  - nl
+  - office_docs
+  - converted
+  - human
+- id: h043
+  query: when did I get new double mattress
+  relevant:
+  - corpus/office_docs/mattress-invoice.md
+  acceptable:
+  - corpus/notes/furniture-shortlist.md
+  tags:
+  - nl
+  - office_docs
+  - converted
+  - human
+- id: h044
+  query: degree final result
+  relevant:
+  - corpus/office_docs/grade-calculation.md
+  - corpus/education_certs/degree_transcript.md
+  - corpus/education_certs/degree_diploma.md
+  acceptable:
+  - corpus/education_certs/cv.md
+  tags:
+  - kw
+  - office_docs
+  - converted
+  - human
+- id: h045
+  query: air source heat pump quote
+  relevant:
+  - corpus/quotes_invoices/heatpump-quote-aurellon.md
+  - corpus/quotes_invoices/heatpump-quote-fenwick-dray.md
+  - corpus/notes/heat-pump-research.md
+  tags:
+  - kw
+  - quotes_invoices
+  - converted
+  - human
+- id: h046
+  query: air source heat pump quote most expensive 2026
+  relevant:
+  - corpus/quotes_invoices/heatpump-quote-aurellon.md
+  - corpus/notes/heat-pump-research.md
+  acceptable:
+  - corpus/quotes_invoices/heatpump-quote-fenwick-dray.md
+  tags:
+  - kw
+  - quotes_invoices
+  - converted
+  - human
+- id: h047
+  query: how much for extra socket in bedroom
+  relevant:
+  - corpus/quotes_invoices/electrician-invoice-brayfield.md
+  - corpus/notes/home-office-setup.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-11.md
+  - corpus/notes/flat-snagging-list.md
+  tags:
+  - nl
+  - quotes_invoices
+  - converted
+  - human
+- id: h048
+  query: electirician bill for extra socket in bedroom
+  relevant:
+  - corpus/quotes_invoices/electrician-invoice-brayfield.md
+  - corpus/notes/home-office-setup.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-11.md
+  - corpus/notes/flat-snagging-list.md
+  tags:
+  - kw
+  - quotes_invoices
+  - converted
+  - human
+- id: h049
+  query: how much was tax refund on my US taxes in 2026
+  relevant:
+  - corpus/tax_documents/us_tax_settlement_letter.md
+  - corpus/tax_documents/us_tax_return_binder.md
+  tags:
+  - nl
+  - tax_documents
+  - converted
+  - human
+- id: h050
+  query: us tax refund 2026
+  relevant:
+  - corpus/tax_documents/us_tax_settlement_letter.md
+  - corpus/tax_documents/us_tax_return_binder.md
+  tags:
+  - kw
+  - tax_documents
+  - converted
+  - human
+- id: h051
+  query: uk tax return after relocation back from new york
+  relevant:
+  - corpus/tax_documents/uk_self_assessment_year1.md
+  tags:
+  - kw
+  - tax_documents
+  - converted
+  - human
+- id: h052
+  query: uk tax return 2026
+  relevant:
+  - corpus/tax_documents/uk_self_assessment_year1.md
+  tags:
+  - kw
+  - tax_documents
+  - converted
+  - human
+- id: h053
+  query: hmrc tax return 2026
+  relevant:
+  - corpus/tax_documents/uk_self_assessment_year1.md
+  tags:
+  - kw
+  - tax_documents
+  - converted
+  - human
+- id: h054
+  query: uk credit card application notes
+  relevant:
+  - corpus/notes/credit-file-cleanup.md
+  tags:
+  - kw
+  - notes
+  - native
+  - human
+- id: h055
+  query: brooklyn flat shortlist
+  relevant:
+  - corpus/notes/brooklyn-apartment-hunt.md
+  tags:
+  - kw
+  - notes
+  - native
+  - human
+- id: h056
+  query: what apartments was I considering in brooklyn when I moved in 2023
+  relevant:
+  - corpus/notes/brooklyn-apartment-hunt.md
+  tags:
+  - nl
+  - notes
+  - native
+  - human
+- id: h057
+  query: Halewick job contract senior platform engineer
+  relevant:
+  - corpus/tenancy_legal/employment_terms_of_offer.md
+  tags:
+  - kw
+  - tenancy_legal
+  - converted
+  - human
+- id: h058
+  query: starting salary for job at Halewick
+  relevant:
+  - corpus/tenancy_legal/employment_terms_of_offer.md
+  tags:
+  - kw
+  - tenancy_legal
+  - converted
+  - human
+- id: h059
+  query: pay rise how much take home pay 2026
+  relevant:
+  - corpus/uk_payslips/payslip-2026-04.md
+  acceptable:
+  - corpus/uk_payslips/payslip-2026-05.md
+  - corpus/uk_payslips/payslip-2026-06.md
+  - corpus/uk_payslips/payslip-2026-07.md
+  tags:
+  - nl
+  - uk_payslips
+  - converted
+  - human
+- id: h060
+  query: take home pay 2026
+  relevant:
+  - corpus/uk_payslips/payslip-2026-04.md
+  acceptable:
+  - corpus/uk_payslips/payslip-2026-05.md
+  - corpus/uk_payslips/payslip-2026-06.md
+  - corpus/uk_payslips/payslip-2026-07.md
+  tags:
+  - kw
+  - uk_payslips
+  - converted
+  - human
+- id: h061
+  query: savings account opening letter
+  relevant:
+  - corpus/uk_savings_statements/ferrand-saver-2025-10.md
+  tags:
+  - kw
+  - uk_savings_statements
+  - converted
+  - human
+- id: h062
+  query: when did i open savings account
+  relevant:
+  - corpus/uk_savings_statements/ferrand-saver-2025-10.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-08.md
+  tags:
+  - nl
+  - uk_savings_statements
+  - converted
+  - human
+- id: h063
+  query: how much did i open savings account with
+  relevant:
+  - corpus/uk_savings_statements/ferrand-saver-2025-10.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-08.md
+  tags:
+  - nl
+  - uk_savings_statements
+  - converted
+  - human
+- id: h064
+  query: where did i get packing box from in ny
+  relevant:
+  - corpus/us_checking_statements/harbor-checking-2025-05.md
+  tags:
+  - nl
+  - us_checking_statements
+  - converted
+  - human
+- id: h065
+  query: how much were the boxes I got in new york when I relocated to uk
+  relevant:
+  - corpus/us_checking_statements/harbor-checking-2025-05.md
+  tags:
+  - nl
+  - us_checking_statements
+  - converted
+  - human
+- id: h066
+  query: last US paystub
+  relevant:
+  - corpus/us_paystubs/paystub-2025-05-30.md
+  tags:
+  - kw
+  - us_paystubs
+  - converted
+  - human
+- id: h067
+  query: final paystub
+  relevant:
+  - corpus/us_paystubs/paystub-2025-05-30.md
+  tags:
+  - kw
+  - us_paystubs
+  - converted
+  - human
+- id: h068
+  query: final balance before closing savings account
+  relevant:
+  - corpus/us_savings_statements/harbor-savings-2025-q2.md
+  tags:
+  - kw
+  - us_savings_statements
+  - converted
+  - human
+- id: h069
+  query: london water bill november
+  relevant:
+  - corpus/water_bills/water-2025-11.md
+  tags:
+  - kw
+  - water_bills
+  - converted
+  - human
+- id: h070
+  query: london water bill 2025
+  relevant:
+  - corpus/water_bills/water-2025-11.md
+  tags:
+  - kw
+  - water_bills
+  - converted
+  - human
+- id: h071
+  query: water how much 2025
+  relevant:
+  - corpus/water_bills/water-2025-11.md
+  tags:
+  - nl
+  - water_bills
+  - converted
+  - human
+- id: h072
+  query: did i renew my car insurance last year
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h073
+  query: did i get an mot last year
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h074
+  query: how much was mortgage last year
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h075
+  query: did i renew the per insurance for the dog
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h076
+  query: when did i renew pet insurance
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h077
+  query: when did i cancel gym membership
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h078
+  query: how much did i spend in gym memberhsip i never used
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h079
+  query: how much was my dental work last year in total
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h080
+  query: do i have the tv license certificate saved?
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h081
+  query: when did i get a new passport?
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h082
+  query: how much did the wedding venue cost?
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human
+- id: h083
+  query: how many soalr panels did they recommend?
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+  - human

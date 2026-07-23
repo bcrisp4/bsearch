@@ -102,6 +102,17 @@ A portion of the set is hand-written by Ben from the gist list alone
 (same bottleneck), providing a check that agent-authored queries aren't
 systematically easier or harder than human ones. Tagged `human`.
 
+`human` queries are exempt from the echo gate's trigram rule. The gate
+polices the *authoring pipeline* — an agent that saw the document (or a
+gist that leaked phrasing) can echo it. A human who only ever saw gists
+cannot; when their query still collides ("air source heat pump", "tax
+return 2026"), that is natural domain language, and rejecting it would
+bias the human stratum toward artificial vocabulary mismatch — the exact
+distribution it exists to calibrate. Human overlap is measured (novel-term
+rate, reported per stratum) rather than rejected. First measurement:
+human median 0.25 vs agent 0.29 — agent queries are not lexically closer
+to their targets than real human ones.
+
 ## What this does not fix
 
 - **Distribution realism**: even bottlenecked queries are guesses at how

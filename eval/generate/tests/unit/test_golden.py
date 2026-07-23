@@ -138,6 +138,26 @@ class TestValidateGolden:
 
         assert validate_golden(corpus_dir) == []
 
+    def test_human_queries_exempt_from_echo(self, corpus_dir: Path) -> None:
+        # Bottlenecked human authors can't echo by construction; their
+        # collisions are natural language, not author bias.
+        text = (corpus_dir / "golden.yaml").read_text(encoding="utf-8")
+        (corpus_dir / "golden.yaml").write_text(
+            text.replace(
+                'query: "that letter about the rent going up"\n'
+                "    relevant:\n"
+                "      - corpus/letters/renewal.md\n"
+                "    tags: [recall, letters, converted]",
+                'query: "proposed rent for the new term"\n'
+                "    relevant:\n"
+                "      - corpus/letters/renewal.md\n"
+                "    tags: [recall, letters, converted, human]",
+            ),
+            encoding="utf-8",
+        )
+
+        assert validate_golden(corpus_dir) == []
+
     def test_zero_answer_with_relevant_rejected(self, corpus_dir: Path) -> None:
         text = (corpus_dir / "golden.yaml").read_text(encoding="utf-8")
         (corpus_dir / "golden.yaml").write_text(

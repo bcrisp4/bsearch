@@ -104,7 +104,11 @@ def validate_golden(corpus_dir: Path) -> list[str]:
             else:
                 doc_texts.append(path.read_text(encoding="utf-8"))
 
-        if "exact" not in tags:
+        # `human` queries were authored through the same bottleneck (gists
+        # only) but by a person; their trigram collisions are natural
+        # domain language, not authoring leakage — measured via novel-term
+        # stats instead of rejected.
+        if "exact" not in tags and "human" not in tags:
             query_text = str(q.get("query", ""))
             for text in doc_texts:
                 hits = shared_trigrams(query_text, text)
