@@ -460,3 +460,43 @@ func TestRunReembedsOnDimsChange(t *testing.T) {
 		t.Fatalf("SearchVectors returned %d hits, want 2 (both docs in new generation)", len(hits))
 	}
 }
+
+func TestRunReembedsDocsIndexedBeforeMetricStage(t *testing.T) {
+	store := openStore(t)
+	dir := t.TempDir()
+	seedFile(t, store, dir, "a.md", "# Alpha\n\nalpha text\n")
+
+	if _, err := runAll(t, newIndexer(t, store, &fakeEmbedder{spec: testSpec("test-model")}, nil), store); err != nil {
+		t.Fatalf("first Run: %v", err)
+	}
+
+	// Simulate a document indexed before the vec-metric stage existed
+	// (pre-#40, L2 era): same chunker/embedding/dims versions, no metric
+	// key. It must be re-embedded into the current cosine generation, not
+	// counted up to date — its vectors live in a table whose rankings used
+	// a different metric.
+	doc, ok, err := store.GetByPath(context.Background(), filepath.Join(dir, "a.md"))
+	if err != nil || !ok {
+		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
+	}
+	delete(doc.StageVersions, domain.StageVecMetric)
+	if _, err := store.UpsertDocument(context.Background(), doc, nil); err != nil {
+		t.Fatalf("UpsertDocument: %v", err)
+	}
+
+	sum, err := runAll(t, newIndexer(t, store, &fakeEmbedder{spec: testSpec("test-model")}, nil), store)
+	if err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	if sum.Indexed != 1 || sum.UpToDate != 0 {
+		t.Errorf("Summary = %+v, want the pre-metric doc re-embedded", sum)
+	}
+
+	doc, _, err = store.GetByPath(context.Background(), filepath.Join(dir, "a.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.StageVersions[domain.StageVecMetric] != domain.VectorMetric {
+		t.Errorf("StageVersions = %v, missing current vec metric", doc.StageVersions)
+	}
+}

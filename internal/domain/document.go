@@ -32,7 +32,21 @@ const (
 	// such a change would strand up-to-date documents outside the new
 	// generation.
 	StageEmbeddingDims = "embedding_dims"
+	// StageVecMetric records the distance metric of the vector table the
+	// document was embedded into (VectorMetric). Like dims, metric is part
+	// of the vector-table generation identity but outside the embedding
+	// fingerprint — without this key a metric change would strand
+	// "up-to-date" documents outside the generation search uses. Documents
+	// indexed before the key existed read as "" and re-embed (ADR 0007).
+	StageVecMetric = "vec_metric"
 )
+
+// VectorMetric is the vec0 distance metric for every vector-table
+// generation: cosine, so rankings are magnitude-invariant no matter what
+// the embedding model emits (ADR 0007). A single constant shared by the
+// vector store (table DDL, descriptor identity) and the pipeline (stage
+// versioning) — the two must never disagree.
+const VectorMetric = "cosine"
 
 // Document is one indexed file. ID is the opaque surrogate doc_id from
 // DESIGN.md: minted at first discovery, stable across content edits and

@@ -33,6 +33,12 @@ type vecDescriptor struct {
 	Model  string `json:"model"`
 	Dims   int    `json:"dims"`
 	Layout string `json:"layout"` // "float32" until quantization lands
+	// Metric is the vec0 distance metric baked into the table's DDL —
+	// "cosine" for every generation created since issue #40; "l2" is the
+	// backfill for tables created before the field existed (vec0's
+	// default). Part of identity: distances from different metrics are
+	// incomparable, so a metric change must mint a new generation.
+	Metric string `json:"metric"`
 	// Prefix templates are part of the identity: vectors embedded with
 	// different prefixes are as incompatible as a different model's
 	// (DESIGN.md: Embeddings/LLM). The input ceiling is recorded for
@@ -57,6 +63,12 @@ func (d vecDescriptor) identity() vecDescriptor {
 func (d vecDescriptor) normalize() vecDescriptor {
 	if d.Layout == "" {
 		d.Layout = "float32"
+	}
+	if d.Metric == "" {
+		// Pre-#40 tables were created without distance_metric, i.e. L2.
+		// Deliberately NOT "cosine": that would match new ensures and
+		// silently keep serving L2 rankings from the old table.
+		d.Metric = "l2"
 	}
 	return d
 }
@@ -123,6 +135,7 @@ func (s *Store) EnsureVecTable(ctx context.Context, spec domain.EmbeddingSpec, d
 		Model:           spec.Model,
 		Dims:            dims,
 		Layout:          "float32",
+		Metric:          domain.VectorMetric,
 		QueryTemplate:   spec.QueryTemplate,
 		PassageTemplate: spec.PassageTemplate,
 		CeilingTokens:   spec.CeilingTokens,
@@ -158,8 +171,12 @@ func (s *Store) EnsureVecTable(ctx context.Context, spec domain.EmbeddingSpec, d
 
 		if name == "" {
 			name = fmt.Sprintf("vec_chunks_%d", maxGen+1)
+			// Cosine, not vec0's default L2: magnitude-invariant, so a
+			// non-normalized embedding model can't silently skew rankings
+			// (issue #40).
 			if _, err := tx.ExecContext(ctx, fmt.Sprintf(
-				"CREATE VIRTUAL TABLE %s USING vec0(embedding float[%d])", name, dims)); err != nil {
+				"CREATE VIRTUAL TABLE %s USING vec0(embedding float[%d] distance_metric=%s)",
+				name, dims, domain.VectorMetric)); err != nil {
 				return fmt.Errorf("create vec table %s: %w", name, err)
 			}
 			descJSON, err := json.Marshal(want)

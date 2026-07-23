@@ -11,6 +11,17 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- Semantic search now ranks by cosine distance instead of Euclidean (L2).
+  For the normalized embedding models most people run, rankings are
+  identical — but models that emit non-normalized vectors (or truncated
+  ones) no longer silently skew results toward larger-magnitude embeddings.
+  The `distance` in `bsearch search` output is now bounded [0, 2] (still
+  lower = better, still uncalibrated). Existing indexes migrate on the next
+  `bsearch index` run, which re-embeds everything automatically; until that
+  run, search keeps the old ranking behaviour. (ADR 0007)
+
 ### Added
 
 - New `bsearch search` command: semantic search over your indexed files from
