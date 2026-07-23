@@ -1,0 +1,12 @@
+[
+  {"topic": "car insurance renewal", "note": "persona has no car (explicit in persona)"},
+  {"topic": "MOT test certificate", "note": "no car"},
+  {"topic": "mortgage statement or mortgage in principle", "note": "persona rents"},
+  {"topic": "vet bill or pet insurance", "note": "no pet"},
+  {"topic": "gym membership contract or cancellation", "note": "believed absent — annotator must verify"},
+  {"topic": "dental checkup invoice", "note": "health docs are GP/hospital only — verify"},
+  {"topic": "TV licence", "note": "believed absent — verify"},
+  {"topic": "passport renewal", "note": "believed absent — verify"},
+  {"topic": "wedding venue deposit", "note": "believed absent — verify"},
+  {"topic": "solar panel installation quote", "note": "NEAR-MISS zero-answer: heat-pump and home-battery notes exist; annotator must confirm no solar quote/content anywhere"}
+]

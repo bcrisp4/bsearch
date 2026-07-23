@@ -1,0 +1,181 @@
+[
+  {
+    "path": "corpus/insurance_policies/us_disability_policy.md",
+    "gist": "The disability income cover I had through work in the US, from Stonecroft Mutual, arranged via my employer Meridian Loft. They sent me a fresh copy of the whole policy because the amount it would pay out each month went up after I got a pay rise. It was my own policy though, so I could have kept it even if I'd left the job.",
+    "memorable": [
+      "Monthly payout went from $3,000 to $3,400 after the salary bump",
+      "About $500 a year in premiums, roughly $42 a month with the workplace discount",
+      "Had to be off sick 90 days before it would start paying",
+      "Locked in until 2034 - they couldn't cancel it or hike the price before then"
+    ],
+    "period": "January 2024",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/insurance_policies/uk_contents_policy_year2.md",
+    "gist": "The renewal paperwork for my contents insurance on the London flat, with Alderoak. The amount insured had crept up on its own because it tracks an inflation index, but nothing else about the cover changed and it would just roll over if I did nothing. It also doubled as the certificate I could show the letting agent.",
+    "memorable": [
+      "Contents covered for £42,000",
+      "Cost about £139 for the year, taken by card in August",
+      "Big £450 excess just for water leak claims, versus £100 for everything else",
+      "Included cover for damage to the landlord's fittings since I'm renting"
+    ],
+    "period": "Summer 2026, covering August 2026 to August 2027",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/letters/gp_test_results_letter.md",
+    "gist": "The letter from my GP surgery in Calverley Park with the bloods they took when I signed up as a new patient. Basically all fine except my vitamin D was a bit low, and the doctor said just take a cheap supplement over the winter rather than come back in.",
+    "memorable": [
+      "Everything normal except vitamin D, slightly under where they wanted it",
+      "Told to take a 10 microgram daily supplement from October to March",
+      "No follow-up appointment or repeat test needed",
+      "Bloods were done mid-October as part of a new-patient check"
+    ],
+    "period": "October 2025",
+    "provenance": "ocr"
+  },
+  {
+    "path": "corpus/letters/hospital_appointment_letter.md",
+    "gist": "The hospital letter booking me in to see the ear, nose and throat specialist after my GP referred me. It was at Southmere Park Hospital with a consultant surgeon, and it had all the usual stuff about bringing a medicines list and the parking being terrible.",
+    "memorable": [
+      "Appointment was Tuesday 10 March 2026 at 10:40 in the morning",
+      "Seeing Mr Penhaligon, an ENT consultant",
+      "Referred by Dr Ravensworth at my GP practice",
+      "Warned the pay-and-display car park fills up early"
+    ],
+    "period": "February 2026, for an appointment in March 2026",
+    "provenance": "ocr"
+  },
+  {
+    "path": "corpus/letters/council_ctax_moving_letter.md",
+    "gist": "The letter from Netherhale council setting up my council tax after I moved into the flat on Calverley Grove. Because I live alone I got the single-occupier discount, and they split what I owed for the rest of the year into monthly instalments.",
+    "memorable": [
+      "Moved in on 1 August 2025",
+      "Flat is band C and I got 25% off for living alone",
+      "Owed £855.23 for the part-year, paid at about £107 a month",
+      "Had to tell them within 21 days if another adult moved in"
+    ],
+    "period": "August 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/letters/deposit_scheme_certificate.md",
+    "gist": "The certificate proving my tenancy deposit for the London flat was lodged with a government-style protection scheme rather than sitting with the landlord. It has the reference number I'd need to get the money back when I move out, and mentions free arbitration if the landlord and I ever fell out over it.",
+    "memorable": [
+      "£1,850 deposit protected",
+      "Landlord is Wrenmoor Estates, managed through Penfold & Reach",
+      "Tenancy ran August 2025 to end of July 2026",
+      "Scheme holds the cash itself and offers free dispute resolution"
+    ],
+    "period": "August 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/office_docs/agency-renewal-letter.md",
+    "gist": "The letter from Penfold & Reach, my letting agent, about renewing the flat for another year - the one where the rent went up. The landlord offered a new twelve-month term at a higher rent and I had to say by late June whether I'd renew, go month-to-month, or give notice.",
+    "memorable": [
+      "Rent going from £1,603.33 to £1,655 a month, about £52 more",
+      "New term would start 1 August 2026",
+      "Deadline of 20 June to respond",
+      "If I said nothing it would just roll into a periodic tenancy"
+    ],
+    "period": "May 2026",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/office_docs/mattress-invoice.md",
+    "gist": "The receipt for the double mattress I bought from Dunloe Sleep just after moving into the flat, with the Saturday morning delivery slot. I kept it because of the long guarantee and the trial period where you can send it back.",
+    "memorable": [
+      "Paid £674 total including the £25 weekend delivery",
+      "Delivered the Saturday after ordering, morning slot",
+      "Came with a 10-year guarantee and a 100-night trial",
+      "Bought mid-August 2025, right after the move"
+    ],
+    "period": "August 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/office_docs/grade-calculation.md",
+    "gist": "A little spreadsheet I made working out my final degree classification from my second and final year marks. It confirmed I ended up with a 2:1, comfortably over the boundary once the two years were weighted.",
+    "memorable": [
+      "Final weighted average came out at 65.6",
+      "Final year counted 60%, the year before 40%",
+      "Landed an upper second, clear of the cutoff"
+    ],
+    "period": "Around graduation, undated",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/policy_change_notices/policy_change_notice_1.md",
+    "gist": "A notice from Alderoak, back when I was living in Hampshire, listing tweaks to the contents insurance wording ahead of that year's renewal. The big one was that the excess for water leak damage nearly doubled, and they tightened up things like theft from sheds and claims on corroded pipes.",
+    "memorable": [
+      "Water leak excess jumped from £250 to £450",
+      "Shed thefts only covered if it was locked and broken into",
+      "They also switched to a new 24-hour claims number",
+      "Applied from the July 2021 renewal"
+    ],
+    "period": "May 2021",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/quotes_invoices/heatpump-quote-aurellon.md",
+    "gist": "The fancier of the two heat pump quotes I got, from Aurellon, after they came round to survey the flat in June. Fixed price for swapping the gas combi for an air source unit with a new cylinder and three bigger radiators, with the government grant knocked off the bill and an app to monitor it.",
+    "memorable": [
+      "About £11,900 before the £7,500 grant, so £4,440 out of pocket",
+      "Reckoned it would shave roughly £120 a year off heating costs",
+      "Three-day install, ten-year warranty on the unit",
+      "£500 deposit to book, quote valid until late August 2026"
+    ],
+    "period": "June 2026",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/quotes_invoices/electrician-invoice-brayfield.md",
+    "gist": "The bill from Brayfield, the electrician who put an extra double socket in the second bedroom for my desk setup and swapped the hallway light for one I'd bought myself. He emailed over a certificate for the work that I was told to keep in case a landlord ever asks.",
+    "memorable": [
+      "Came to £227.52 including VAT",
+      "Three hours of labour at £55 an hour",
+      "Work done mid-November 2025",
+      "Twelve-month guarantee on the job"
+    ],
+    "period": "November 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/tax_documents/us_tax_settlement_letter.md",
+    "gist": "The letter from Rowanmere, the tax advisors, wrapping up my taxes for the year my US posting with Meridian Loft ended and I moved back to the UK. Because of the company's equalisation arrangement I had to hand most of my American refunds back to the employer, leaving me only a small amount ahead.",
+    "memorable": [
+      "US refunds totalled about $3,450 but I owed the company $2,650 back",
+      "Ended up roughly $800 in pocket",
+      "Had 30 days from getting the federal refund cheque to pay the company",
+      "Refund cheques were being posted to my London address"
+    ],
+    "period": "May 2026, covering the 2025 US tax year",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/tax_documents/i9_employment_form.md",
+    "gist": "The work-eligibility form I filled in when I started the job in New York, proving I was allowed to work in the States. I was there on an H-1B with my British passport, living in the Brooklyn apartment at the time.",
+    "memorable": [
+      "Signed in early September 2023 when I started",
+      "Work authorisation ran until the end of September 2026",
+      "Used my UK passport plus the I-94 entry record as proof",
+      "Listed the Brooklyn address on Calver Street"
+    ],
+    "period": "September 2023",
+    "provenance": "ocr"
+  },
+  {
+    "path": "corpus/tax_documents/uk_self_assessment_year1.md",
+    "gist": "My first UK tax return after moving back from America - the complicated one, because the year was split between time abroad and time in the UK and I had to declare some leftover American bank interest. In the end the numbers matched what work had already deducted, so nothing extra to pay.",
+    "memorable": [
+      "Split-year treatment, having arrived back in July 2025",
+      "Declared about £160 of US bank interest from accounts I'd closed before the move",
+      "UK job pay was around £22,350 with roughly £2,800 tax taken through payroll",
+      "Filing deadline end of January 2027"
+    ],
+    "period": "Filed for the tax year April 2025 to April 2026",
+    "provenance": "converted"
+  }
+]

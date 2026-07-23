@@ -1,0 +1,194 @@
+[
+  {
+    "path": "corpus/notes/boiler-pressure-saga.md",
+    "gist": "My running diary of the boiler at the flat slowly losing pressure over a couple of months and me having to keep topping it up. Turned out a part inside had burst, and the engineer from the heating firm swapped it out during the annual service. Cost nearly three hundred quid but it's been fine since, though they warned me about a couple of things to keep an eye on.",
+    "memorable": [
+      "Repair plus service came to about £295, versus £120 for a plain service the previous autumn",
+      "The broken part was the expansion vessel, replaced in early June 2026",
+      "The engineer left a warning about the flue being very close to a window and limescale starting in the boiler",
+      "That warning is what got me thinking about a heat pump instead"
+    ],
+    "period": "April to June 2026",
+    "provenance": "native"
+  },
+  {
+    "path": "corpus/notes/standing-charge-dispute.md",
+    "gist": "Note about the time I caught my energy supplier charging a couple of pence a day more than the tariff said, going back a few months. I complained over chat, they first talked nonsense, then admitted it after a callback and put a small refund on the next bill. All that effort for two quid, but the principle mattered.",
+    "memorable": [
+      "The refund was £2.12, credited on the October bill",
+      "They'd been overcharging the daily rate since June, roughly 51p versus the advertised 49p",
+      "Complaint raised mid-September 2025, took about 90 minutes of my life",
+      "Takeaway: always sanity-check the daily charge on a new tariff's first bill"
+    ],
+    "period": "June to October 2025",
+    "provenance": "native"
+  },
+  {
+    "path": "corpus/notes/heat-pump-research.md",
+    "gist": "My comparison of two heat pump quotes for the flat, weighing up whether the landlord should replace the ageing gas boiler with one. One company was pricier but did much more thorough design work and included a year of monitoring; the other was over two grand cheaper but felt like a boiler outfit doing it on the side. I reckon the landlord will go for the cheap one.",
+    "memorable": [
+      "Quotes were roughly £11,900 versus £9,500, and a £7,500 government grant knocks both way down",
+      "The dearer firm reckoned running costs would drop from about £740 a year on gas to about £620 with the pump",
+      "The landlord (a company, Wrenmoor) surprisingly said they'd consider it if I got two quotes",
+      "Open questions included whether the hot water tank fits the cupboard and who claims the grant on a rental"
+    ],
+    "period": "June to July 2026",
+    "provenance": "native"
+  },
+  {
+    "path": "corpus/notes/moving-back-to-london.md",
+    "gist": "The big write-up of moving back from New York to London after two years away — getting the flat through the letting agent, the chicken-and-egg nightmare of needing an address for a bank account and a bank account for the tenancy, and all the utilities and admin hanging off that. Also covers shifting my American savings over via a currency broker and what I'd do differently, mainly ship fewer boxes.",
+    "memorable": [
+      "Got the flat keys on 1 August 2025 after three weeks at Mum's",
+      "Deposit was £1,850 and the rent works out at exactly £370 a week",
+      "Kept my American phone number on a cheap plan just for bank verification texts — best decision of the move",
+      "Left around $800 in the US current account to keep it open for tax season"
+    ],
+    "period": "July to October 2025, written up end of August",
+    "provenance": "native"
+  },
+  {
+    "path": "corpus/notes/credit-file-cleanup.md",
+    "gist": "Notes on sorting out my UK credit record after living in America — I pulled my report twice, a few months apart, to see the damage. Two years of perfect payments over there counted for nothing here; the file was just thin. Getting on the voter register was the single biggest improvement, and I took out a small credit card purely to build history.",
+    "memorable": [
+      "Checked the report in November 2025 and again in February 2026",
+      "US credit history is completely invisible to UK lenders, which still annoys me",
+      "Registering to vote gave the biggest score bump of anything I did",
+      "Put one streaming subscription on a new low-limit card, paid in full monthly, just to feed the score"
+    ],
+    "period": "November 2025 to March 2026",
+    "provenance": "native"
+  },
+  {
+    "path": "corpus/notes/brooklyn-apartment-hunt.md",
+    "gist": "My notes from hunting for a flat in Brooklyn when I first arrived in New York — a table of the five places I saw, the scams and lies of the listings, and how I grabbed the winner by applying from a coffee shop on my phone within an hour of viewing. Ends with the lessons learned, like always talking to the person moving out.",
+    "memorable": [
+      "Budget cap was $2,400 a month; the one I took was $2,275 on Calver Street",
+      "Lost one great place by applying six hours too late, which still stung years on",
+      "The broker's fee was a whole month's rent",
+      "The outgoing tenant warned me the radiator would clang in winter but the building manager was responsive — both true"
+    ],
+    "period": "September 2023, with a postscript from 2026",
+    "provenance": "native"
+  },
+  {
+    "path": "corpus/tenancy_legal/guarantor_deed.md",
+    "gist": "The insurance certificate the letting agent arranged instead of making me get a guarantor for the flat. My salary came in slightly under their affordability rule — two times the yearly rent instead of two and a half — so the landlord took out a policy covering unpaid rent and legal costs, and I didn't need anyone to co-sign.",
+    "memorable": [
+      "My checked salary was £37,554 against yearly rent of about £19,240 — just under their multiple",
+      "The policy covers up to a year of missed rent and £50,000 in court costs, with no excess",
+      "Landlord paid about £350 for it including tax",
+      "Referencing was finished in late July 2025, just before the tenancy started"
+    ],
+    "period": "July 2025, covering the year from August 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/tenancy_legal/employment_terms_of_offer.md",
+    "gist": "The job offer and contract from Halewick, the London company I joined when I moved back from the States — senior platform engineer role, signed electronically one evening in June. It sets out the salary, hybrid two-days-in-the-office arrangement, pension percentages, probation, and the usual confidentiality and IP stuff.",
+    "memorable": [
+      "Salary £37,554 a year, paid monthly around the 25th",
+      "Start date 4 August 2025, three months' probation",
+      "25 days' holiday plus bank holidays; employer puts in 5% pension, me 4%",
+      "Signed it electronically at about 8pm on 18 June 2025"
+    ],
+    "period": "June 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/uk_current_statements/ferrand-current-2025-08.md",
+    "gist": "The very first statement on my new UK bank account, opened the day the tenancy began. It's the month everything happened at once: the big transfer of dollars over from my American bank, paying the deposit and first rent to the letting agent, a huge furniture order, and my first UK salary landing at the end of the month.",
+    "memorable": [
+      "About $16,500 came over from the US, landing as roughly £12,266",
+      "Paid the agent £1,850 deposit plus the first month's rent of about £1,603",
+      "Spent £923 on the sofa order from the furniture place",
+      "First pay from the new job arrived on the 28th, around £1,406 for a partial month"
+    ],
+    "period": "August 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/uk_current_statements/ferrand-current-2026-06.md",
+    "gist": "The month on my UK current account where the boiler repair bill went out, plus the survey fee for one of the heat pump companies. Otherwise the usual rhythm of rent to the landlord, council tax, groceries, travel, and salary landing near the end of the month.",
+    "memorable": [
+      "Paid the heating firm £295.08 for the boiler fix mid-month",
+      "£150 to the renewables company for their heat pump survey",
+      "Rent of about £1,603 went out on the 1st as always",
+      "Salary in was about £2,440, and the bank turned on low-balance text alerts that month"
+    ],
+    "period": "June 2026",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/uk_payslips/payslip-2026-04.md",
+    "gist": "The payslip where my pay rise kicked in — first month of the new tax year, with a note saying the salary went up from the start of April and my tax code shifted slightly. Usual deductions for tax, national insurance, student loan, and the pension taken by salary sacrifice.",
+    "memorable": [
+      "Take-home was about £2,440 after the rise",
+      "Monthly gross went up to roughly £3,227",
+      "Student loan deduction crept up to £62 that month",
+      "Tax code changed from the standard one to a slightly higher allowance"
+    ],
+    "period": "April 2026",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/uk_savings_statements/ferrand-saver-2025-10.md",
+    "gist": "The first statement for the easy-access savings pot I opened alongside the new current account after moving back. Shows the initial two-grand lump I parked there in August, the start of the monthly £150 top-ups, and the first bit of interest.",
+    "memorable": [
+      "Opened with a £2,000 transfer in mid-August 2025",
+      "£150 going in at the start of each month after that",
+      "First interest payment was about £19, at roughly 4% a year",
+      "Balance stood around £2,319 at the end of October"
+    ],
+    "period": "August to October 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/us_checking_statements/harbor-checking-2025-05.md",
+    "gist": "One of the last months on my American current account before leaving New York — you can see the move coming, with a purchase of packing boxes and the bank's little reminder about updating your details if you're changing country. Otherwise normal Brooklyn life: rent to the building's management company, fortnightly pay, groceries, laundry, the gym.",
+    "memorable": [
+      "Rent on the apartment was $2,395 a month",
+      "Each fortnightly paycheque was about $2,118",
+      "Bought moving boxes from a packing supplies shop mid-month",
+      "Finished the month with around $12,700 in the account"
+    ],
+    "period": "May 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/us_paystubs/paystub-2025-05-30.md",
+    "gist": "One of my last American paycheque slips, the one where the payroll notes confirm my leaving date from the New York company — my final day was set for mid-June with one more payment to come. Standard fortnightly pay with US federal, state, and city taxes and the retirement plan contribution taken out.",
+    "memorable": [
+      "It recorded my last day as 13 June 2025",
+      "Salary there was $85,800 a year, about $2,118 net per fortnight",
+      "5% was going into the 401k each pay",
+      "Paid through a payroll outsourcing firm rather than the employer directly"
+    ],
+    "period": "Late May 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/us_savings_statements/harbor-savings-2025-q2.md",
+    "gist": "The spring quarter statement for my American savings account, the last full one before I moved back to the UK and drained it. Shows the final couple of $400 monthly top-ups from the current account and decent interest, plus a note about how the bank reports interest for people who aren't US residents.",
+    "memorable": [
+      "Ended the quarter just shy of $10,000",
+      "Was earning close to 4% interest, roughly $96 that quarter",
+      "The $400 monthly transfers stopped in May as the move approached",
+      "This account got emptied and was due to be closed after the move"
+    ],
+    "period": "April to June 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/water_bills/water-2025-11.md",
+    "gist": "The first water bill at the London flat, from the water company that somehow tracked me down on their own after I moved in. It covers the first three months at the address, worked out from an actual meter reading, with a note welcoming me and explaining that the place is metered so I only pay for what goes through the tap.",
+    "memorable": [
+      "Came to £119.69 for the first quarter, due start of December",
+      "Covered August through October 2025, my first months in the flat",
+      "Based on a real meter read of 27 cubic metres, not an estimate",
+      "The supplier is Brackenwater — they found me without me ever contacting them"
+    ],
+    "period": "August to November 2025",
+    "provenance": "converted"
+  }
+]

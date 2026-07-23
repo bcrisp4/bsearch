@@ -55,6 +55,11 @@ def main(argv: list[str] | None = None) -> int:
         "convert", help="convert corpus-src through bscribe into corpus/ + manifest"
     )
     conv.add_argument("corpus_dir", type=Path, help="corpus directory")
+
+    gold = sub.add_parser(
+        "golden", help="validate golden.yaml (schema + vocabulary-echo gate)"
+    )
+    gold.add_argument("corpus_dir", type=Path, help="corpus directory")
     conv.add_argument("--endpoint", default="http://localhost:18000")
     conv.add_argument(
         "--token-file",
@@ -66,6 +71,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "check":
         return _cmd_check(args.denylist, args.roots)
+    if args.command == "golden":
+        from corpusgen.golden import validate_golden
+
+        errors = validate_golden(args.corpus_dir)
+        for e in errors:
+            print(e)  # noqa: T201
+        print(f"{len(errors)} error(s)")  # noqa: T201
+        return 1 if errors else 0
     if args.command == "convert":
         from corpusgen.convert import convert
 
