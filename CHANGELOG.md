@@ -24,6 +24,18 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- New `bsearch eval run` command: scores an embedding model's retrieval
+  quality against a golden query set (`--corpus <dir>`, a corpusgen-built
+  corpus plus `golden.yaml`). It indexes the corpus into a scratch database
+  under `--work-dir` (default `~/bsearch-eval/work`, reused across reruns
+  against the same corpus and model — only a changed embedding fingerprint
+  re-triggers indexing), then embeds and searches every golden query,
+  recording recall@k, MRR, success@1, and per-stage latency. Results are
+  written as JSON (`--out`, default under `~/bsearch-eval/results/`) for
+  later comparison; a headline summary prints to the terminal. Never prints
+  query text or document content. `bsearch eval compare` and
+  `bsearch eval summarize` are not yet implemented.
+
 - New `bsearch search` command: semantic search over your indexed files from
   the terminal — `bsearch search "heat pump quote"`. The query is embedded
   with the same model-specific prefix used at indexing time, matched against

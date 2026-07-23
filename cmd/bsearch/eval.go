@@ -1,0 +1,372 @@
+package main
+
+import (
+	"context"
+	"crypto/sha256"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/bcrisp4/bsearch/internal/adapters/openai"
+	"github.com/bcrisp4/bsearch/internal/adapters/sqlite"
+	"github.com/bcrisp4/bsearch/internal/buildinfo"
+	"github.com/bcrisp4/bsearch/internal/chunker"
+	"github.com/bcrisp4/bsearch/internal/config"
+	"github.com/bcrisp4/bsearch/internal/discovery"
+	"github.com/bcrisp4/bsearch/internal/domain"
+	"github.com/bcrisp4/bsearch/internal/evalharness"
+	"github.com/bcrisp4/bsearch/internal/pipeline"
+)
+
+const (
+	// evalOverFetchFactor mirrors search.go's overFetchFactor: chunk hits
+	// are over-fetched before collapsing to best-chunk-per-document so a
+	// many-chunk document can't crowd others out of the ranking.
+	evalOverFetchFactor = 8
+
+	// evalMaxKNNK mirrors search.go's maxKNNK — sqlite-vec's KNN k ceiling
+	// (SQLITE_VEC_VEC0_K_MAX); the over-fetch clamps here.
+	evalMaxKNNK = 4096
+
+	// evalMaxLimit mirrors search.go's maxLimit bound on --limit.
+	evalMaxLimit = 1000
+
+	// evalProgressEvery prints a liveness line every N scored queries
+	// instead of per query — a large golden set (hundreds of queries)
+	// would otherwise print a line per query, and every such line is a
+	// place a query-text leak could creep in (DESIGN.md: Privacy).
+	evalProgressEvery = 50
+)
+
+// runEval dispatches eval subcommands (run|compare|summarize).
+func runEval(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("usage: bsearch eval <run|compare|summarize>")
+	}
+	switch args[0] {
+	case "run":
+		return runEvalRun(args[1:], out)
+	case "compare":
+		return runEvalCompare(args[1:], out)
+	case "summarize":
+		return runEvalSummarize(args[1:], out)
+	default:
+		return fmt.Errorf("unknown eval subcommand %q (usage: bsearch eval <run|compare|summarize>)", args[0])
+	}
+}
+
+// runEvalRun scores an embedding model against a golden query set
+// (DESIGN.md: eval harness): index the corpus into a scratch database, then
+// embed and KNN-search every golden query, scoring and timing each one.
+func runEvalRun(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("eval run", flag.ContinueOnError)
+	fs.SetOutput(out)
+	corpusDir := fs.String("corpus", "", "golden corpus directory (must contain golden.yaml)")
+	configPath := fs.String("config", config.DefaultPath(), "config file")
+	workDirFlag := fs.String("work-dir", "", "scratch index directory (default ~/bsearch-eval/work)")
+	outPath := fs.String("out", "", "results file path (default ~/bsearch-eval/results/<corpus>-<model>-<timestamp>.json)")
+	limit := fs.Int("limit", 10, "documents to retrieve per query")
+	fs.Usage = func() {
+		fmt.Fprintln(out, "usage: bsearch eval run --corpus <dir> [--config <path>] [--work-dir <dir>] [--out <path>] [--limit <n>]")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("eval run takes no positional arguments (got %q)", fs.Arg(0))
+	}
+	if *corpusDir == "" {
+		return errors.New("eval run requires --corpus <dir>")
+	}
+	if *limit < 1 || *limit > evalMaxLimit {
+		return fmt.Errorf("--limit %d out of range [1, %d]", *limit, evalMaxLimit)
+	}
+
+	home, homeErr := os.UserHomeDir()
+
+	workDir := *workDirFlag
+	if workDir == "" {
+		if homeErr != nil {
+			return fmt.Errorf("cannot resolve the default work directory (no home directory?) — pass --work-dir: %w", homeErr)
+		}
+		workDir = filepath.Join(home, "bsearch-eval", "work")
+	}
+
+	queries, err := evalharness.LoadGolden(*corpusDir)
+	if err != nil {
+		return err
+	}
+	if len(queries) == 0 {
+		return errors.New("golden set has no queries")
+	}
+	corpusVersion, err := evalharness.CorpusVersion(*corpusDir)
+	if err != nil {
+		return err
+	}
+
+	_, embedder, err := loadInference(*configPath)
+	if err != nil {
+		return err
+	}
+	spec := embedder.Spec()
+
+	absCorpusDir, err := filepath.Abs(*corpusDir)
+	if err != nil {
+		return err
+	}
+	corpusName := filepath.Base(absCorpusDir)
+	// Discovery canonicalizes include roots (symlinks in the root or its
+	// ancestors — e.g. macOS /var -> /private/var) before recording
+	// Document.Path, so relativizing hits against the unresolved
+	// absCorpusDir would produce a path full of "../" instead of a clean
+	// corpus-relative one. Resolve the same way here.
+	resolvedCorpusDir, err := filepath.EvalSymlinks(absCorpusDir)
+	if err != nil {
+		return err
+	}
+
+	// The scratch db is keyed by corpus name and embedding fingerprint —
+	// a rerun against the same corpus and model reuses the index rather
+	// than re-embedding every document (fingerprint changes invalidate it
+	// automatically, same as production's vec-spec check).
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
+		return err
+	}
+	fp8 := fmt.Sprintf("%x", sha256.Sum256([]byte(spec.Fingerprint())))[:8]
+	dbPath := filepath.Join(workDir, fmt.Sprintf("%s-%s.db", corpusName, fp8))
+
+	db, err := sqlite.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	store := sqlite.NewStore(db)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	indexStart := time.Now()
+	scanner := discovery.New(store, discovery.Options{
+		Include: []string{filepath.Join(absCorpusDir, "corpus")},
+		// The golden corpus is curated by corpusgen; production's deny
+		// rules exist to keep noise (caches, VCS internals) out of a
+		// live filesystem scan and have no business filtering a
+		// hand-built eval fixture.
+		Excluded: func(string) bool { return false },
+	})
+	scanRes, err := scanner.Scan(ctx)
+	if err != nil {
+		return err
+	}
+	for _, pe := range scanRes.PathErrors {
+		fmt.Fprintf(out, "warning: %s: %v\n", pe.Path, pe.Err)
+	}
+	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d renamed, %d skipped (iCloud placeholder)\n",
+		scanRes.Discovered, scanRes.Unchanged, scanRes.Renamed, scanRes.Dataless)
+
+	ix, err := pipeline.New(pipeline.Options{
+		Store:     store,
+		Vectors:   store,
+		Embedder:  embedder,
+		Transient: openai.Transient,
+		Progress:  out,
+	})
+	if err != nil {
+		return err
+	}
+	docs, err := store.ListIndexable(ctx)
+	if err != nil {
+		return err
+	}
+	sum, runErr := ix.Run(ctx, docs)
+
+	line := fmt.Sprintf("done: %d indexed, %d up to date, %d failed", sum.Indexed, sum.UpToDate, sum.Failed)
+	if sum.Skipped > 0 {
+		line += fmt.Sprintf(", %d skipped", sum.Skipped)
+	}
+	if sum.Warnings > 0 {
+		line += fmt.Sprintf(", %d warnings", sum.Warnings)
+	}
+	// Only a run that actually did indexing work gets a wall-clock time —
+	// a warm rerun against an up-to-date scratch db recorded 0 here would
+	// otherwise be indistinguishable from "indexing was instantaneous".
+	var indexSeconds float64
+	if sum.Indexed > 0 {
+		indexSeconds = time.Since(indexStart).Seconds()
+	}
+	fmt.Fprintf(out, "%s (%.1fs)\n", line, indexSeconds)
+	if runErr != nil {
+		return runErr
+	}
+	// A failed document invalidates the run: scoring against a corpus
+	// that silently dropped a document would misattribute a retrieval
+	// miss to the model instead of to the indexing failure.
+	if sum.Failed > 0 {
+		return fmt.Errorf("%d document(s) failed to index — see output above", sum.Failed)
+	}
+
+	scored := make([]evalharness.ScoredQuery, 0, len(queries))
+	results := make([]evalharness.QueryResult, 0, len(queries))
+	embedMS := make([]float64, 0, len(queries))
+	knnMS := make([]float64, 0, len(queries))
+	totalMS := make([]float64, 0, len(queries))
+	var dims int
+
+	for i, q := range queries {
+		embedStart := time.Now()
+		vec, err := embedder.EmbedQuery(ctx, q.Query)
+		embedElapsed := time.Since(embedStart)
+		if err != nil {
+			return fmt.Errorf("query %s: embed: %w", q.ID, err)
+		}
+		if i == 0 {
+			dims = len(vec)
+		}
+
+		knnStart := time.Now()
+		hits, err := store.SearchVectors(ctx, vec, min(*limit*evalOverFetchFactor, evalMaxKNNK))
+		knnElapsed := time.Since(knnStart)
+		if err != nil {
+			return fmt.Errorf("query %s: search: %w", q.ID, err)
+		}
+
+		collapsed := domain.CollapseBestPerDoc(hits, *limit)
+		ranked := make([]evalharness.RankedDoc, len(collapsed))
+		for n, h := range collapsed {
+			rel, err := filepath.Rel(resolvedCorpusDir, h.Doc.Path)
+			if err != nil {
+				return fmt.Errorf("query %s: relativize %q: %w", q.ID, h.Doc.Path, err)
+			}
+			ranked[n] = evalharness.RankedDoc{Path: rel, Distance: h.Distance}
+		}
+		evalharness.SortRanked(ranked)
+
+		// Zero-answer queries are still embedded, searched, and recorded
+		// (a model's behaviour on "no correct answer exists" is worth
+		// keeping), but scoring them would divide by zero — ScoreQuery
+		// itself guards that, but skipping the call keeps the intent
+		// explicit here too.
+		var score evalharness.QueryScore
+		if !q.HasTag("zero-answer") {
+			score = evalharness.ScoreQuery(q, ranked, *limit)
+		}
+
+		scored = append(scored, evalharness.ScoredQuery{Query: q, Ranked: ranked, Score: score})
+		results = append(results, evalharness.QueryResult{
+			ID:         q.ID,
+			Query:      q.Query,
+			Tags:       q.Tags,
+			Relevant:   q.Relevant,
+			Ranked:     ranked,
+			QueryScore: score,
+			LatencyMS:  evalharness.QueryLatency{EmbedMS: msF(embedElapsed), KNNMS: msF(knnElapsed)},
+		})
+
+		embedMS = append(embedMS, msF(embedElapsed))
+		knnMS = append(knnMS, msF(knnElapsed))
+		totalMS = append(totalMS, msF(embedElapsed+knnElapsed))
+
+		if (i+1)%evalProgressEvery == 0 || i == len(queries)-1 {
+			fmt.Fprintf(out, "scored %d/%d queries\n", i+1, len(queries))
+		}
+	}
+
+	res := evalharness.Results{
+		Bsearch: evalharness.BsearchInfo{
+			Version:        buildinfo.Version,
+			ChunkerVersion: chunker.Version,
+		},
+		Corpus: evalharness.CorpusInfo{
+			Name:    corpusName,
+			Path:    absCorpusDir,
+			Version: corpusVersion,
+		},
+		Model: evalharness.ModelInfo{
+			Name:          spec.Model,
+			Dims:          dims,
+			Fingerprint:   spec.Fingerprint(),
+			QueryPrefix:   spec.QueryTemplate,
+			PassagePrefix: spec.PassageTemplate,
+		},
+		Run: evalharness.RunInfo{
+			StartedAt:    time.Now().UTC(),
+			IndexSeconds: indexSeconds,
+			IndexedDocs:  sum.Indexed,
+			Queries:      len(queries),
+		},
+		Aggregates: evalharness.Aggregate(scored),
+		LatencyMS: evalharness.LatencySummary{
+			Embed: evalharness.PercentilePair{P50: evalharness.Percentile(embedMS, 50), P95: evalharness.Percentile(embedMS, 95)},
+			KNN:   evalharness.PercentilePair{P50: evalharness.Percentile(knnMS, 50), P95: evalharness.Percentile(knnMS, 95)},
+			Total: evalharness.PercentilePair{P50: evalharness.Percentile(totalMS, 50), P95: evalharness.Percentile(totalMS, 95)},
+		},
+		Queries: results,
+	}
+
+	resolvedOut := *outPath
+	if resolvedOut == "" {
+		if homeErr != nil {
+			return fmt.Errorf("cannot resolve the default results path (no home directory?) — pass --out: %w", homeErr)
+		}
+		timestamp := time.Now().UTC().Format("20060102T150405Z")
+		resolvedOut = filepath.Join(home, "bsearch-eval", "results",
+			fmt.Sprintf("%s-%s-%s.json", corpusName, sanitizeModelName(spec.Model), timestamp))
+	}
+	if err := evalharness.WriteResults(resolvedOut, res); err != nil {
+		return err
+	}
+
+	printEvalSummary(out, res, *limit, resolvedOut)
+	return nil
+}
+
+// msF converts a duration to milliseconds as a float64, evalharness's unit
+// for all recorded latencies.
+func msF(d time.Duration) float64 {
+	return float64(d) / float64(time.Millisecond)
+}
+
+// sanitizeModelName makes a model name safe as a path component: "/" and
+// ":" are common in model identifiers (e.g. "nomic-ai/nomic-embed-text-v1.5"
+// or a registry tag) but not valid or wanted in a single filename segment.
+func sanitizeModelName(name string) string {
+	r := strings.NewReplacer("/", "-", ":", "-")
+	return r.Replace(name)
+}
+
+// printEvalSummary prints the run's headline: corpus and model identity,
+// the no-exact-match overall score, latency, and where the results file
+// landed. Never prints query text or document content (DESIGN.md: Privacy).
+func printEvalSummary(out io.Writer, r evalharness.Results, limit int, outPath string) {
+	fmt.Fprintf(out, "corpus %s (%s)  model %s  %d queries\n",
+		r.Corpus.Name, r.Corpus.Version, r.Model.Name, r.Run.Queries)
+	agg := r.Aggregates.OverallNoExact
+	fmt.Fprintf(out, "overall (excl. exact): recall@%d %.3f  MRR@%d %.3f  success@1 %.2f  (n=%d)\n",
+		limit, agg.RecallAtK, limit, agg.MRRAtK, agg.SuccessAt1, agg.N)
+	fmt.Fprintf(out, "latency: embed p50 %.0fms p95 %.0fms  knn p50 %.0fms p95 %.0fms\n",
+		r.LatencyMS.Embed.P50, r.LatencyMS.Embed.P95, r.LatencyMS.KNN.P50, r.LatencyMS.KNN.P95)
+	fmt.Fprintf(out, "results written to %s\n", outPath)
+}
+
+// runEvalCompare will diff two eval runs' scores against each other
+// (evalharness.CompareResults) — Task 8.
+func runEvalCompare(args []string, out io.Writer) error {
+	return errors.New("eval compare is not implemented yet")
+}
+
+// runEvalSummarize will bench a summarizer LLM's throughput and quality over
+// the golden corpus (evalharness.ChatClient) — Task 9.
+func runEvalSummarize(args []string, out io.Writer) error {
+	return errors.New("eval summarize is not implemented yet")
+}
