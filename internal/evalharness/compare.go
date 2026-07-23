@@ -52,9 +52,9 @@ type queryPair struct {
 
 // CompareResults pairs run b against run a per query id and reports how b
 // changed relative to a. It refuses to compare runs that didn't score the
-// same golden set: a mismatched corpus name or version, or a query id
-// present in one run but not the other, is an error rather than a partial
-// comparison.
+// same golden set: a mismatched corpus name or version, chunker version,
+// limit, or a query id present in one run but not the other, is an error
+// rather than a partial comparison.
 //
 // Zero-answer-tagged queries are excluded everywhere (they have no RR or
 // recall to compare); exact-tagged queries are excluded from OverallNoExact
@@ -72,6 +72,9 @@ func CompareResults(a, b Results) (Comparison, error) {
 	}
 	if a.Corpus.Version != b.Corpus.Version {
 		return Comparison{}, fmt.Errorf("compare: corpus version differs: a=%q b=%q", a.Corpus.Version, b.Corpus.Version)
+	}
+	if a.Bsearch.ChunkerVersion != b.Bsearch.ChunkerVersion {
+		return Comparison{}, fmt.Errorf("compare: chunker version differs: a=%q b=%q", a.Bsearch.ChunkerVersion, b.Bsearch.ChunkerVersion)
 	}
 	if a.Run.Limit != b.Run.Limit {
 		return Comparison{}, fmt.Errorf("compare: limit differs: a=%d b=%d", a.Run.Limit, b.Run.Limit)
@@ -91,20 +94,18 @@ func CompareResults(a, b Results) (Comparison, error) {
 	// Iterate a.Queries in order (never map iteration order) so slice
 	// membership and pairing are deterministic across runs of compare.
 	for _, qa := range a.Queries {
-		if resultHasTag(qa, "zero-answer") {
+		zeroAnswer, exact, sliceTags := classifyTags(qa.Tags)
+		if zeroAnswer {
 			continue
 		}
 		p := queryPair{A: qa, B: bByID[qa.ID]}
 
 		overall = append(overall, p)
-		if !resultHasTag(qa, "exact") {
+		if !exact {
 			overallNoExact = append(overallNoExact, p)
 		}
 
-		for _, tag := range qa.Tags {
-			if tag == "zero-answer" {
-				continue
-			}
+		for _, tag := range sliceTags {
 			tagPairs[tag] = append(tagPairs[tag], p)
 		}
 	}
@@ -122,18 +123,6 @@ func CompareResults(a, b Results) (Comparison, error) {
 		Overall:        compareSlice(overall),
 		Slices:         slices,
 	}, nil
-}
-
-// resultHasTag reports whether tag is present in q.Tags. QueryResult (unlike
-// Query) has no HasTag method of its own — it carries a plain tags slice
-// copied into the results file rather than the golden.Query type.
-func resultHasTag(q QueryResult, tag string) bool {
-	for _, t := range q.Tags {
-		if t == tag {
-			return true
-		}
-	}
-	return false
 }
 
 // compareSlice recomputes A/B SliceStats and win/loss/tie counts from

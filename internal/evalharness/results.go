@@ -137,6 +137,41 @@ func CorpusVersion(corpusDir string) (string, error) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// docsVersionNoManifest is DocsVersion's return value when corpusDir has no
+// corpus/manifest.json: without per-file content hashes there is no way to
+// detect a deleted document, so staleness detection for such a corpus falls
+// back entirely to pipeline idempotency (which does catch added/edited
+// files, just not deletions). Hand-built local corpora without a manifest
+// accept this limitation.
+const docsVersionNoManifest = "nomanifest"
+
+// DocsVersion identifies a corpus's document set alone — sha256 over
+// corpus/manifest.json — as "sha256:<hex>", or the literal "nomanifest"
+// when corpusDir has no manifest.json (see docsVersionNoManifest).
+//
+// This is deliberately narrower than CorpusVersion (which also hashes
+// golden.yaml): the eval work database only needs to be invalidated when
+// the document set changes underneath it — discovery has no deletion pass,
+// so a corpus regenerated in place would otherwise leave a deleted
+// document's stale vectors in a reused db. Editing golden.yaml (relabeling
+// a query, fixing a typo) changes CorpusVersion but must not force a
+// pointless re-embed of an unchanged corpus, so the work-db key is derived
+// from DocsVersion, not CorpusVersion.
+func DocsVersion(corpusDir string) (string, error) {
+	manifest, err := os.ReadFile(filepath.Join(corpusDir, "corpus", "manifest.json"))
+	switch {
+	case err == nil:
+		h := sha256.New()
+		fmt.Fprintf(h, "%d:", len(manifest))
+		h.Write(manifest)
+		return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+	case errors.Is(err, fs.ErrNotExist):
+		return docsVersionNoManifest, nil
+	default:
+		return "", fmt.Errorf("docs version: %w", err)
+	}
+}
+
 // Percentile returns the nearest-rank percentile (p in (0,100]) of vals,
 // sorting a copy so the caller's slice is never mutated. Empty input
 // returns 0 rather than panicking or dividing by zero.

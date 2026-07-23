@@ -27,12 +27,7 @@ type Query struct {
 
 // HasTag reports whether tag is present in the query's Tags.
 func (q Query) HasTag(tag string) bool {
-	for _, t := range q.Tags {
-		if t == tag {
-			return true
-		}
-	}
-	return false
+	return hasTag(q.Tags, tag)
 }
 
 // goldenFile is the on-disk shape of golden.yaml. Unknown keys are ignored
@@ -50,7 +45,10 @@ type goldenFile struct {
 // surfaces every problem instead of stopping at the first.
 //
 // Rejected: duplicate query ids; empty query text; a relevant/acceptable
-// path that doesn't exist under corpusDir; the "zero-answer" tag combined
+// path that doesn't exist under corpusDir; a path listed in both Relevant
+// and Acceptable for the same query (ScoreQuery condenses it out of the
+// ranking before hit-counting, so it can never score a hit, yet it would
+// still inflate the recall denominator); the "zero-answer" tag combined
 // with a non-empty Relevant (the tag asserts the corpus has no correct
 // answer for the query).
 func LoadGolden(corpusDir string) ([]Query, error) {
@@ -80,7 +78,9 @@ func LoadGolden(corpusDir string) ([]Query, error) {
 			errs = append(errs, fmt.Errorf("%s: tagged zero-answer but has non-empty relevant", q.ID))
 		}
 
+		relevantSet := make(map[string]bool, len(q.Relevant))
 		for _, rel := range q.Relevant {
+			relevantSet[rel] = true
 			if err := checkPathExists(corpusDir, rel); err != nil {
 				errs = append(errs, fmt.Errorf("%s: relevant path %q: %w", q.ID, rel, err))
 			}
@@ -88,6 +88,14 @@ func LoadGolden(corpusDir string) ([]Query, error) {
 		for _, rel := range q.Acceptable {
 			if err := checkPathExists(corpusDir, rel); err != nil {
 				errs = append(errs, fmt.Errorf("%s: acceptable path %q: %w", q.ID, rel, err))
+			}
+			// ScoreQuery condenses a path in both sets out of the ranking
+			// before hit-counting (it can never score as a hit), yet it
+			// still counts in the recall denominator via len(q.Relevant) —
+			// silently corrupting recall for this query. Reject the
+			// overlap outright rather than let it score.
+			if relevantSet[rel] {
+				errs = append(errs, fmt.Errorf("%s: path in both relevant and acceptable: %s", q.ID, rel))
 			}
 		}
 	}

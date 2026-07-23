@@ -71,6 +71,93 @@ func TestCorpusVersion_ManifestOptional(t *testing.T) {
 	}
 }
 
+func TestDocsVersion_Deterministic(t *testing.T) {
+	v1, err := DocsVersion(fixtureDir)
+	if err != nil {
+		t.Fatalf("DocsVersion() error = %v, want nil", err)
+	}
+	v2, err := DocsVersion(fixtureDir)
+	if err != nil {
+		t.Fatalf("DocsVersion() error = %v, want nil", err)
+	}
+	if v1 != v2 {
+		t.Errorf("DocsVersion() not deterministic: %q != %q", v1, v2)
+	}
+	if !strings.HasPrefix(v1, "sha256:") {
+		t.Errorf("DocsVersion() = %q, want sha256: prefix", v1)
+	}
+}
+
+func TestDocsVersion_ChangesWithManifest(t *testing.T) {
+	before, err := DocsVersion(fixtureDir)
+	if err != nil {
+		t.Fatalf("DocsVersion() error = %v, want nil", err)
+	}
+
+	dir := copyFixture(t)
+	path := filepath.Join(dir, "corpus", "manifest.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read manifest.json: %v", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatalf("write manifest.json: %v", err)
+	}
+
+	after, err := DocsVersion(dir)
+	if err != nil {
+		t.Fatalf("DocsVersion() error = %v, want nil", err)
+	}
+	if before == after {
+		t.Errorf("DocsVersion() unchanged after appending a byte to manifest.json: %q", after)
+	}
+}
+
+func TestDocsVersion_NoManifestFallback(t *testing.T) {
+	dir := copyFixture(t)
+	if err := os.Remove(filepath.Join(dir, "corpus", "manifest.json")); err != nil {
+		t.Fatalf("remove manifest.json: %v", err)
+	}
+
+	v, err := DocsVersion(dir)
+	if err != nil {
+		t.Fatalf("DocsVersion() with no manifest.json: error = %v, want nil", err)
+	}
+	if v != "nomanifest" {
+		t.Errorf("DocsVersion() with no manifest.json = %q, want %q", v, "nomanifest")
+	}
+}
+
+// TestDocsVersion_UnaffectedByGolden asserts Finding 4's fix: unlike
+// CorpusVersion (which folds in golden.yaml so compare can gate on the
+// query set too), DocsVersion hashes only the document set — editing
+// query labels in golden.yaml must not mint a new work-db key and force a
+// pointless re-embed of an unchanged corpus.
+func TestDocsVersion_UnaffectedByGolden(t *testing.T) {
+	before, err := DocsVersion(fixtureDir)
+	if err != nil {
+		t.Fatalf("DocsVersion() error = %v, want nil", err)
+	}
+
+	dir := copyFixture(t)
+	path := filepath.Join(dir, "golden.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden.yaml: %v", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatalf("write golden.yaml: %v", err)
+	}
+
+	after, err := DocsVersion(dir)
+	if err != nil {
+		t.Fatalf("DocsVersion() error = %v, want nil", err)
+	}
+	if before != after {
+		t.Errorf("DocsVersion() changed after editing golden.yaml: before=%q after=%q", before, after)
+	}
+}
+
 func TestPercentile_NearestRank(t *testing.T) {
 	vals := []float64{10, 20, 30, 40, 50, 60, 70, 80, 90, 100}
 	orig := append([]float64(nil), vals...)

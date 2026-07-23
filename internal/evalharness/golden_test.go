@@ -126,6 +126,26 @@ func TestLoadGolden_ZeroAnswerWithRelevant(t *testing.T) {
 	}
 }
 
+func TestLoadGolden_RelevantAcceptableOverlap(t *testing.T) {
+	dir := copyFixture(t)
+	editGolden(t, dir, "tags: [recall, letters, converted]",
+		"acceptable:\n      - corpus/letters/renewal.md\n    tags: [recall, letters, converted]")
+
+	_, err := LoadGolden(dir)
+	if err == nil {
+		t.Fatal("LoadGolden() error = nil, want error naming the relevant/acceptable overlap")
+	}
+	if !strings.Contains(err.Error(), "q001") {
+		t.Errorf("error %q does not contain %q", err.Error(), "q001")
+	}
+	if !strings.Contains(err.Error(), "both relevant and acceptable") {
+		t.Errorf("error %q does not contain %q", err.Error(), "both relevant and acceptable")
+	}
+	if !strings.Contains(err.Error(), "corpus/letters/renewal.md") {
+		t.Errorf("error %q does not contain the offending path", err.Error())
+	}
+}
+
 func TestLoadGolden_EmptyQueryText(t *testing.T) {
 	dir := copyFixture(t)
 	editGolden(t, dir, "query: that letter about the rent going up", "query: ''")

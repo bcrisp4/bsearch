@@ -44,12 +44,21 @@ bsearch eval summarize --corpus <dir> [--config <path>] --model <name>
 2. **Index via the production stack.** `discovery` with Include =
    `<corpus>/corpus/`, then the production `pipeline` (chunker → embedder →
    sqlite store) into a work database at
-   `<work-dir>/<corpus-name>-<corpus-version8>-<fingerprint8>.db`, keyed by
-   corpus name, corpus version (first 8 hex chars of the `sha256:` corpus
-   hash), and embedding-spec fingerprint — the corpus version is folded in
-   because discovery has no deletion pass, so regenerating a corpus in place
-   would otherwise leave a deleted document's stale vectors in the reused db
-   even though the run records the new corpus version. Pipeline idempotency
+   `<work-dir>/<corpus-name>-<docs-version8>-<fingerprint8>.db`, keyed by
+   corpus name, the corpus's DOCUMENT set (first 8 hex chars of
+   `DocsVersion`'s `sha256:` hash over `corpus/manifest.json` alone, or the
+   literal `nomanifest` when the corpus has none), and embedding-spec
+   fingerprint — the document set is folded in because discovery has no
+   deletion pass, so regenerating a corpus in place would otherwise leave a
+   deleted document's stale vectors in the reused db even though the run
+   records the new corpus version. Keying on the document set rather than
+   the combined corpus version (query set + document set) means editing
+   `golden.yaml` alone — relabeling a query, fixing a typo — no longer
+   invalidates the cache: `manifest.json` carries per-file content hashes,
+   so an add/edit/delete of a document changes it, while a `golden.yaml`-only
+   edit doesn't touch it. A corpus with no `manifest.json` can't detect
+   deletions this way; pipeline idempotency still catches added/edited
+   files, and hand-built local corpora accept that gap. Pipeline idempotency
    is the cache: re-running with the same model and corpus skips straight to
    querying. Index wall time and doc/chunk counts are recorded only when
    work actually happened. There is no eval-specific indexing code; a bug
@@ -121,8 +130,10 @@ Query handling rules:
 ## Comparing two runs (`eval compare`)
 
 Input: two results files. Refuses to compare unless corpus name, corpus
-version, `--limit`, and query-id sets match — comparing runs scored at
-different limits would report a cutoff artifact as a model delta.
+version, chunker version, `--limit`, and query-id sets match — comparing
+runs scored at different limits would report a cutoff artifact as a model
+delta, and comparing runs indexed under different chunk boundaries would do
+the same for chunking, not the model.
 
 Output, overall and per slice:
 
@@ -160,7 +171,7 @@ JSON, one file per run:
   },
   "run": {
     "started_at": "...", "index_seconds": 0, "indexed_docs": 0,
-    "indexed_chunks": 0, "queries": 196, "limit": 10
+    "queries": 196, "limit": 10
   },
   "aggregates": {
     "overall_no_exact": {"recall_at_10": 0.0, "mrr_at_10": 0.0,

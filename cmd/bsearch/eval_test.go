@@ -181,6 +181,97 @@ func TestEvalRun_CondensesBeforeCutoff(t *testing.T) {
 	}
 }
 
+// writeSymlinkedEvalCorpus builds the same fixture as writeEvalCorpus, but
+// <root>/corpus is a symlink to a separate real directory holding the
+// documents, rather than a real directory itself — Finding 6's regression
+// case: discovery canonicalizes the full include root
+// (<corpusDir>/corpus), so a hit's Document.Path lands under the symlink's
+// target, not under <corpusDir>/corpus.
+func writeSymlinkedEvalCorpus(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	realDocs := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(realDocs, "letters"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(realDocs, "invoices"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(realDocs, "letters", "renewal.md"),
+		[]byte("Your rent is going up this year.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(realDocs, "invoices", "boiler.md"),
+		[]byte("Invoice DS-26417 for the boiler service.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realDocs, filepath.Join(root, "corpus")); err != nil {
+		t.Fatal(err)
+	}
+
+	golden := `queries:
+  - id: q1
+    query: rent going up
+    relevant:
+      - corpus/letters/renewal.md
+    tags: [kw]
+  - id: q2
+    query: boiler invoice cost
+    relevant:
+      - corpus/invoices/boiler.md
+    tags: [exact]
+`
+	if err := os.WriteFile(filepath.Join(root, "golden.yaml"), []byte(golden), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// TestEvalRun_SymlinkedCorpusSubdir asserts Finding 6's fix: when
+// <corpusDir>/corpus is itself a symlink (not just an ancestor of
+// --corpus), ranked hits must still relativize to clean "corpus/..." paths
+// that match golden.yaml — not a path full of "../" that can never match,
+// silently zeroing every score.
+func TestEvalRun_SymlinkedCorpusSubdir(t *testing.T) {
+	srv := fakeEmbeddingsServer(t, evalTestVec)
+
+	dir := t.TempDir()
+	corpusDir := writeSymlinkedEvalCorpus(t)
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	workDir := filepath.Join(dir, "work")
+	outPath := filepath.Join(dir, "out", "results.json")
+
+	var buf strings.Builder
+	err := run([]string{
+		"eval", "run",
+		"--corpus", corpusDir,
+		"--config", cfgPath,
+		"--work-dir", workDir,
+		"--out", outPath,
+	}, &buf)
+	if err != nil {
+		t.Fatalf("run(eval run) = %v\noutput:\n%s", err, buf.String())
+	}
+
+	res, err := evalharness.ReadResults(outPath)
+	if err != nil {
+		t.Fatalf("ReadResults() error = %v", err)
+	}
+	if res.Aggregates.Overall.RecallAtK != 1.0 {
+		t.Errorf("Overall.RecallAtK = %v, want 1.0 (symlinked corpus/ must still match golden.yaml paths)", res.Aggregates.Overall.RecallAtK)
+	}
+	for _, q := range res.Queries {
+		for _, rd := range q.Ranked {
+			if !strings.HasPrefix(rd.Path, "corpus/") {
+				t.Errorf("query %s: ranked path %q does not have corpus/ prefix", q.ID, rd.Path)
+			}
+			if strings.Contains(rd.Path, "..") {
+				t.Errorf("query %s: ranked path %q contains .. (symlink not resolved correctly)", q.ID, rd.Path)
+			}
+		}
+	}
+}
+
 func TestEvalRun_EndToEnd(t *testing.T) {
 	srv := fakeEmbeddingsServer(t, evalTestVec)
 
@@ -238,12 +329,17 @@ func TestEvalRun_EndToEnd(t *testing.T) {
 	}
 }
 
-// TestEvalRun_WorkDBKeyedByCorpusVersion asserts Finding 3's fix: the work
-// db filename folds in both the corpus-version hash and the embedding
-// fingerprint, so regenerating a corpus in place (new version, same name)
-// can never reuse a stale db that still has a deleted document's vectors —
-// discovery has no deletion pass to clean that up itself.
-func TestEvalRun_WorkDBKeyedByCorpusVersion(t *testing.T) {
+// TestEvalRun_WorkDBKeyedByDocsVersion asserts Finding 4's fix: the work db
+// filename folds in the corpus's DOCUMENT-set hash (evalharness.DocsVersion
+// — corpus/manifest.json alone) and the embedding fingerprint, not the
+// combined CorpusVersion (golden.yaml + manifest.json). Regenerating a
+// corpus in place (new manifest, same name) can never reuse a stale db that
+// still has a deleted document's vectors — discovery has no deletion pass
+// to clean that up itself — while editing only golden.yaml keeps the same
+// db key and reuses the index (TestEvalRun_SecondRunSkipsIndexing-style
+// idempotency), because writeEvalCorpus's fixture has no manifest.json and
+// DocsVersion falls back to the constant "nomanifest" either way.
+func TestEvalRun_WorkDBKeyedByDocsVersion(t *testing.T) {
 	srv := fakeEmbeddingsServer(t, evalTestVec)
 
 	dir := t.TempDir()
@@ -268,11 +364,13 @@ func TestEvalRun_WorkDBKeyedByCorpusVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadResults() error = %v", err)
 	}
-	corpusVersion, err := evalharness.CorpusVersion(corpusDir)
+	docsVersion, err := evalharness.DocsVersion(corpusDir)
 	if err != nil {
-		t.Fatalf("CorpusVersion() error = %v", err)
+		t.Fatalf("DocsVersion() error = %v", err)
 	}
-	corpusHash8 := strings.TrimPrefix(corpusVersion, "sha256:")[:8]
+	if docsVersion != "nomanifest" {
+		t.Fatalf("DocsVersion(fixture with no manifest.json) = %q, want %q", docsVersion, "nomanifest")
+	}
 	fp8 := fmt.Sprintf("%x", sha256.Sum256([]byte(res.Model.Fingerprint)))[:8]
 
 	entries, err := os.ReadDir(workDir)
@@ -288,11 +386,90 @@ func TestEvalRun_WorkDBKeyedByCorpusVersion(t *testing.T) {
 	if len(dbNames) != 1 {
 		t.Fatalf("work dir .db files = %v, want exactly 1", dbNames)
 	}
-	if !strings.Contains(dbNames[0], corpusHash8) {
-		t.Errorf("db filename %q does not contain corpus-version hash fragment %q", dbNames[0], corpusHash8)
+	if !strings.Contains(dbNames[0], docsVersion) {
+		t.Errorf("db filename %q does not contain docs-version fragment %q", dbNames[0], docsVersion)
 	}
 	if !strings.Contains(dbNames[0], fp8) {
 		t.Errorf("db filename %q does not contain fingerprint fragment %q", dbNames[0], fp8)
+	}
+}
+
+// TestEvalRun_WorkDBUnaffectedByGoldenEdit asserts the other half of
+// Finding 4: editing golden.yaml labels (query text, tags) alone — no
+// change to corpus/ — must reuse the existing work db rather than minting
+// a new key and re-embedding an unchanged document set. CorpusVersion (the
+// results-file field) does change, since it hashes golden.yaml too; only
+// the work-db key must stay put.
+func TestEvalRun_WorkDBUnaffectedByGoldenEdit(t *testing.T) {
+	srv := fakeEmbeddingsServer(t, evalTestVec)
+
+	dir := t.TempDir()
+	corpusDir := writeEvalCorpus(t)
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	workDir := filepath.Join(dir, "work")
+
+	runArgs := func(outPath string) []string {
+		return []string{
+			"eval", "run",
+			"--corpus", corpusDir,
+			"--config", cfgPath,
+			"--work-dir", workDir,
+			"--out", outPath,
+		}
+	}
+
+	var buf strings.Builder
+	firstOut := filepath.Join(dir, "first.json")
+	if err := run(runArgs(firstOut), &buf); err != nil {
+		t.Fatalf("first run: %v\noutput:\n%s", err, buf.String())
+	}
+	firstEntries, err := os.ReadDir(workDir)
+	if err != nil {
+		t.Fatalf("ReadDir(workDir) = %v", err)
+	}
+
+	// Relabel q1's tag — golden.yaml content changes (CorpusVersion
+	// changes), corpus/ does not (DocsVersion unchanged).
+	goldenPath := filepath.Join(corpusDir, "golden.yaml")
+	data, err := os.ReadFile(goldenPath)
+	if err != nil {
+		t.Fatalf("read golden.yaml: %v", err)
+	}
+	edited := strings.Replace(string(data), "tags: [kw]", "tags: [kw, relabeled]", 1)
+	if edited == string(data) {
+		t.Fatal("editGolden: tags: [kw] not found in golden.yaml")
+	}
+	if err := os.WriteFile(goldenPath, []byte(edited), 0o600); err != nil {
+		t.Fatalf("write golden.yaml: %v", err)
+	}
+
+	buf.Reset()
+	secondOut := filepath.Join(dir, "second.json")
+	if err := run(runArgs(secondOut), &buf); err != nil {
+		t.Fatalf("second run: %v\noutput:\n%s", err, buf.String())
+	}
+	if !strings.Contains(buf.String(), "up to date") {
+		t.Errorf("second run output = %q, want it to mention up to date (no re-embed after a golden.yaml-only edit)", buf.String())
+	}
+
+	secondEntries, err := os.ReadDir(workDir)
+	if err != nil {
+		t.Fatalf("ReadDir(workDir) = %v", err)
+	}
+	if len(firstEntries) != 1 || len(secondEntries) != 1 || firstEntries[0].Name() != secondEntries[0].Name() {
+		t.Errorf("work db filename changed after a golden.yaml-only edit: before=%v after=%v", firstEntries, secondEntries)
+	}
+
+	firstRes, err := evalharness.ReadResults(firstOut)
+	if err != nil {
+		t.Fatalf("ReadResults(first) error = %v", err)
+	}
+	secondRes, err := evalharness.ReadResults(secondOut)
+	if err != nil {
+		t.Fatalf("ReadResults(second) error = %v", err)
+	}
+	if firstRes.Corpus.Version == secondRes.Corpus.Version {
+		t.Errorf("Corpus.Version unchanged despite editing golden.yaml: %q", firstRes.Corpus.Version)
 	}
 }
 
@@ -338,6 +515,161 @@ func TestEvalRun_SecondRunSkipsIndexing(t *testing.T) {
 	}
 	if res.Run.IndexedDocs != 0 {
 		t.Errorf("second run Run.IndexedDocs = %d, want 0 (no indexing work happened)", res.Run.IndexedDocs)
+	}
+}
+
+// TestEvalRun_SkippedDocErrors asserts Finding 1's fix: an eval corpus that
+// indexes incompletely (pipeline Summary.Skipped > 0) must fail the run —
+// unlike production indexing, where an environmental skip is retried next
+// run and never fails the invocation, an eval corpus that silently drops a
+// document corrupts every score computed against it.
+//
+// Driving Summary.Skipped > 0 needs two runs against the same work db:
+// discovery's cheap up-to-date check (size/mtime match, no reopen) means a
+// file already known to the store is never reopened by discovery itself,
+// only by the pipeline when the document still needs (re)processing. So:
+// run 1 lets discovery read the file normally (state becomes discovered,
+// then chunked) but a server rigged to fail passage-embedding requests
+// aborts indexing before the document reaches state=indexed, leaving it
+// chunked in the work db. Only then is the file chmod'd unreadable — size
+// and mtime are untouched, so run 2's discovery scan takes the cheap path
+// (no PathError) and hands the still-chunked document to the pipeline,
+// which fails to open it and increments Summary.Skipped, exactly the "scan
+// saw it, pipeline couldn't read it" scenario this fix targets.
+func TestEvalRun_SkippedDocErrors(t *testing.T) {
+	dir := t.TempDir()
+	corpusRoot := t.TempDir()
+	corpus := filepath.Join(corpusRoot, "corpus")
+	if err := os.MkdirAll(corpus, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	docPath := filepath.Join(corpus, "doc.md")
+	if err := os.WriteFile(docPath, []byte("Content for the skip-detection fixture.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	golden := `queries:
+  - id: q1
+    query: zero answer probe
+    relevant: []
+    tags: [zero-answer]
+`
+	if err := os.WriteFile(filepath.Join(corpusRoot, "golden.yaml"), []byte(golden), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The fake server answers only the pipeline's dimension probe
+	// (single-input request containing "dimension probe") successfully;
+	// every other request — i.e. passage embedding for doc.md's chunk —
+	// gets HTTP 500, which openai.Transient classifies as retryable,
+	// aborting pipeline.Run before the document is marked indexed.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Input []string `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(req.Input) == 1 && strings.Contains(req.Input[0], "dimension probe") {
+			type datum struct {
+				Index     int       `json:"index"`
+				Embedding []float32 `json:"embedding"`
+			}
+			var resp struct {
+				Data []datum `json:"data"`
+			}
+			resp.Data = append(resp.Data, datum{Index: 0, Embedding: []float32{1, 0, 0}})
+			if err := json.NewEncoder(w).Encode(&resp); err != nil {
+				t.Fatalf("encode response: %v", err)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, "embedding endpoint unavailable")
+	}))
+	t.Cleanup(srv.Close)
+
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	workDir := filepath.Join(dir, "work")
+	runArgs := func(outPath string) []string {
+		return []string{
+			"eval", "run",
+			"--corpus", corpusRoot,
+			"--config", cfgPath,
+			"--work-dir", workDir,
+			"--out", outPath,
+		}
+	}
+
+	var buf strings.Builder
+	// Run 1: rigged to fail passage embedding — expected to error and not
+	// itself under test, just the setup that leaves doc.md chunked.
+	if err := run(runArgs(filepath.Join(dir, "first.json")), &buf); err == nil {
+		t.Fatalf("first run(eval run) = nil, want an embed error (server rigged to fail passage embedding)\noutput:\n%s", buf.String())
+	}
+
+	if err := os.Chmod(docPath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(docPath, 0o600)
+	})
+
+	buf.Reset()
+	err := run(runArgs(filepath.Join(dir, "second.json")), &buf)
+	if err == nil {
+		t.Fatalf("second run(eval run) = nil, want error (skipped doc must fail an eval run)\noutput:\n%s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "skip") {
+		t.Errorf("error = %v, want it to mention skip", err)
+	}
+	if !strings.Contains(err.Error(), "1") {
+		t.Errorf("error = %v, want it to mention the skipped count (1)", err)
+	}
+}
+
+// TestEvalRun_EmptyCorpusErrors asserts Finding 5's fix: a golden corpus
+// whose corpus/ subtree has no scannable files (index.go's "scan reached no
+// files" guard has no equivalent here) must fail the run rather than
+// silently score every query against zero indexed documents. Unlike
+// index.go's guard, this one fires regardless of PathErrors — a golden
+// corpus must contain files, full stop.
+func TestEvalRun_EmptyCorpusErrors(t *testing.T) {
+	srv := fakeEmbeddingsServer(t, evalTestVec)
+
+	dir := t.TempDir()
+	corpusRoot := t.TempDir()
+	// corpus/ exists but is empty — discovery scans it and finds nothing,
+	// but that is not an error at the discovery layer (an empty directory
+	// isn't a permission problem).
+	if err := os.MkdirAll(filepath.Join(corpusRoot, "corpus"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	golden := `queries:
+  - id: q1
+    query: zero answer probe
+    relevant: []
+    tags: [zero-answer]
+`
+	if err := os.WriteFile(filepath.Join(corpusRoot, "golden.yaml"), []byte(golden), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	workDir := filepath.Join(dir, "work")
+	outPath := filepath.Join(dir, "out", "results.json")
+
+	var buf strings.Builder
+	err := run([]string{
+		"eval", "run",
+		"--corpus", corpusRoot,
+		"--config", cfgPath,
+		"--work-dir", workDir,
+		"--out", outPath,
+	}, &buf)
+	if err == nil {
+		t.Fatalf("run(eval run) = nil, want error (empty corpus/ must not silently score)\noutput:\n%s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "no files") {
+		t.Errorf("error = %v, want it to mention no files scanned", err)
 	}
 }
 
@@ -551,6 +883,7 @@ func TestEvalSummarize_EndToEnd(t *testing.T) {
 			CompletionTokens int     `json:"completion_tokens"`
 			WallSeconds      float64 `json:"wall_seconds"`
 			TokensPerSec     float64 `json:"tokens_per_sec"`
+			UsageReported    bool    `json:"usage_reported"`
 		} `json:"docs"`
 		Aggregate struct {
 			TotalCompletionTokens int     `json:"total_completion_tokens"`
@@ -581,6 +914,9 @@ func TestEvalSummarize_EndToEnd(t *testing.T) {
 		if d.TokensPerSec <= 0 {
 			t.Errorf("Docs[%s].TokensPerSec = %v, want > 0", d.Path, d.TokensPerSec)
 		}
+		if !d.UsageReported {
+			t.Errorf("Docs[%s].UsageReported = false, want true (fake server sends a usage object)", d.Path)
+		}
 	}
 	if metrics.Aggregate.TotalCompletionTokens != 10 {
 		t.Errorf("TotalCompletionTokens = %d, want 10", metrics.Aggregate.TotalCompletionTokens)
@@ -598,6 +934,67 @@ func TestEvalSummarize_EndToEnd(t *testing.T) {
 	}
 	if !strings.Contains(out, "wrote 2 summaries + metrics.json to") {
 		t.Errorf("output = %q, want final wrote-summary line", out)
+	}
+	if strings.Contains(out, "did not report token usage") {
+		t.Errorf("output = %q, must not warn about missing usage (fake server always sends one)", out)
+	}
+}
+
+// TestEvalSummarize_WarnsWhenUsageNotReported asserts Finding 7's fix: when
+// the server never sends a usage object, eval summarize must print a
+// visible warning that its token/throughput numbers are the unflagged SSE
+// delta-count fallback, not silently report them as if the server had
+// confirmed them.
+func TestEvalSummarize_WarnsWhenUsageNotReported(t *testing.T) {
+	sse := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"Summary: "}}]}`,
+		"",
+		`data: {"choices":[{"delta":{"content":"stuff."}}]}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	srv := fakeChatServer(t, sse)
+
+	dir := t.TempDir()
+	corpusDir := writeEvalCorpus(t)
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	outDir := filepath.Join(dir, "summaries")
+
+	var buf strings.Builder
+	err := run([]string{
+		"eval", "summarize",
+		"--corpus", corpusDir,
+		"--config", cfgPath,
+		"--model", "test-sum",
+		"--out-dir", outDir,
+		"--docs", "2",
+	}, &buf)
+	if err != nil {
+		t.Fatalf("run(eval summarize) = %v\noutput:\n%s", err, buf.String())
+	}
+
+	metricsBytes, err := os.ReadFile(filepath.Join(outDir, "metrics.json"))
+	if err != nil {
+		t.Fatalf("read metrics.json: %v", err)
+	}
+	var metrics struct {
+		Docs []struct {
+			UsageReported bool `json:"usage_reported"`
+		} `json:"docs"`
+	}
+	if err := json.Unmarshal(metricsBytes, &metrics); err != nil {
+		t.Fatalf("decode metrics.json: %v\n%s", err, metricsBytes)
+	}
+	for i, d := range metrics.Docs {
+		if d.UsageReported {
+			t.Errorf("Docs[%d].UsageReported = true, want false (server never sends usage)", i)
+		}
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "warning: server did not report token usage for 2 doc(s)") {
+		t.Errorf("output = %q, want a warning naming the affected doc count", out)
 	}
 }
 

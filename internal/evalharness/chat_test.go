@@ -61,6 +61,9 @@ func TestSummarize_ConcatenatesDeltasAndUsage(t *testing.T) {
 	if metrics.TokensPerSec <= 0 {
 		t.Errorf("TokensPerSec = %v, want > 0", metrics.TokensPerSec)
 	}
+	if !metrics.UsageReported {
+		t.Error("UsageReported = false, want true (server sent a usage object)")
+	}
 }
 
 func TestSummarize_FallbackTokenCountWithoutUsage(t *testing.T) {
@@ -90,6 +93,9 @@ func TestSummarize_FallbackTokenCountWithoutUsage(t *testing.T) {
 	}
 	if metrics.PromptTokens != 0 {
 		t.Errorf("PromptTokens = %d, want 0 (server omitted usage)", metrics.PromptTokens)
+	}
+	if metrics.UsageReported {
+		t.Error("UsageReported = true, want false (server omitted usage, count is the SSE delta fallback)")
 	}
 }
 

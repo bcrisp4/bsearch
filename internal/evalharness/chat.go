@@ -27,6 +27,13 @@ type ChatMetrics struct {
 	CompletionTokens int     `json:"completion_tokens"` // fallback: SSE delta count
 	WallSeconds      float64 `json:"wall_seconds"`
 	TokensPerSec     float64 `json:"tokens_per_sec"` // completion tokens / seconds since first delta
+	// UsageReported is true only when the server's final SSE chunk carried
+	// a usage object; false means CompletionTokens (and TokensPerSec, which
+	// is derived from it) is the SSE-delta-count fallback, not a token
+	// count the server itself reported — a meaningfully less precise
+	// number, and callers must be able to tell the difference rather than
+	// silently trusting an estimate as if it were exact.
+	UsageReported bool `json:"usage_reported"`
 }
 
 // ChatClient streams chat completions from an OpenAI-compatible endpoint.
@@ -155,6 +162,7 @@ func (c *ChatClient) Summarize(ctx context.Context, doc string) (string, ChatMet
 		if chunk.Usage != nil {
 			metrics.PromptTokens = chunk.Usage.PromptTokens
 			metrics.CompletionTokens = chunk.Usage.CompletionTokens
+			metrics.UsageReported = true
 		}
 	}
 	if err := scanner.Err(); err != nil {

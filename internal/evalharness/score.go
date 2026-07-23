@@ -183,6 +183,42 @@ func (a accumulator) stats() SliceStats {
 	}
 }
 
+// hasTag reports whether tag is present in tags. The one loop backing both
+// Query.HasTag and compare.go's tag checks — Query and QueryResult carry
+// tags in unrelated types (a golden.yaml query vs. a results-file record),
+// but "is this tag present" is the same check either way.
+func hasTag(tags []string, tag string) bool {
+	for _, t := range tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// classifyTags applies the "zero-answer"/"exact" exclusion rules once,
+// shared by Aggregate (within one run) and compare.go's CompareResults
+// (across two runs): zeroAnswer queries are excluded from every metric
+// everywhere; exact queries are excluded only from the no-exact headline;
+// sliceTags is tags with "zero-answer" removed (a zero-answer query is
+// never sliced at all) — "exact" deliberately stays in sliceTags, since it
+// is still its own reported slice.
+func classifyTags(tags []string) (zeroAnswer, exact bool, sliceTags []string) {
+	zeroAnswer = hasTag(tags, "zero-answer")
+	exact = hasTag(tags, "exact")
+	if zeroAnswer {
+		return zeroAnswer, exact, nil
+	}
+	sliceTags = make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t == "zero-answer" {
+			continue
+		}
+		sliceTags = append(sliceTags, t)
+	}
+	return zeroAnswer, exact, sliceTags
+}
+
 // Aggregate computes headline and per-tag statistics over scored. Queries
 // tagged "zero-answer" are excluded everywhere (they have no relevant docs
 // to score against); queries tagged "exact" are excluded from
@@ -192,19 +228,17 @@ func Aggregate(scored []ScoredQuery) Aggregates {
 	tagAccs := make(map[string]*accumulator)
 
 	for _, sq := range scored {
-		if sq.Query.HasTag("zero-answer") {
+		zeroAnswer, exact, sliceTags := classifyTags(sq.Query.Tags)
+		if zeroAnswer {
 			continue
 		}
 
 		overall.add(sq.Score)
-		if !sq.Query.HasTag("exact") {
+		if !exact {
 			overallNoExact.add(sq.Score)
 		}
 
-		for _, tag := range sq.Query.Tags {
-			if tag == "zero-answer" {
-				continue
-			}
+		for _, tag := range sliceTags {
 			acc, ok := tagAccs[tag]
 			if !ok {
 				acc = &accumulator{}

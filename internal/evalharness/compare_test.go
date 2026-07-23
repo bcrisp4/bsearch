@@ -39,6 +39,7 @@ func makeResults(queries map[string]queryFixture) Results {
 	}
 
 	return Results{
+		Bsearch: BsearchInfo{ChunkerVersion: "chunker-v1"},
 		Corpus:  CorpusInfo{Name: "c", Version: "sha256:x"},
 		Queries: qrs,
 	}
@@ -58,6 +59,29 @@ func TestCompareResults_MismatchedVersionRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "sha256:x") || !strings.Contains(err.Error(), "sha256:y") {
 		t.Errorf("error %q does not name both versions", err.Error())
+	}
+}
+
+// TestCompareResults_MismatchedChunkerVersionRefused asserts Finding 3's
+// fix: BsearchInfo's doc comment promises compare refuses a chunker-version
+// mismatch (results scored against different chunk boundaries aren't
+// comparable), but until this fix only corpus name/version, limit, and
+// query ids were actually gated.
+func TestCompareResults_MismatchedChunkerVersionRefused(t *testing.T) {
+	a := makeResults(map[string]queryFixture{"q1": {rr: 1, recall: 1}})
+	b := makeResults(map[string]queryFixture{"q1": {rr: 1, recall: 1}})
+	a.Bsearch.ChunkerVersion = "chunker-v1"
+	b.Bsearch.ChunkerVersion = "chunker-v2"
+
+	_, err := CompareResults(a, b)
+	if err == nil {
+		t.Fatal("CompareResults() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "chunker version") {
+		t.Errorf("error %q does not mention chunker version", err.Error())
+	}
+	if !strings.Contains(err.Error(), "chunker-v1") || !strings.Contains(err.Error(), "chunker-v2") {
+		t.Errorf("error %q does not name both chunker versions", err.Error())
 	}
 }
 

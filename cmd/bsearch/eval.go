@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -107,6 +108,10 @@ func runEvalRun(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	docsVersion, err := evalharness.DocsVersion(*corpusDir)
+	if err != nil {
+		return err
+	}
 
 	_, embedder, err := loadInference(*configPath)
 	if err != nil {
@@ -119,31 +124,46 @@ func runEvalRun(args []string, out io.Writer) error {
 		return err
 	}
 	corpusName := filepath.Base(absCorpusDir)
-	// Discovery canonicalizes include roots (symlinks in the root or its
-	// ancestors — e.g. macOS /var -> /private/var) before recording
-	// Document.Path, so relativizing hits against the unresolved
-	// absCorpusDir would produce a path full of "../" instead of a clean
-	// corpus-relative one. Resolve the same way here.
-	resolvedCorpusDir, err := filepath.EvalSymlinks(absCorpusDir)
+	// Discovery canonicalizes the full include root — <corpusDir>/corpus,
+	// not just corpusDir — before recording Document.Path (symlinks in the
+	// root or its ancestors, e.g. macOS /var -> /private/var, or the
+	// corpus/ directory itself being a symlink to where the documents
+	// actually live). Relativizing hits against anything else would
+	// produce a path full of "../" instead of a clean corpus-relative one.
+	// Resolve the same joined path discovery resolves, not just
+	// absCorpusDir: EvalSymlinks(absCorpusDir) alone would still be wrong
+	// when corpus/ itself is the symlink.
+	resolvedDocsDir, err := filepath.EvalSymlinks(filepath.Join(absCorpusDir, "corpus"))
 	if err != nil {
 		return err
 	}
 
-	// The scratch db is keyed by corpus name, corpus version, and embedding
-	// fingerprint — a rerun against the same corpus and model reuses the
-	// index rather than re-embedding every document (fingerprint changes
-	// invalidate it automatically, same as production's vec-spec check).
-	// Corpus version is folded in because discovery has no deletion pass:
-	// regenerating a corpus in place (same name, changed/removed docs)
-	// would otherwise leave a deleted document's stale vectors in the
-	// reused db, polluting rankings, even though the run records the new
-	// corpus version.
+	// The scratch db is keyed by corpus name, DOCUMENT set (DocsVersion,
+	// not the combined CorpusVersion), and embedding fingerprint — a rerun
+	// against the same corpus and model reuses the index rather than
+	// re-embedding every document (fingerprint changes invalidate it
+	// automatically, same as production's vec-spec check). The document
+	// set is folded in because discovery has no deletion pass: regenerating
+	// a corpus in place (same name, changed/removed docs) would otherwise
+	// leave a deleted document's stale vectors in the reused db, polluting
+	// rankings, even though the run records the new corpus version.
+	// Keying on DocsVersion rather than CorpusVersion means editing
+	// golden.yaml alone (relabeling a query, fixing a typo) no longer mints
+	// a new work-db key and forces a pointless re-embed of an unchanged
+	// corpus — golden.yaml carries no document content. A corpus with no
+	// manifest.json falls back to the constant "nomanifest": without
+	// per-file content hashes, a deleted doc isn't detectable this way, but
+	// pipeline idempotency still catches added/edited files, and hand-built
+	// local corpora accept the gap.
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return err
 	}
-	corpusHash8 := strings.TrimPrefix(corpusVersion, "sha256:")[:8]
+	docsHash8 := docsVersion
+	if hex, ok := strings.CutPrefix(docsVersion, "sha256:"); ok {
+		docsHash8 = hex[:8]
+	}
 	fp8 := fmt.Sprintf("%x", sha256.Sum256([]byte(spec.Fingerprint())))[:8]
-	dbPath := filepath.Join(workDir, fmt.Sprintf("%s-%s-%s.db", corpusName, corpusHash8, fp8))
+	dbPath := filepath.Join(workDir, fmt.Sprintf("%s-%s-%s.db", corpusName, docsHash8, fp8))
 
 	db, err := sqlite.Open(dbPath)
 	if err != nil {
@@ -169,10 +189,19 @@ func runEvalRun(args []string, out io.Writer) error {
 		return err
 	}
 	for _, pe := range scanRes.PathErrors {
-		fmt.Fprintf(out, "warning: %s: %v\n", pe.Path, pe.Err)
+		fmt.Fprintf(out, "warning: %s: %v\n", stripControl(pe.Path), pe.Err)
 	}
 	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d renamed, %d skipped (iCloud placeholder)\n",
 		scanRes.Discovered, scanRes.Unchanged, scanRes.Renamed, scanRes.Dataless)
+	// Unlike index.go's equivalent guard (which only fires alongside
+	// PathErrors, since a live filesystem scan legitimately turning up zero
+	// files elsewhere is not by itself suspicious), a golden corpus must
+	// contain files regardless of whether any PathErrors were reported —
+	// an empty corpus/ scores every query against nothing and reports
+	// misleadingly clean zeros instead of failing loudly.
+	if scanRes.Discovered+scanRes.Unchanged+scanRes.Renamed+scanRes.Dataless == 0 {
+		return errors.New("scan reached no files — check --corpus points at a corpus directory with a corpus/ subtree (see warnings above, if any)")
+	}
 
 	ix, err := pipeline.New(pipeline.Options{
 		Store:     store,
@@ -214,6 +243,15 @@ func runEvalRun(args []string, out io.Writer) error {
 	if sum.Failed > 0 {
 		return fmt.Errorf("%d document(s) failed to index — see output above", sum.Failed)
 	}
+	// Unlike production indexing (where a skip just retries next run),
+	// an eval corpus that indexes incompletely corrupts every score
+	// computed against it: a document scan found but couldn't read right
+	// now (vanished, permission denied) is silently missing from the
+	// index, making a real retrieval miss indistinguishable from an
+	// indexing gap. A golden corpus must index completely or not at all.
+	if sum.Skipped > 0 {
+		return fmt.Errorf("%d document(s) skipped (unreadable) — an eval corpus must index completely — see output above", sum.Skipped)
+	}
 
 	scored := make([]evalharness.ScoredQuery, 0, len(queries))
 	results := make([]evalharness.QueryResult, 0, len(queries))
@@ -251,11 +289,16 @@ func runEvalRun(args []string, out io.Writer) error {
 		collapsed := domain.CollapseBestPerDoc(hits, k)
 		ranked := make([]evalharness.RankedDoc, len(collapsed))
 		for n, h := range collapsed {
-			rel, err := filepath.Rel(resolvedCorpusDir, h.Doc.Path)
+			// h.Doc.Path is under resolvedDocsDir (discovery's canonicalized
+			// include root), not literally under "<corpusDir>/corpus" — so
+			// re-prepend "corpus/" after relativizing, keeping the result a
+			// clean corpus-relative path that matches golden.yaml regardless
+			// of whether corpus/ itself was a symlink.
+			rel, err := filepath.Rel(resolvedDocsDir, h.Doc.Path)
 			if err != nil {
 				return fmt.Errorf("query %s: relativize %q: %w", q.ID, h.Doc.Path, err)
 			}
-			ranked[n] = evalharness.RankedDoc{Path: rel, Distance: h.Distance}
+			ranked[n] = evalharness.RankedDoc{Path: path.Join("corpus", filepath.ToSlash(rel)), Distance: h.Distance}
 		}
 		evalharness.SortRanked(ranked)
 
@@ -499,6 +542,7 @@ type evalSummarizeDocMetrics struct {
 	CompletionTokens int     `json:"completion_tokens"`
 	WallSeconds      float64 `json:"wall_seconds"`
 	TokensPerSec     float64 `json:"tokens_per_sec"`
+	UsageReported    bool    `json:"usage_reported"`
 }
 
 // evalSummarizeAggregate summarizes the run across all sampled docs.
@@ -608,7 +652,7 @@ func runEvalSummarize(args []string, out io.Writer) error {
 			return err
 		}
 
-		fmt.Fprintf(out, "summarized %s (%.1f tok/s)\n", relPath, metrics.TokensPerSec)
+		fmt.Fprintf(out, "summarized %s (%.1f tok/s)\n", stripControl(relPath), metrics.TokensPerSec)
 
 		docMetrics = append(docMetrics, evalSummarizeDocMetrics{
 			Path:             relPath,
@@ -616,14 +660,26 @@ func runEvalSummarize(args []string, out io.Writer) error {
 			CompletionTokens: metrics.CompletionTokens,
 			WallSeconds:      metrics.WallSeconds,
 			TokensPerSec:     metrics.TokensPerSec,
+			UsageReported:    metrics.UsageReported,
 		})
 	}
 
 	var totalCompletionTokens int
 	var sumTokensPerSec float64
+	var docsWithoutUsage int
 	for _, d := range docMetrics {
 		totalCompletionTokens += d.CompletionTokens
 		sumTokensPerSec += d.TokensPerSec
+		if !d.UsageReported {
+			docsWithoutUsage++
+		}
+	}
+	// A silent fallback would let a bench's tok/s numbers look server-
+	// confirmed when they're actually estimated from SSE delta count —
+	// surfaced once per run, not per doc, matching evalProgressEvery's
+	// "liveness, not noise" convention elsewhere in this command.
+	if docsWithoutUsage > 0 {
+		fmt.Fprintf(out, "warning: server did not report token usage for %d doc(s) — tokens/sec is estimated from SSE delta count\n", docsWithoutUsage)
 	}
 
 	result := evalSummarizeMetrics{

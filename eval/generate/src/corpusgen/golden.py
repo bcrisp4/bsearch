@@ -96,8 +96,14 @@ def validate_golden(corpus_dir: Path) -> list[str]:
         if "zero-answer" in tags and relevant:
             errors.append(f"{qid}: zero-answer query has relevant documents")
 
+        acceptable = [str(p) for p in q.get("acceptable", [])]
+        relevant_set = set(relevant)
+        for rel in acceptable:
+            if rel in relevant_set:
+                errors.append(f"{qid}: path in both relevant and acceptable: {rel}")
+
         doc_texts: list[str] = []
-        for rel in [*relevant, *(str(p) for p in q.get("acceptable", []))]:
+        for rel in [*relevant, *acceptable]:
             path = corpus_dir / rel
             if not path.is_file():
                 errors.append(f"{qid}: path does not exist: {rel}")
