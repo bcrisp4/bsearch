@@ -1,0 +1,170 @@
+[
+  {
+    "path": "corpus/bank_certificates/uk-interest-certificate-2026.md",
+    "gist": "The yearly slip from Ferrand Bank showing what my easy-access savings pot earned in interest over the tax year, kept in case I ever have to do a tax return. Nothing was taken off for tax.",
+    "memorable": [
+      "earned about £47 in interest",
+      "no tax was deducted from it",
+      "it was for the Instant Saver account",
+      "downloaded it from online banking in mid-April 2026"
+    ],
+    "period": "UK tax year ending April 2026",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/bank_certificates/us-1042s-savings-2025.md",
+    "gist": "A messy scan of the American tax paperwork my US bank posts me every year because I live in the UK. It reports the interest my high-yield savings account over there earned, with nothing held back for US tax since I count as a foreign person.",
+    "memorable": [
+      "roughly $196 of interest for the year",
+      "zero US tax withheld",
+      "from Commonwealth Harbor Bank; they sent a separate one for the checking account too",
+      "sent to my London flat address"
+    ],
+    "period": "calendar year 2025",
+    "provenance": "ocr"
+  },
+  {
+    "path": "corpus/boiler_service_invoices/boiler-service-2025.md",
+    "gist": "Invoice for the first yearly boiler check after I moved into the London flat. The engineer found the corrosion-protection chemical in the heating water was low and added more, and pumped the system back up to the right pressure.",
+    "memorable": [
+      "came to £120 including VAT",
+      "first service at the new flat, October 2025",
+      "same engineer who used to do the old house, D. Okonkwo",
+      "Harwood Heating did it"
+    ],
+    "period": "October 2025",
+    "provenance": "ocr"
+  },
+  {
+    "path": "corpus/boiler_service_invoices/boiler-service-2026.md",
+    "gist": "The expensive boiler visit where they finally worked out why the pressure kept dropping — a burst rubber diaphragm inside the expansion vessel, which they swapped out during the annual service. They also flagged that the flue sits right at the minimum allowed distance from a window and suggested a limescale gadget next time.",
+    "memorable": [
+      "just under £300 all in, versus the usual ~£100 service",
+      "cause of the recurring pressure loss was a ruptured expansion vessel",
+      "a different engineer than usual (S. Varga)",
+      "advice about keeping the window shut when the boiler runs for long stretches"
+    ],
+    "period": "June 2026",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/broadband_bills/broadband-2026-02.md",
+    "gist": "The broadband bill with the surprise callout fee. The internet died in mid-January (hub blinking red), an engineer came out and traced it to a broken socket plate inside the flat, so because the problem was my wiring rather than their network I had to pay for the visit.",
+    "memorable": [
+      "£65 engineer charge, pushing the bill to £99.99 instead of the usual £34.99",
+      "fault reported 18 January, fixed on the 21st",
+      "Loopfibre said I had 30 days to challenge the charge",
+      "problem turned out to be inside the flat, not their line"
+    ],
+    "period": "February 2026 bill, covering the January fault",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/broadband_bills/broadband-2026-03.md",
+    "gist": "The broadband bill that broke the news of the yearly price hike — the monthly cost of my fibre plan going up by £3 from the start of May. Annoyingly the small print meant I couldn't walk away without paying an exit fee, since the rise was baked into the contract.",
+    "memorable": [
+      "price going from £29.99 to £32.99 a month from 1 May 2026",
+      "the static IP extra stayed the same price",
+      "no penalty-free right to leave",
+      "that month's bill itself was still the old £34.99"
+    ],
+    "period": "March 2026",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/council_tax_bills/ctax-2024-25.md",
+    "gist": "Scanned council tax bill for the old house in Hampshire covering the year it sat empty with no furniture in it. No discount for it being empty — full whack — plus a warning that leaving it empty over a year could double the charge.",
+    "memorable": [
+      "full-year charge of £1,624.80, band C",
+      "ten monthly payments of about £162",
+      "billed specifically because the house was unoccupied and unfurnished",
+      "Netherhale council, issued March 2024"
+    ],
+    "period": "2024/25 council tax year",
+    "provenance": "ocr"
+  },
+  {
+    "path": "corpus/council_tax_bills/ctax-2025-26.md",
+    "gist": "My first council tax bill at the London flat — a new account starting from when I became liable in August, so it only covered part of the year, and it had the 25% off for living alone applied from day one.",
+    "memorable": [
+      "part-year amount came to £855.23 after the single-person discount",
+      "liability started 1 August 2025",
+      "paid over eight instalments of about £107",
+      "band C flat"
+    ],
+    "period": "August 2025 to March 2026 (part of the 2025/26 year)",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/credit_reports/credit_report_date1.md",
+    "gist": "Printout of my credit report from a couple of months after the move. The score took a knock because of the fresh change of address and the cluster of brand-new accounts (energy, broadband, an investment platform), though six clean years of never missing a payment was working in my favour.",
+    "memorable": [
+      "score was 782 out of 999, rated Good",
+      "run in October 2025 by Veracity Score",
+      "flagged the recent move and several accounts opened within three months",
+      "no court records, no missed payments"
+    ],
+    "period": "October 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/education_certs/degree_diploma.md",
+    "gist": "Scan of my actual degree certificate from the University of Wexcombe — the fancy parchment with the chancellor's signature. Bachelor's with honours in computer networks, upper second class.",
+    "memorable": [
+      "got a 2:1",
+      "BSc in Computer Networks",
+      "conferred in July 2015",
+      "signed by the chancellor Dame Rosalind Fetterlane"
+    ],
+    "period": "July 2015",
+    "provenance": "ocr"
+  },
+  {
+    "path": "corpus/education_certs/university_offer_letter.md",
+    "gist": "The letter from Wexcombe offering me a uni place back when I was applying from my parents' house in Hampshire. It was conditional — I had to hit a points target from my A-levels including a decent grade in maths or computing.",
+    "memorable": [
+      "needed 280 UCAS points, with at least a C in Maths or Computing",
+      "tuition was £8,500 a year for 2012 entry",
+      "course started late September 2012 at the Brackenhill Park campus",
+      "signed by the admissions tutor, Dr Fenlow"
+    ],
+    "period": "March 2012",
+    "provenance": "ocr"
+  },
+  {
+    "path": "corpus/energy_bills/energy-2025-10.md",
+    "gist": "The electricity bill where Harwood Energy owned up to overcharging me on the daily standing fee across the summer, after I'd raised it with them in September. They put a small credit on the bill and apologised.",
+    "memorable": [
+      "credit of £2.12 for the June-to-August overcharge",
+      "they'd been billing 51.2p a day when the tariff said 48.9p",
+      "I flagged it on 14 September and they thanked me",
+      "the bill still came to £68.09"
+    ],
+    "period": "October 2025",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/energy_bills/energy-2026-01.md",
+    "gist": "The brutal mid-winter electricity bill that broke the £100 mark, which came with a plain-English section explaining the regulator's quarterly price cap going up from January. That bill covered December so it was still at the old rates, with the dearer ones kicking in the next month.",
+    "memorable": [
+      "£102.21 to pay",
+      "341 units used over December",
+      "cap and tariff prices rose from 1 January but hadn't hit this bill yet",
+      "on the Fair Deal Flex variable tariff with Harwood"
+    ],
+    "period": "January 2026 (December usage)",
+    "provenance": "converted"
+  },
+  {
+    "path": "corpus/energy_bills/energy-2026-04.md",
+    "gist": "The electricity bill from just after my smart meter came back to life — it had been offline so the previous bill was a guess, and this one used a real reading and automatically squared up any difference from the estimate.",
+    "memorable": [
+      "meter reconnected around 3 March and a proper reading was taken end of March",
+      "bill was £89.51",
+      "nothing for me to do — the correction happened by itself",
+      "274 units for the month"
+    ],
+    "period": "April 2026 (March usage)",
+    "provenance": "converted"
+  }
+]

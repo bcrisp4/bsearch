@@ -1,0 +1,1056 @@
+# Golden query set for synthetic-v1 (issue #8).
+#
+# Authored via the information-bottleneck methodology:
+# docs/specs/2026-07-22-golden-query-methodology.md
+# Validated by `corpusgen golden` (schema + vocabulary-echo gate).
+#
+# Register tags: kw (typed keywords), nl (natural-language question),
+# recall (vague episodic memory), exact (deliberate exact-recall stratum,
+# echo-gate exempt — slice it out to measure without it).
+# Provenance tags: native | converted | ocr. `human` marks hand-written
+# queries. zero-answer queries have relevant: [].
+queries:
+- id: q001
+  query: ferrand instant saver interest certificate
+  relevant:
+  - corpus/bank_certificates/uk-interest-certificate-2026.md
+  acceptable:
+  - corpus/office_docs/interest-summary.md
+  - corpus/uk_savings_statements/ferrand-saver-2026-04.md
+  tags:
+  - kw
+  - bank_certificates
+  - converted
+- id: q002
+  query: how much interest did the savings earn last tax year
+  relevant:
+  - corpus/bank_certificates/uk-interest-certificate-2026.md
+  - corpus/office_docs/interest-summary.md
+  acceptable:
+  - corpus/tax_documents/uk_self_assessment_year1.md
+  tags:
+  - nl
+  - bank_certificates
+  - converted
+- id: q003
+  query: 1042-S 2025 commonwealth harbor
+  relevant:
+  - corpus/bank_certificates/us-1042s-savings-2025.md
+  - corpus/bank_certificates/us-1042s-checking-2025.md
+  tags:
+  - exact
+  - bank_certificates
+  - ocr
+- id: q004
+  query: blurry scan of the us tax slip for savings
+  relevant:
+  - corpus/bank_certificates/us-1042s-savings-2025.md
+  tags:
+  - recall
+  - bank_certificates
+  - ocr
+- id: q005
+  query: did the american bank take any tax off my interest
+  relevant:
+  - corpus/bank_certificates/us-1042s-savings-2025.md
+  - corpus/bank_certificates/us-1042s-checking-2025.md
+  tags:
+  - nl
+  - bank_certificates
+  - ocr
+- id: q006
+  query: first boiler service new flat invoice
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2025.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-10.md
+  - corpus/notes/boiler-pressure-saga.md
+  tags:
+  - kw
+  - boiler_service_invoices
+  - ocr
+- id: q007
+  query: engineer topped up the corrosion chemical, autumn service
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2025.md
+  tags:
+  - recall
+  - boiler_service_invoices
+  - ocr
+- id: q008
+  query: why did the boiler keep losing pressure
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2026.md
+  - corpus/notes/boiler-pressure-saga.md
+  tags:
+  - nl
+  - boiler_service_invoices
+  - converted
+- id: q009
+  query: boiler diaphragm swap invoice
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2026.md
+  acceptable:
+  - corpus/notes/boiler-pressure-saga.md
+  tags:
+  - kw
+  - boiler_service_invoices
+  - converted
+- id: q010
+  query: the boiler job that cost nearly three hundred
+  relevant:
+  - corpus/boiler_service_invoices/boiler-service-2026.md
+  - corpus/notes/boiler-pressure-saga.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2026-06.md
+  - corpus/notes/budget-2026.md
+  tags:
+  - recall
+  - boiler_service_invoices
+  - converted
+- id: q011
+  query: why was the broadband bill a hundred quid
+  relevant:
+  - corpus/broadband_bills/broadband-2026-02.md
+  - corpus/notes/broadband-outage-jan-2026.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2026-02.md
+  tags:
+  - nl
+  - broadband_bills
+  - converted
+- id: q012
+  query: internet down, red light on the hub, january
+  relevant:
+  - corpus/broadband_bills/broadband-2026-02.md
+  - corpus/notes/broadband-outage-jan-2026.md
+  tags:
+  - recall
+  - broadband_bills
+  - converted
+- id: q013
+  query: broadband £32.99 from 1 may
+  relevant:
+  - corpus/broadband_bills/broadband-2026-03.md
+  - corpus/broadband_bills/broadband-2026-04.md
+  acceptable:
+  - corpus/broadband_bills/broadband-2026-05.md
+  - corpus/notes/budget-2026.md
+  tags:
+  - exact
+  - broadband_bills
+  - converted
+- id: q014
+  query: could i cancel loopfibre after the price rise without a fee
+  relevant:
+  - corpus/broadband_bills/broadband-2026-03.md
+  tags:
+  - nl
+  - broadband_bills
+  - converted
+- id: q015
+  query: fibre monthly price increase letter
+  relevant:
+  - corpus/broadband_bills/broadband-2026-03.md
+  acceptable:
+  - corpus/broadband_bills/broadband-2026-04.md
+  tags:
+  - kw
+  - broadband_bills
+  - converted
+- id: q016
+  query: council tax £1,624.80 band c
+  relevant:
+  - corpus/council_tax_bills/ctax-2024-25.md
+  tags:
+  - exact
+  - council_tax_bills
+  - ocr
+- id: q017
+  query: council tax when the old house sat empty
+  relevant:
+  - corpus/council_tax_bills/ctax-2024-25.md
+  tags:
+  - recall
+  - council_tax_bills
+  - ocr
+- id: q018
+  query: council tax flat only part of year
+  relevant:
+  - corpus/council_tax_bills/ctax-2025-26.md
+  - corpus/letters/council_ctax_moving_letter.md
+  tags:
+  - kw
+  - council_tax_bills
+  - converted
+- id: q019
+  query: what were my council tax instalments after moving in
+  relevant:
+  - corpus/council_tax_bills/ctax-2025-26.md
+  - corpus/letters/council_ctax_moving_letter.md
+  acceptable:
+  - corpus/notes/budget-2026.md
+  tags:
+  - nl
+  - council_tax_bills
+  - converted
+- id: q020
+  query: credit report october 2025
+  relevant:
+  - corpus/credit_reports/credit_report_date1.md
+  tags:
+  - kw
+  - credit_reports
+  - converted
+- id: q021
+  query: why did my credit score drop after the move
+  relevant:
+  - corpus/credit_reports/credit_report_date1.md
+  acceptable:
+  - corpus/notes/credit-file-cleanup.md
+  tags:
+  - nl
+  - credit_reports
+  - converted
+- id: q022
+  query: veracity score 782
+  relevant:
+  - corpus/credit_reports/credit_report_date1.md
+  tags:
+  - exact
+  - credit_reports
+  - converted
+- id: q023
+  query: degree certificate scan wexcombe
+  relevant:
+  - corpus/education_certs/degree_diploma.md
+  tags:
+  - kw
+  - education_certs
+  - ocr
+- id: q024
+  query: the parchment with the chancellor's signature
+  relevant:
+  - corpus/education_certs/degree_diploma.md
+  tags:
+  - recall
+  - education_certs
+  - ocr
+- id: q025
+  query: what grades did the uni offer ask for
+  relevant:
+  - corpus/education_certs/university_offer_letter.md
+  tags:
+  - nl
+  - education_certs
+  - ocr
+- id: q026
+  query: conditional offer from when i lived with my parents
+  relevant:
+  - corpus/education_certs/university_offer_letter.md
+  tags:
+  - recall
+  - education_certs
+  - ocr
+- id: q027
+  query: did harwood credit me for the standing charge mistake
+  relevant:
+  - corpus/energy_bills/energy-2025-10.md
+  - corpus/notes/standing-charge-dispute.md
+  acceptable:
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - nl
+  - energy_bills
+  - converted
+- id: q028
+  query: they overcharged a few pence a day over summer
+  relevant:
+  - corpus/energy_bills/energy-2025-10.md
+  - corpus/notes/standing-charge-dispute.md
+  acceptable:
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - recall
+  - energy_bills
+  - converted
+- id: q029
+  query: electricity bill december usage price cap
+  relevant:
+  - corpus/energy_bills/energy-2026-01.md
+  tags:
+  - kw
+  - energy_bills
+  - converted
+- id: q030
+  query: which electric bill went over a hundred pounds
+  relevant:
+  - corpus/energy_bills/energy-2026-01.md
+  - corpus/energy_bills/energy-2026-02.md
+  - corpus/notes/energy-costs-first-year.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2026-01.md
+  - corpus/uk_current_statements/ferrand-current-2026-02.md
+  tags:
+  - nl
+  - energy_bills
+  - converted
+- id: q031
+  query: was the estimated bill corrected when the meter reconnected
+  relevant:
+  - corpus/energy_bills/energy-2026-04.md
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - nl
+  - energy_bills
+  - converted
+- id: q032
+  query: march bill meter fixed proper reading
+  relevant:
+  - corpus/energy_bills/energy-2026-04.md
+  acceptable:
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - kw
+  - energy_bills
+  - converted
+- id: q033
+  query: income protection from the new york job
+  relevant:
+  - corpus/insurance_policies/us_disability_policy.md
+  acceptable:
+  - corpus/us_checking_statements/harbor-checking-2024-10.md
+  - corpus/us_checking_statements/harbor-checking-2024-11.md
+  - corpus/us_checking_statements/harbor-checking-2024-12.md
+  - corpus/us_checking_statements/harbor-checking-2025-01.md
+  - corpus/us_checking_statements/harbor-checking-2025-02.md
+  - corpus/us_checking_statements/harbor-checking-2025-03.md
+  - corpus/us_checking_statements/harbor-checking-2025-04.md
+  - corpus/us_checking_statements/harbor-checking-2025-05.md
+  tags:
+  - recall
+  - insurance_policies
+  - converted
+- id: q034
+  query: how long off sick before the policy paid
+  relevant:
+  - corpus/insurance_policies/us_disability_policy.md
+  tags:
+  - nl
+  - insurance_policies
+  - converted
+- id: q035
+  query: alderoak contents insurance renewal certificate
+  relevant:
+  - corpus/insurance_policies/uk_contents_policy_year2.md
+  tags:
+  - kw
+  - insurance_policies
+  - converted
+- id: q036
+  query: what's the excess for a water leak claim
+  relevant:
+  - corpus/insurance_policies/uk_contents_policy_year2.md
+  acceptable:
+  - corpus/insurance_policies/uk_contents_policy_year1.md
+  - corpus/policy_change_notices/policy_change_notice_1.md
+  tags:
+  - nl
+  - insurance_policies
+  - converted
+- id: q037
+  query: what did my new patient bloods show
+  relevant:
+  - corpus/letters/gp_test_results_letter.md
+  - corpus/notes/health-sinus-log.md
+  tags:
+  - nl
+  - letters
+  - ocr
+- id: q038
+  query: gp said take vitamin d over the winter
+  relevant:
+  - corpus/letters/gp_test_results_letter.md
+  acceptable:
+  - corpus/notes/health-sinus-log.md
+  tags:
+  - recall
+  - letters
+  - ocr
+- id: q039
+  query: ent appointment letter march
+  relevant:
+  - corpus/letters/hospital_appointment_letter.md
+  acceptable:
+  - corpus/notes/health-sinus-log.md
+  tags:
+  - kw
+  - letters
+  - ocr
+- id: q040
+  query: hospital letter moaning about the car park
+  relevant:
+  - corpus/letters/hospital_appointment_letter.md
+  tags:
+  - recall
+  - letters
+  - ocr
+- id: q041
+  query: what did the council send after i moved in august
+  relevant:
+  - corpus/letters/council_ctax_moving_letter.md
+  - corpus/council_tax_bills/ctax-2025-26.md
+  acceptable:
+  - corpus/notes/moving-back-to-london.md
+  tags:
+  - nl
+  - letters
+  - converted
+- id: q042
+  query: letter giving me the living alone discount
+  relevant:
+  - corpus/letters/council_ctax_moving_letter.md
+  acceptable:
+  - corpus/council_tax_bills/ctax-2025-26.md
+  - corpus/notes/moving-back-to-london.md
+  tags:
+  - recall
+  - letters
+  - converted
+- id: q043
+  query: certificate for where my deposit is held
+  relevant:
+  - corpus/letters/deposit_scheme_certificate.md
+  acceptable:
+  - corpus/tenancy_legal/tenancy_agreement.md
+  - corpus/notes/moving-back-to-london.md
+  tags:
+  - kw
+  - letters
+  - converted
+- id: q044
+  query: proof my deposit isn't sitting with the landlord
+  relevant:
+  - corpus/letters/deposit_scheme_certificate.md
+  acceptable:
+  - corpus/tenancy_legal/tenancy_agreement.md
+  - corpus/notes/moving-back-to-london.md
+  tags:
+  - recall
+  - letters
+  - converted
+- id: q045
+  query: rent going to £1,655
+  relevant:
+  - corpus/office_docs/agency-renewal-letter.md
+  tags:
+  - exact
+  - office_docs
+  - converted
+- id: q046
+  query: when was the deadline to say if i'd renew the flat
+  relevant:
+  - corpus/office_docs/agency-renewal-letter.md
+  tags:
+  - nl
+  - office_docs
+  - converted
+- id: q047
+  query: agent letter where the rent went up fifty quid
+  relevant:
+  - corpus/office_docs/agency-renewal-letter.md
+  tags:
+  - recall
+  - office_docs
+  - converted
+- id: q048
+  query: dunloe mattress invoice ten year guarantee
+  relevant:
+  - corpus/office_docs/mattress-invoice.md
+  tags:
+  - kw
+  - office_docs
+  - converted
+- id: q049
+  query: how many nights was the mattress trial
+  relevant:
+  - corpus/office_docs/mattress-invoice.md
+  acceptable:
+  - corpus/notes/furniture-shortlist.md
+  tags:
+  - nl
+  - office_docs
+  - converted
+- id: q050
+  query: how did i calculate my final degree average
+  relevant:
+  - corpus/office_docs/grade-calculation.md
+  tags:
+  - nl
+  - office_docs
+  - converted
+- id: q051
+  query: spreadsheet checking i was over the 2:1 line
+  relevant:
+  - corpus/office_docs/grade-calculation.md
+  tags:
+  - recall
+  - office_docs
+  - converted
+- id: q052
+  query: when did the water damage excess nearly double
+  relevant:
+  - corpus/policy_change_notices/policy_change_notice_1.md
+  acceptable:
+  - corpus/insurance_policies/uk_contents_policy_year1.md
+  - corpus/insurance_policies/uk_contents_policy_year2.md
+  tags:
+  - nl
+  - policy_change_notices
+  - converted
+- id: q053
+  query: insurance changes about locked sheds and old pipes
+  relevant:
+  - corpus/policy_change_notices/policy_change_notice_1.md
+  tags:
+  - recall
+  - policy_change_notices
+  - converted
+- id: q054
+  query: heat pump quote aurellon grant
+  relevant:
+  - corpus/quotes_invoices/heatpump-quote-aurellon.md
+  acceptable:
+  - corpus/notes/heat-pump-research.md
+  tags:
+  - kw
+  - quotes_invoices
+  - converted
+- id: q055
+  query: what would i actually pay for the heat pump after the grant
+  relevant:
+  - corpus/quotes_invoices/heatpump-quote-aurellon.md
+  - corpus/notes/heat-pump-research.md
+  acceptable:
+  - corpus/quotes_invoices/heatpump-quote-fenwick-dray.md
+  tags:
+  - nl
+  - quotes_invoices
+  - converted
+- id: q056
+  query: the posher of the two heat pump quotes
+  relevant:
+  - corpus/quotes_invoices/heatpump-quote-aurellon.md
+  acceptable:
+  - corpus/notes/heat-pump-research.md
+  tags:
+  - recall
+  - quotes_invoices
+  - converted
+- id: q057
+  query: brayfield electrician invoice socket
+  relevant:
+  - corpus/quotes_invoices/electrician-invoice-brayfield.md
+  acceptable:
+  - corpus/notes/home-office-setup.md
+  - corpus/notes/flat-snagging-list.md
+  - corpus/uk_current_statements/ferrand-current-2025-11.md
+  tags:
+  - kw
+  - quotes_invoices
+  - converted
+- id: q058
+  query: what did the extra socket and hallway light cost
+  relevant:
+  - corpus/quotes_invoices/electrician-invoice-brayfield.md
+  - corpus/notes/home-office-setup.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-11.md
+  tags:
+  - nl
+  - quotes_invoices
+  - converted
+- id: q059
+  query: rowanmere equalisation settlement letter
+  relevant:
+  - corpus/tax_documents/us_tax_settlement_letter.md
+  acceptable:
+  - corpus/tax_documents/us_tax_return_binder.md
+  tags:
+  - kw
+  - tax_documents
+  - converted
+- id: q060
+  query: how much of the american refund was actually mine
+  relevant:
+  - corpus/tax_documents/us_tax_settlement_letter.md
+  acceptable:
+  - corpus/tax_documents/us_tax_return_binder.md
+  tags:
+  - nl
+  - tax_documents
+  - converted
+- id: q061
+  query: i-9 form h1b 2023
+  relevant:
+  - corpus/tax_documents/i9_employment_form.md
+  tags:
+  - kw
+  - tax_documents
+  - ocr
+- id: q062
+  query: when does my us work permission expire
+  relevant:
+  - corpus/tax_documents/i9_employment_form.md
+  tags:
+  - nl
+  - tax_documents
+  - ocr
+- id: q063
+  query: employment form from when i started in brooklyn
+  relevant:
+  - corpus/tax_documents/i9_employment_form.md
+  tags:
+  - recall
+  - tax_documents
+  - ocr
+- id: q064
+  query: did i owe extra on the first uk tax return
+  relevant:
+  - corpus/tax_documents/uk_self_assessment_year1.md
+  tags:
+  - nl
+  - tax_documents
+  - converted
+- id: q065
+  query: the split year return with the leftover us interest
+  relevant:
+  - corpus/tax_documents/uk_self_assessment_year1.md
+  tags:
+  - recall
+  - tax_documents
+  - converted
+- id: q066
+  query: my note about topping up the boiler every week
+  relevant:
+  - corpus/notes/boiler-pressure-saga.md
+  tags:
+  - recall
+  - notes
+  - native
+- id: q067
+  query: boiler losing pressure repair cost
+  relevant:
+  - corpus/notes/boiler-pressure-saga.md
+  - corpus/boiler_service_invoices/boiler-service-2026.md
+  acceptable:
+  - corpus/notes/budget-2026.md
+  - corpus/uk_current_statements/ferrand-current-2026-06.md
+  tags:
+  - kw
+  - notes
+  - native
+- id: q068
+  query: expansion vessel replacement
+  relevant:
+  - corpus/notes/boiler-pressure-saga.md
+  - corpus/boiler_service_invoices/boiler-service-2026.md
+  acceptable:
+  - corpus/notes/heat-pump-research.md
+  - corpus/notes/budget-2026.md
+  tags:
+  - exact
+  - notes
+  - native
+- id: q069
+  query: how much did the energy supplier refund after overcharging me
+  relevant:
+  - corpus/notes/standing-charge-dispute.md
+  - corpus/energy_bills/energy-2025-10.md
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - nl
+  - notes
+  - native
+- id: q070
+  query: £2.12 refund energy bill
+  relevant:
+  - corpus/notes/standing-charge-dispute.md
+  - corpus/energy_bills/energy-2025-10.md
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - exact
+  - notes
+  - native
+- id: q071
+  query: email complaint about the daily standing charge being wrong
+  relevant:
+  - corpus/notes/standing-charge-dispute.md
+  acceptable:
+  - corpus/energy_bills/energy-2025-10.md
+  - corpus/notes/energy-costs-first-year.md
+  tags:
+  - recall
+  - notes
+  - native
+- id: q072
+  query: heat pump quotes flat comparison
+  relevant:
+  - corpus/notes/heat-pump-research.md
+  acceptable:
+  - corpus/quotes_invoices/heatpump-quote-aurellon.md
+  - corpus/quotes_invoices/heatpump-quote-fenwick-dray.md
+  tags:
+  - kw
+  - notes
+  - native
+- id: q073
+  query: which heat pump firm threw in a year of monitoring
+  relevant:
+  - corpus/notes/heat-pump-research.md
+  - corpus/quotes_invoices/heatpump-quote-aurellon.md
+  tags:
+  - nl
+  - notes
+  - native
+- id: q074
+  query: my research on swapping the old gas boiler for a heat pump
+  relevant:
+  - corpus/notes/heat-pump-research.md
+  acceptable:
+  - corpus/notes/research-heat-pump-noise.md
+  - corpus/quotes_invoices/heatpump-quote-aurellon.md
+  - corpus/quotes_invoices/heatpump-quote-fenwick-dray.md
+  tags:
+  - recall
+  - notes
+  - native
+- id: q075
+  query: how much was the deposit when i moved back to london
+  relevant:
+  - corpus/notes/moving-back-to-london.md
+  - corpus/tenancy_legal/tenancy_agreement.md
+  - corpus/letters/deposit_scheme_certificate.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-08.md
+  tags:
+  - nl
+  - notes
+  - native
+- id: q076
+  query: the big writeup of the move home from new york
+  relevant:
+  - corpus/notes/moving-back-to-london.md
+  tags:
+  - recall
+  - notes
+  - native
+- id: q077
+  query: currency broker savings transfer moving
+  relevant:
+  - corpus/notes/moving-back-to-london.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2025-08.md
+  tags:
+  - kw
+  - notes
+  - native
+- id: q078
+  query: uk credit report thin file after america
+  relevant:
+  - corpus/notes/credit-file-cleanup.md
+  acceptable:
+  - corpus/credit_reports/credit_report_date1.md
+  - corpus/credit_reports/credit_report_date2.md
+  tags:
+  - kw
+  - notes
+  - native
+- id: q079
+  query: did the electoral roll actually boost my credit score
+  relevant:
+  - corpus/notes/credit-file-cleanup.md
+  acceptable:
+  - corpus/credit_reports/credit_report_date2.md
+  - corpus/credit_reports/credit_report_date1.md
+  tags:
+  - nl
+  - notes
+  - native
+- id: q080
+  query: notes from viewing flats when i first landed in new york
+  relevant:
+  - corpus/notes/brooklyn-apartment-hunt.md
+  tags:
+  - recall
+  - notes
+  - native
+- id: q081
+  query: calver street $2,275
+  relevant:
+  - corpus/notes/brooklyn-apartment-hunt.md
+  tags:
+  - exact
+  - notes
+  - native
+- id: q082
+  query: what was the broker fee on the brooklyn place
+  relevant:
+  - corpus/notes/brooklyn-apartment-hunt.md
+  tags:
+  - nl
+  - notes
+  - native
+- id: q083
+  query: why the landlord took out insurance instead of a guarantor
+  relevant:
+  - corpus/tenancy_legal/guarantor_deed.md
+  tags:
+  - nl
+  - tenancy_legal
+  - converted
+- id: q084
+  query: rent insurance so no guarantor needed
+  relevant:
+  - corpus/tenancy_legal/guarantor_deed.md
+  tags:
+  - kw
+  - tenancy_legal
+  - converted
+- id: q085
+  query: halewick offer letter contract
+  relevant:
+  - corpus/tenancy_legal/employment_terms_of_offer.md
+  tags:
+  - kw
+  - tenancy_legal
+  - converted
+- id: q086
+  query: what are the pension percentages in my job contract
+  relevant:
+  - corpus/tenancy_legal/employment_terms_of_offer.md
+  tags:
+  - nl
+  - tenancy_legal
+  - converted
+- id: q087
+  query: £37,554 salary
+  relevant:
+  - corpus/tenancy_legal/employment_terms_of_offer.md
+  - corpus/tenancy_legal/guarantor_deed.md
+  tags:
+  - exact
+  - tenancy_legal
+  - converted
+- id: q088
+  query: the bank statement where the dollars landed as pounds
+  relevant:
+  - corpus/uk_current_statements/ferrand-current-2025-08.md
+  acceptable:
+  - corpus/notes/moving-back-to-london.md
+  tags:
+  - recall
+  - uk_current_statements
+  - converted
+- id: q089
+  query: first uk statement deposit sofa
+  relevant:
+  - corpus/uk_current_statements/ferrand-current-2025-08.md
+  tags:
+  - kw
+  - uk_current_statements
+  - converted
+- id: q090
+  query: which statement shows the payment to the heating company
+  relevant:
+  - corpus/uk_current_statements/ferrand-current-2026-06.md
+  - corpus/uk_current_statements/ferrand-current-2025-10.md
+  tags:
+  - nl
+  - uk_current_statements
+  - converted
+- id: q091
+  query: £295.08 boiler repair payment
+  relevant:
+  - corpus/uk_current_statements/ferrand-current-2026-06.md
+  - corpus/boiler_service_invoices/boiler-service-2026.md
+  - corpus/notes/boiler-pressure-saga.md
+  tags:
+  - exact
+  - uk_current_statements
+  - converted
+- id: q092
+  query: what's my take home since the april pay rise
+  relevant:
+  - corpus/uk_payslips/payslip-2026-04.md
+  - corpus/uk_payslips/payslip-2026-05.md
+  - corpus/uk_payslips/payslip-2026-06.md
+  - corpus/uk_payslips/payslip-2026-07.md
+  acceptable:
+  - corpus/uk_current_statements/ferrand-current-2026-04.md
+  - corpus/uk_current_statements/ferrand-current-2026-05.md
+  - corpus/uk_current_statements/ferrand-current-2026-06.md
+  - corpus/uk_current_statements/ferrand-current-2026-07.md
+  tags:
+  - nl
+  - uk_payslips
+  - converted
+- id: q093
+  query: payslip pay rise tax code change
+  relevant:
+  - corpus/uk_payslips/payslip-2026-04.md
+  tags:
+  - kw
+  - uk_payslips
+  - converted
+- id: q094
+  query: the savings pot i set up after moving back
+  relevant:
+  - corpus/uk_savings_statements/ferrand-saver-2025-10.md
+  acceptable:
+  - corpus/notes/isa-and-savings-notes.md
+  tags:
+  - recall
+  - uk_savings_statements
+  - converted
+- id: q095
+  query: easy access savings first interest payment
+  relevant:
+  - corpus/uk_savings_statements/ferrand-saver-2025-10.md
+  tags:
+  - kw
+  - uk_savings_statements
+  - converted
+- id: q096
+  query: american statement with the moving boxes purchase
+  relevant:
+  - corpus/us_checking_statements/harbor-checking-2025-05.md
+  tags:
+  - recall
+  - us_checking_statements
+  - converted
+- id: q097
+  query: brooklyn rent management company statement
+  relevant:
+  - corpus/us_checking_statements/harbor-checking-2025-05.md
+  - corpus/us_checking_statements/harbor-checking-2024-10.md
+  - corpus/us_checking_statements/harbor-checking-2024-11.md
+  - corpus/us_checking_statements/harbor-checking-2024-12.md
+  - corpus/us_checking_statements/harbor-checking-2025-01.md
+  - corpus/us_checking_statements/harbor-checking-2025-02.md
+  - corpus/us_checking_statements/harbor-checking-2025-03.md
+  - corpus/us_checking_statements/harbor-checking-2025-04.md
+  tags:
+  - kw
+  - us_checking_statements
+  - converted
+- id: q098
+  query: which pay slip confirms my last day in new york
+  relevant:
+  - corpus/us_paystubs/paystub-2025-05-30.md
+  tags:
+  - nl
+  - us_paystubs
+  - converted
+- id: q099
+  query: final us paystub leaving date 401k
+  relevant:
+  - corpus/us_paystubs/paystub-2025-05-30.md
+  tags:
+  - kw
+  - us_paystubs
+  - converted
+- id: q100
+  query: last full statement before i drained the us savings
+  relevant:
+  - corpus/us_savings_statements/harbor-savings-2025-q2.md
+  tags:
+  - recall
+  - us_savings_statements
+  - converted
+- id: q101
+  query: how much interest did the american savings earn that spring
+  relevant:
+  - corpus/us_savings_statements/harbor-savings-2025-q2.md
+  tags:
+  - nl
+  - us_savings_statements
+  - converted
+- id: q102
+  query: first water bill london flat
+  relevant:
+  - corpus/water_bills/water-2025-11.md
+  tags:
+  - kw
+  - water_bills
+  - converted
+- id: q103
+  query: how did the water company find me without me signing up
+  relevant:
+  - corpus/water_bills/water-2025-11.md
+  acceptable:
+  - corpus/notes/moving-back-to-london.md
+  tags:
+  - nl
+  - water_bills
+  - converted
+- id: q104
+  query: car insurance renewal documents
+  relevant: []
+  tags:
+  - kw
+  - zero-answer
+- id: q105
+  query: when is my mot due
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+- id: q106
+  query: mortgage in principle paperwork
+  relevant: []
+  tags:
+  - kw
+  - zero-answer
+- id: q107
+  query: how much was the vet bill
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+- id: q108
+  query: how do i cancel the gym membership
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+- id: q109
+  query: dental checkup invoice
+  relevant: []
+  tags:
+  - kw
+  - zero-answer
+- id: q110
+  query: tv licence payment confirmation
+  relevant: []
+  tags:
+  - kw
+  - zero-answer
+- id: q111
+  query: when does my passport need renewing
+  relevant: []
+  tags:
+  - nl
+  - zero-answer
+- id: q112
+  query: the deposit we paid the wedding venue
+  relevant: []
+  tags:
+  - recall
+  - zero-answer
+- id: q113
+  query: solar panel installation quote
+  relevant: []
+  tags:
+  - kw
+  - zero-answer
