@@ -40,7 +40,10 @@ func runIndex(args []string, out io.Writer) error {
 		return fmt.Errorf("index takes no arguments (got %q) — indexing scope is [paths].include in the config", fs.Arg(0))
 	}
 
-	cfg, embedder, err := loadInference(*configPath, *dbPath)
+	if *dbPath == "" {
+		return errors.New("cannot resolve the default database path (no home directory?) — pass --db")
+	}
+	cfg, embedder, err := loadInference(*configPath)
 	if err != nil {
 		return err
 	}

@@ -24,6 +24,34 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- New `bsearch eval run` command: scores an embedding model's retrieval
+  quality against a golden query set (`--corpus <dir>`, a corpusgen-built
+  corpus plus `golden.yaml`). It indexes the corpus into a scratch database
+  under `--work-dir` (default `~/bsearch-eval/work`, reused across reruns
+  against the same corpus and model — only a changed embedding fingerprint
+  re-triggers indexing), then embeds and searches every golden query,
+  recording recall@k, MRR, success@1, and per-stage latency. Results are
+  written as JSON (`--out`, default under `~/bsearch-eval/results/`) for
+  later comparison; a headline summary prints to the terminal. Never prints
+  query text or document content.
+
+- New `bsearch eval summarize` command: benches a summarizer LLM's
+  throughput over a sample of the golden corpus (`--corpus <dir>`,
+  `--model <name>`, `--docs` sample size, default 10). Streams a chat
+  completion per sampled document, writes each summary to `--out-dir`
+  (default under `~/bsearch-eval/summaries/`), and records per-doc and
+  aggregate tokens/second in `metrics.json`. Never prints document content
+  or summary text — only paths and throughput numbers.
+
+- New `bsearch eval compare <a.json> <b.json>` command: compares two
+  `bsearch eval run` results files scored against the same corpus version
+  and query set, reporting per-query win/loss/tie counts and a paired
+  t-test (mean delta, 95% CI, p-value) on recall@10 and MRR@10, overall and
+  per query-tag slice. `--json` emits the comparison as JSON instead of the
+  human-readable table. Refuses to compare runs from different corpus
+  versions or mismatched query sets. Never prints query text — aggregate
+  model names, tags, and numbers only.
+
 - New `bsearch search` command: semantic search over your indexed files from
   the terminal — `bsearch search "heat pump quote"`. The query is embedded
   with the same model-specific prefix used at indexing time, matched against

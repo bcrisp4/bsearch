@@ -85,7 +85,10 @@ func runSearch(args []string, out io.Writer) error {
 		return fmt.Errorf("--limit %d out of range [1, %d]", *limit, maxLimit)
 	}
 
-	_, embedder, err := loadInference(*configPath, *dbPath)
+	if *dbPath == "" {
+		return errors.New("cannot resolve the default database path (no home directory?) — pass --db")
+	}
+	_, embedder, err := loadInference(*configPath)
 	if err != nil {
 		return err
 	}

@@ -9,21 +9,20 @@ import (
 )
 
 // loadInference loads config and builds the embedding client — the setup
-// shared by index and search. Both commands must resolve the exact same
-// embedding spec from config, or queries would land in a different vector
-// space than the index (DESIGN.md: prefix templates); sharing the wiring
-// makes divergence impossible. The resolved spec is available as
-// embedder.Spec() (returned verbatim, never normalized).
-func loadInference(configPath, dbPath string) (*config.Config, *openai.Embedder, error) {
+// shared by index, search, and eval. All commands must resolve the exact
+// same embedding spec from config, or queries would land in a different
+// vector space than the index (DESIGN.md: prefix templates); sharing the
+// wiring makes divergence impossible. The resolved spec is available as
+// embedder.Spec() (returned verbatim, never normalized). The default-db-path
+// check belongs to callers that own a db path (index, search); eval computes
+// its own work-db path after the spec is known, so it has none to check.
+func loadInference(configPath string) (*config.Config, *openai.Embedder, error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, nil, err
 	}
 	if cfg.Inference.EmbeddingModel == "" {
 		return nil, nil, fmt.Errorf("inference.embedding_model is not set — add it to %s (the M2 bake-off records recommended defaults in DESIGN.md)", configPath)
-	}
-	if dbPath == "" {
-		return nil, nil, fmt.Errorf("cannot resolve the default database path (no home directory?) — pass --db")
 	}
 	spec := embedding.ResolveSpec(
 		cfg.Inference.EmbeddingModel,
