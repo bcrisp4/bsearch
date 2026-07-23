@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -72,6 +73,114 @@ func writeEvalCorpus(t *testing.T) string {
 	return root
 }
 
+// condenseTestVec is content-keyed (like evalTestVec) so the query and the
+// three fixture documents map to controlled cosine directions: identical to
+// the query (distance 0), close-but-not-identical (small positive
+// distance), and orthogonal (large distance) respectively. This lets
+// TestEvalRun_CondensesBeforeCutoff arrange an acceptable doc strictly
+// nearer the query than the relevant doc, with a distractor furthest.
+func condenseTestVec(_ int, input string) []float32 {
+	switch {
+	case strings.Contains(input, "alpha-marker"):
+		return []float32{1, 0, 0}
+	case strings.Contains(input, "beta-marker"):
+		return []float32{0.9, 0.1, 0}
+	default:
+		return []float32{0, 1, 0}
+	}
+}
+
+// writeCondenseTestCorpus builds a 3-document corpus and single golden query
+// for Finding 1's regression case (spec §Scoring step 1: acceptable docs
+// occupy no rank slot). "acceptable.md" shares the query's exact direction
+// (nearest, distance 0), "relevant.md" is close but not identical (second
+// nearest), and "distractor.md" is orthogonal (furthest). With --limit 1:
+// collapsing to *limit* before condensing (the bug) truncates the ranking
+// to just the acceptable doc, which condensing then removes entirely,
+// scoring a miss; collapsing with the over-fetch cap and condensing
+// afterward (the fix) drops the acceptable doc and leaves the relevant doc
+// at condensed rank 1.
+func writeCondenseTestCorpus(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	corpus := filepath.Join(root, "corpus")
+	if err := os.MkdirAll(corpus, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"acceptable.md": "Document alpha-marker content, acceptable but not the target.\n",
+		"relevant.md":   "Document beta-marker content, the actually relevant target.\n",
+		"distractor.md": "Document gamma content, wholly unrelated distractor.\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(corpus, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	golden := `queries:
+  - id: q1
+    query: alpha-marker seeking content
+    relevant:
+      - corpus/relevant.md
+    acceptable:
+      - corpus/acceptable.md
+    tags: [kw]
+`
+	if err := os.WriteFile(filepath.Join(root, "golden.yaml"), []byte(golden), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestEvalRun_CondensesBeforeCutoff(t *testing.T) {
+	srv := fakeEmbeddingsServer(t, condenseTestVec)
+
+	dir := t.TempDir()
+	corpusDir := writeCondenseTestCorpus(t)
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	workDir := filepath.Join(dir, "work")
+	outPath := filepath.Join(dir, "out", "results.json")
+
+	var buf strings.Builder
+	err := run([]string{
+		"eval", "run",
+		"--corpus", corpusDir,
+		"--config", cfgPath,
+		"--work-dir", workDir,
+		"--out", outPath,
+		"--limit", "1",
+	}, &buf)
+	if err != nil {
+		t.Fatalf("run(eval run) = %v\noutput:\n%s", err, buf.String())
+	}
+
+	res, err := evalharness.ReadResults(outPath)
+	if err != nil {
+		t.Fatalf("ReadResults() error = %v", err)
+	}
+	if len(res.Queries) != 1 {
+		t.Fatalf("len(Queries) = %d, want 1", len(res.Queries))
+	}
+	q := res.Queries[0]
+
+	if q.RecallAtK != 1.0 {
+		t.Errorf("RecallAtK = %v, want 1.0 (acceptable doc must not occupy the rank-1 slot)", q.RecallAtK)
+	}
+	if q.SuccessAt1 != 1 {
+		t.Errorf("SuccessAt1 = %d, want 1", q.SuccessAt1)
+	}
+	if q.RR != 1.0 {
+		t.Errorf("RR = %v, want 1.0", q.RR)
+	}
+	if len(q.Ranked) != 1 {
+		t.Fatalf("len(Ranked) = %d, want 1 (recorded ranking is the uncondensed top --limit)", len(q.Ranked))
+	}
+	if q.Ranked[0].Path != "corpus/acceptable.md" {
+		t.Errorf("Ranked[0].Path = %q, want corpus/acceptable.md (nearest doc, uncondensed)", q.Ranked[0].Path)
+	}
+}
+
 func TestEvalRun_EndToEnd(t *testing.T) {
 	srv := fakeEmbeddingsServer(t, evalTestVec)
 
@@ -126,6 +235,64 @@ func TestEvalRun_EndToEnd(t *testing.T) {
 	}
 	if res.Model.Dims != 3 {
 		t.Errorf("Model.Dims = %d, want 3", res.Model.Dims)
+	}
+}
+
+// TestEvalRun_WorkDBKeyedByCorpusVersion asserts Finding 3's fix: the work
+// db filename folds in both the corpus-version hash and the embedding
+// fingerprint, so regenerating a corpus in place (new version, same name)
+// can never reuse a stale db that still has a deleted document's vectors —
+// discovery has no deletion pass to clean that up itself.
+func TestEvalRun_WorkDBKeyedByCorpusVersion(t *testing.T) {
+	srv := fakeEmbeddingsServer(t, evalTestVec)
+
+	dir := t.TempDir()
+	corpusDir := writeEvalCorpus(t)
+	cfgPath := writeTestConfig(t, dir, dir, srv.URL)
+	workDir := filepath.Join(dir, "work")
+	outPath := filepath.Join(dir, "out", "results.json")
+
+	var buf strings.Builder
+	err := run([]string{
+		"eval", "run",
+		"--corpus", corpusDir,
+		"--config", cfgPath,
+		"--work-dir", workDir,
+		"--out", outPath,
+	}, &buf)
+	if err != nil {
+		t.Fatalf("run(eval run) = %v\noutput:\n%s", err, buf.String())
+	}
+
+	res, err := evalharness.ReadResults(outPath)
+	if err != nil {
+		t.Fatalf("ReadResults() error = %v", err)
+	}
+	corpusVersion, err := evalharness.CorpusVersion(corpusDir)
+	if err != nil {
+		t.Fatalf("CorpusVersion() error = %v", err)
+	}
+	corpusHash8 := strings.TrimPrefix(corpusVersion, "sha256:")[:8]
+	fp8 := fmt.Sprintf("%x", sha256.Sum256([]byte(res.Model.Fingerprint)))[:8]
+
+	entries, err := os.ReadDir(workDir)
+	if err != nil {
+		t.Fatalf("ReadDir(workDir) = %v", err)
+	}
+	var dbNames []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".db") {
+			dbNames = append(dbNames, e.Name())
+		}
+	}
+	if len(dbNames) != 1 {
+		t.Fatalf("work dir .db files = %v, want exactly 1", dbNames)
+	}
+	if !strings.Contains(dbNames[0], corpusHash8) {
+		t.Errorf("db filename %q does not contain corpus-version hash fragment %q", dbNames[0], corpusHash8)
+	}
+	if !strings.Contains(dbNames[0], fp8) {
+		t.Errorf("db filename %q does not contain fingerprint fragment %q", dbNames[0], fp8)
 	}
 }
 

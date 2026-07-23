@@ -61,6 +61,24 @@ func TestCompareResults_MismatchedVersionRefused(t *testing.T) {
 	}
 }
 
+func TestCompareResults_MismatchedLimitRefused(t *testing.T) {
+	a := makeResults(map[string]queryFixture{"q1": {rr: 1, recall: 1}})
+	b := makeResults(map[string]queryFixture{"q1": {rr: 1, recall: 1}})
+	a.Run.Limit = 10
+	b.Run.Limit = 20
+
+	_, err := CompareResults(a, b)
+	if err == nil {
+		t.Fatal("CompareResults() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "limit") {
+		t.Errorf("error %q does not mention limit", err.Error())
+	}
+	if !strings.Contains(err.Error(), "10") || !strings.Contains(err.Error(), "20") {
+		t.Errorf("error %q does not name both limits", err.Error())
+	}
+}
+
 func TestCompareResults_MismatchedQueryIDsRefused(t *testing.T) {
 	a := makeResults(map[string]queryFixture{
 		"q1": {rr: 1, recall: 1},

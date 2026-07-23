@@ -64,6 +64,11 @@ type RunInfo struct {
 	IndexSeconds float64   `json:"index_seconds"`
 	IndexedDocs  int       `json:"indexed_docs"`
 	Queries      int       `json:"queries"`
+	// Limit is the --limit (documents per query / scoring cutoff) the run
+	// was scored at. compare refuses to pair two runs with different
+	// Limit — a --limit 10 run and a --limit 20 run aren't comparable, the
+	// gap between them is a cutoff artifact, not a model delta.
+	Limit int `json:"limit"`
 }
 
 // PercentilePair holds the p50/p95 of a latency distribution.

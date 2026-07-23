@@ -44,12 +44,16 @@ bsearch eval summarize --corpus <dir> [--config <path>] --model <name>
 2. **Index via the production stack.** `discovery` with Include =
    `<corpus>/corpus/`, then the production `pipeline` (chunker → embedder →
    sqlite store) into a work database at
-   `<work-dir>/<corpus-name>-<fingerprint8>.db`, keyed by corpus name plus
-   embedding-spec fingerprint. Pipeline idempotency is the cache: re-running
-   with the same model and corpus skips straight to querying. Index wall
-   time and doc/chunk counts are recorded only when work actually happened.
-   There is no eval-specific indexing code; a bug that affects eval indexing
-   is by construction a production bug.
+   `<work-dir>/<corpus-name>-<corpus-version8>-<fingerprint8>.db`, keyed by
+   corpus name, corpus version (first 8 hex chars of the `sha256:` corpus
+   hash), and embedding-spec fingerprint — the corpus version is folded in
+   because discovery has no deletion pass, so regenerating a corpus in place
+   would otherwise leave a deleted document's stale vectors in the reused db
+   even though the run records the new corpus version. Pipeline idempotency
+   is the cache: re-running with the same model and corpus skips straight to
+   querying. Index wall time and doc/chunk counts are recorded only when
+   work actually happened. There is no eval-specific indexing code; a bug
+   that affects eval indexing is by construction a production bug.
 3. **Query.** Per golden query: `EmbedQuery` (model's query prefix applied
    by the production registry) → `SearchVectors` with k = limit × 8 (the
    production over-fetch) → `domain.CollapseBestPerDoc` → absolute paths
@@ -117,7 +121,8 @@ Query handling rules:
 ## Comparing two runs (`eval compare`)
 
 Input: two results files. Refuses to compare unless corpus name, corpus
-version, and query-id sets match.
+version, `--limit`, and query-id sets match — comparing runs scored at
+different limits would report a cutoff artifact as a model delta.
 
 Output, overall and per slice:
 
@@ -155,7 +160,7 @@ JSON, one file per run:
   },
   "run": {
     "started_at": "...", "index_seconds": 0, "indexed_docs": 0,
-    "indexed_chunks": 0, "queries": 196
+    "indexed_chunks": 0, "queries": 196, "limit": 10
   },
   "aggregates": {
     "overall_no_exact": {"recall_at_10": 0.0, "mrr_at_10": 0.0,

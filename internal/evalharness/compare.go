@@ -60,12 +60,21 @@ type queryPair struct {
 // recall to compare); exact-tagged queries are excluded from OverallNoExact
 // but present in Overall and Slices["exact"] — the same rules Aggregate
 // applies within a single run.
+//
+// Tag/slice membership and exclusion decisions (zero-answer, exact, and
+// per-tag slicing) use run A's tags for a given query id only — B's tags
+// for the same id are never consulted. This is safe because the corpus
+// version gate above means paired runs were scored against byte-identical
+// golden.yaml, so A and B necessarily agree on every query's tags anyway.
 func CompareResults(a, b Results) (Comparison, error) {
 	if a.Corpus.Name != b.Corpus.Name {
 		return Comparison{}, fmt.Errorf("compare: corpus name differs: a=%q b=%q", a.Corpus.Name, b.Corpus.Name)
 	}
 	if a.Corpus.Version != b.Corpus.Version {
 		return Comparison{}, fmt.Errorf("compare: corpus version differs: a=%q b=%q", a.Corpus.Version, b.Corpus.Version)
+	}
+	if a.Run.Limit != b.Run.Limit {
+		return Comparison{}, fmt.Errorf("compare: limit differs: a=%d b=%d", a.Run.Limit, b.Run.Limit)
 	}
 	if err := checkQueryIDsMatch(a.Queries, b.Queries); err != nil {
 		return Comparison{}, err

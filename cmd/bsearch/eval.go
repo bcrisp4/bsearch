@@ -27,19 +27,10 @@ import (
 	"github.com/bcrisp4/bsearch/internal/pipeline"
 )
 
+// eval reuses search.go's overFetchFactor/maxKNNK/maxLimit constants and its
+// knnK helper directly — both live in this same package (main) — so eval's
+// over-fetch policy can never drift from production search's.
 const (
-	// evalOverFetchFactor mirrors search.go's overFetchFactor: chunk hits
-	// are over-fetched before collapsing to best-chunk-per-document so a
-	// many-chunk document can't crowd others out of the ranking.
-	evalOverFetchFactor = 8
-
-	// evalMaxKNNK mirrors search.go's maxKNNK — sqlite-vec's KNN k ceiling
-	// (SQLITE_VEC_VEC0_K_MAX); the over-fetch clamps here.
-	evalMaxKNNK = 4096
-
-	// evalMaxLimit mirrors search.go's maxLimit bound on --limit.
-	evalMaxLimit = 1000
-
 	// evalProgressEvery prints a liveness line every N scored queries
 	// instead of per query — a large golden set (hundreds of queries)
 	// would otherwise print a line per query, and every such line is a
@@ -91,8 +82,8 @@ func runEvalRun(args []string, out io.Writer) error {
 	if *corpusDir == "" {
 		return errors.New("eval run requires --corpus <dir>")
 	}
-	if *limit < 1 || *limit > evalMaxLimit {
-		return fmt.Errorf("--limit %d out of range [1, %d]", *limit, evalMaxLimit)
+	if *limit < 1 || *limit > maxLimit {
+		return fmt.Errorf("--limit %d out of range [1, %d]", *limit, maxLimit)
 	}
 
 	home, homeErr := os.UserHomeDir()
@@ -138,15 +129,21 @@ func runEvalRun(args []string, out io.Writer) error {
 		return err
 	}
 
-	// The scratch db is keyed by corpus name and embedding fingerprint —
-	// a rerun against the same corpus and model reuses the index rather
-	// than re-embedding every document (fingerprint changes invalidate it
-	// automatically, same as production's vec-spec check).
+	// The scratch db is keyed by corpus name, corpus version, and embedding
+	// fingerprint — a rerun against the same corpus and model reuses the
+	// index rather than re-embedding every document (fingerprint changes
+	// invalidate it automatically, same as production's vec-spec check).
+	// Corpus version is folded in because discovery has no deletion pass:
+	// regenerating a corpus in place (same name, changed/removed docs)
+	// would otherwise leave a deleted document's stale vectors in the
+	// reused db, polluting rankings, even though the run records the new
+	// corpus version.
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return err
 	}
+	corpusHash8 := strings.TrimPrefix(corpusVersion, "sha256:")[:8]
 	fp8 := fmt.Sprintf("%x", sha256.Sum256([]byte(spec.Fingerprint())))[:8]
-	dbPath := filepath.Join(workDir, fmt.Sprintf("%s-%s.db", corpusName, fp8))
+	dbPath := filepath.Join(workDir, fmt.Sprintf("%s-%s-%s.db", corpusName, corpusHash8, fp8))
 
 	db, err := sqlite.Open(dbPath)
 	if err != nil {
@@ -237,13 +234,21 @@ func runEvalRun(args []string, out io.Writer) error {
 		}
 
 		knnStart := time.Now()
-		hits, err := store.SearchVectors(ctx, vec, min(*limit*evalOverFetchFactor, evalMaxKNNK))
+		k := knnK(*limit)
+		hits, err := store.SearchVectors(ctx, vec, k)
 		knnElapsed := time.Since(knnStart)
 		if err != nil {
 			return fmt.Errorf("query %s: search: %w", q.ID, err)
 		}
 
-		collapsed := domain.CollapseBestPerDoc(hits, *limit)
+		// Collapse with the over-fetch cap k, not *limit: the spec's
+		// condensed-list rule (§Scoring step 1) says acceptable docs occupy
+		// no rank slot, so a relevant doc sitting just past the uncondensed
+		// top-*limit must still survive into the condensed top-*limit.
+		// Truncating to *limit here — before ScoreQuery removes the
+		// acceptable docs — would let those acceptable docs eat rank slots
+		// they aren't supposed to occupy, undercounting recall.
+		collapsed := domain.CollapseBestPerDoc(hits, k)
 		ranked := make([]evalharness.RankedDoc, len(collapsed))
 		for n, h := range collapsed {
 			rel, err := filepath.Rel(resolvedCorpusDir, h.Doc.Path)
@@ -264,13 +269,22 @@ func runEvalRun(args []string, out io.Writer) error {
 			score = evalharness.ScoreQuery(q, ranked, *limit)
 		}
 
-		scored = append(scored, evalharness.ScoredQuery{Query: q, Ranked: ranked, Score: score})
+		// The results file records only the uncondensed top *limit of the
+		// full sorted ranking — ScoreQuery needed the full over-fetched
+		// list to condense correctly, but persisting all k entries per
+		// query would balloon the results file for no benefit.
+		recordedRanked := ranked
+		if len(recordedRanked) > *limit {
+			recordedRanked = recordedRanked[:*limit]
+		}
+
+		scored = append(scored, evalharness.ScoredQuery{Query: q, Ranked: recordedRanked, Score: score})
 		results = append(results, evalharness.QueryResult{
 			ID:         q.ID,
 			Query:      q.Query,
 			Tags:       q.Tags,
 			Relevant:   q.Relevant,
-			Ranked:     ranked,
+			Ranked:     recordedRanked,
 			QueryScore: score,
 			LatencyMS:  evalharness.QueryLatency{EmbedMS: msF(embedElapsed), KNNMS: msF(knnElapsed)},
 		})
@@ -306,6 +320,7 @@ func runEvalRun(args []string, out io.Writer) error {
 			IndexSeconds: indexSeconds,
 			IndexedDocs:  sum.Indexed,
 			Queries:      len(queries),
+			Limit:        *limit,
 		},
 		Aggregates: evalharness.Aggregate(scored),
 		LatencyMS: evalharness.LatencySummary{
