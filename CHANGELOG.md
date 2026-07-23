@@ -33,8 +33,17 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   recording recall@k, MRR, success@1, and per-stage latency. Results are
   written as JSON (`--out`, default under `~/bsearch-eval/results/`) for
   later comparison; a headline summary prints to the terminal. Never prints
-  query text or document content. `bsearch eval compare` and
-  `bsearch eval summarize` are not yet implemented.
+  query text or document content. `bsearch eval summarize` is not yet
+  implemented.
+
+- New `bsearch eval compare <a.json> <b.json>` command: compares two
+  `bsearch eval run` results files scored against the same corpus version
+  and query set, reporting per-query win/loss/tie counts and a paired
+  t-test (mean delta, 95% CI, p-value) on recall@10 and MRR@10, overall and
+  per query-tag slice. `--json` emits the comparison as JSON instead of the
+  human-readable table. Refuses to compare runs from different corpus
+  versions or mismatched query sets. Never prints query text — aggregate
+  model names, tags, and numbers only.
 
 - New `bsearch search` command: semantic search over your indexed files from
   the terminal — `bsearch search "heat pump quote"`. The query is embedded

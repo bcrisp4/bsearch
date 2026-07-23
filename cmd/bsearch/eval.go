@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -359,10 +361,112 @@ func printEvalSummary(out io.Writer, r evalharness.Results, limit int, outPath s
 	fmt.Fprintf(out, "results written to %s\n", outPath)
 }
 
-// runEvalCompare will diff two eval runs' scores against each other
-// (evalharness.CompareResults) — Task 8.
+// runEvalCompare diffs two eval runs' scores against each other
+// (evalharness.CompareResults), reporting per-query win/loss/tie and paired
+// t-tests overall and per slice (DESIGN.md: eval harness, spec §Comparing
+// two runs). Never prints query text, only aggregate model names, tags, and
+// numbers (DESIGN.md: Privacy).
 func runEvalCompare(args []string, out io.Writer) error {
-	return errors.New("eval compare is not implemented yet")
+	fs := flag.NewFlagSet("eval compare", flag.ContinueOnError)
+	fs.SetOutput(out)
+	asJSON := fs.Bool("json", false, "emit JSON instead of human-readable output")
+	fs.Usage = func() {
+		fmt.Fprintln(out, "usage: bsearch eval compare [--json] <results-a.json> <results-b.json>")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 2 {
+		// Also hit by flags placed after the paths: stdlib flag stops
+		// parsing at the first positional, so the hint must cover both
+		// "wrong number of paths" and "flags after positionals" mistakes
+		// (same idiom as search.go's overloaded NArg check).
+		return fmt.Errorf("eval compare takes two positional arguments: <results-a.json> <results-b.json> (got %d) — flags go before the paths", fs.NArg())
+	}
+
+	a, err := evalharness.ReadResults(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	b, err := evalharness.ReadResults(fs.Arg(1))
+	if err != nil {
+		return err
+	}
+
+	cmp, err := evalharness.CompareResults(a, b)
+	if err != nil {
+		return err
+	}
+
+	if *asJSON {
+		return json.NewEncoder(out).Encode(cmp)
+	}
+	printComparison(out, cmp)
+	return nil
+}
+
+// printComparison renders a Comparison as a human-readable table: headline
+// rows (with and without exact-match queries), then one row per slice tag
+// in alphabetical order for determinism, then the significance caveat.
+// Aggregate-only — never prints query text (DESIGN.md: Privacy).
+func printComparison(out io.Writer, c evalharness.Comparison) {
+	fmt.Fprintf(out, "corpus %s (%s)  A: %s  B: %s\n", c.Corpus.Name, c.Corpus.Version, c.ModelA.Name, c.ModelB.Name)
+	fmt.Fprintf(out, "%-20s %-18s %-18s %-14s %-13s %s\n",
+		"", "recall@10", "MRR@10", "success@1", "win/loss/tie", "p(MRR)")
+	printCompareRow(out, "overall (no exact)", c.OverallNoExact)
+	printCompareRow(out, "overall", c.Overall)
+
+	tags := make([]string, 0, len(c.Slices))
+	for tag := range c.Slices {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	if len(tags) > 0 {
+		fmt.Fprintln(out, "slices:")
+		for _, tag := range tags {
+			printCompareRow(out, "  "+tag, c.Slices[tag])
+		}
+	}
+
+	// Overall.N is the paired-query count actually scored (excludes
+	// zero-answer queries, which have no RR/recall to compare) — the
+	// caveat must report the true denominator, not a hardcoded figure
+	// (spec §Comparing two runs).
+	fmt.Fprintf(out, "caveat: %d scored queries gives modest power; consistent per-slice deltas beat single aggregate gaps.\n", c.Overall.N)
+}
+
+// printCompareRow prints one metric row (A -> B means, win/loss/tie, MRR
+// p-value) followed by the delta-MRR line with its 95%% CI.
+func printCompareRow(out io.Writer, label string, sc evalharness.SliceComparison) {
+	fmt.Fprintf(out, "%-20s %.3f -> %-11.3f %.3f -> %-11.3f %.2f -> %-8.2f %3d/%d/%-6d %s\n",
+		label,
+		sc.A.RecallAtK, sc.B.RecallAtK,
+		sc.A.MRRAtK, sc.B.MRRAtK,
+		sc.A.SuccessAt1, sc.B.SuccessAt1,
+		sc.Wins, sc.Losses, sc.Ties,
+		formatP(sc.MRRTTest.P))
+	fmt.Fprintf(out, "  Δ MRR %s  95%% CI [%s, %s]\n",
+		formatSigned(sc.MRRTTest.MeanDelta), formatSigned(sc.MRRTTest.CI95Low), formatSigned(sc.MRRTTest.CI95High))
+}
+
+// formatP prints a p-value to 3 decimals, floored at "<0.001" so a
+// near-zero p (common with small paired samples) doesn't misleadingly
+// round to "0.000".
+func formatP(p float64) string {
+	if p < 0.001 {
+		return "<0.001"
+	}
+	return fmt.Sprintf("%.3f", p)
+}
+
+// formatSigned prints a delta to 3 decimals with an explicit sign, so a
+// negative (B worse than A) reads unambiguously next to a positive one.
+func formatSigned(v float64) string {
+	return fmt.Sprintf("%+.3f", v)
 }
 
 // runEvalSummarize will bench a summarizer LLM's throughput and quality over
