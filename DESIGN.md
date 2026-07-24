@@ -466,8 +466,8 @@ exclude = ["~/Archive/old-junk"]
 
 [inference]
 endpoint        = "http://localhost:1234/v1"   # OpenAI-compatible (LM Studio)
-embedding_model = ""                           # decided by M2 bake-off
-summary_model   = ""                           # decided by M2 bake-off
+embedding_model = "text-embedding-embeddinggemma-300m"  # default from the synthetic-corpus eval: google/embeddinggemma-300m as LM Studio serves it (768d, ceiling 2048); registry supplies its prefixes
+summary_model   = ""                           # summariser bench deferred until pyramid summaries exist (#51)
 # Optional per-field overrides of the built-in per-model prefix registry —
 # for embedding models the registry doesn't know. {q}=query, {d}=passage,
 # {t}=heading-path breadcrumb (title slot).
@@ -652,12 +652,15 @@ Missing features).
 
 ## Open issues
 
-- **Default models.** Unresolved by design — the M2 bake-off decides.
-  Constraints recorded: OpenAI-compatible endpoints; embedding dimensions
-  ≤ ~1024 (scan latency, storage) and input ceiling recorded per model;
-  query/passage prefix templates per model; summarizer small enough for
-  battery-tolerable index runs with context ≥ the map-reduce section size;
-  embedding model small enough to stay resident.
+- **Default models.** Embedding default **decided** — EmbeddingGemma-300m
+  (see Closed issues). **Summariser default still open:** its bench is
+  deferred until the pyramid-summary machinery exists (#51), so no
+  `summary_model` is recorded yet. Recorded constraints (still binding):
+  OpenAI-compatible endpoints; embedding dimensions ≤ ~1024 (scan latency,
+  storage) and input ceiling recorded per model; query/passage prefix
+  templates per model; summarizer small enough for battery-tolerable index
+  runs with context ≥ the map-reduce section size; embedding model small
+  enough to stay resident.
 - **Embedding context strategy for long documents.** Chunk-level embeddings
   decided; whether to also embed summaries (a doc-level vector for coarse
   retrieval) — decide during M4 when pyramid data exists.
@@ -713,8 +716,23 @@ Missing features).
   scores uncalibrated — would silently cost recall); unifying config/data
   paths (split is deliberate); a backed-up doc_id map (softened the
   derived-data claim instead).
-
-## Alternatives considered
+- **Default embedding model: EmbeddingGemma-300m (768d).** Chosen from an
+  evaluation of downloaded GGUF candidates against a synthetic golden corpus,
+  scored on retrieval quality, query latency, and index energy. EmbeddingGemma-
+  300m is **statistically tied on MRR@10** with the far larger qwen3-embedding-4b
+  and -8b (paired-t 95% CIs span 0) while **significantly beating** every smaller
+  and older candidate, at the smallest resident footprint and ~8–27× lower query
+  latency and index energy — the billion-parameter models buy no significant
+  ranking gain. Recorded defaults: `google/embeddinggemma-300m` (GGUF), 768
+  native dims, input ceiling 2048 tokens, query prefix
+  `task: search result | query: {q}`, passage prefix `title: {t} | text: {d}`
+  (heading-path breadcrumb in the `{t}` slot). Escalation: qwen3-embedding-8b
+  (best raw recall, tied MRR, ~27× energy) only if real-doc recall demands it.
+  Caveats: **synthetic corpus** — a local real-doc check remains before this is
+  load-bearing (those results stay local); MRL dimension reduction unmeasured
+  (#50); semantic-only for now (hybrid re-run planned). Full candidate list,
+  metrics, and method:
+  `docs/evaluations/2026-07-23-embedding-models-synthetic-v1.md`.
 
 - **Extend lore.** Rejected: lost mental model (vibe-coded), query-time
   indexing flaw, wiki-scoped design. Lessons carried: sqlite-vec + FTS5 + RRF
