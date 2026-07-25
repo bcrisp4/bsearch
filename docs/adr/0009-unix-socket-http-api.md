@@ -1,6 +1,6 @@
 # 0009 — Unix-socket HTTP API contract
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-24
 - **Confidence:** high
 

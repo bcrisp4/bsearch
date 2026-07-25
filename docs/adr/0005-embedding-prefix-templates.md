@@ -1,6 +1,6 @@
 # 0005 — Embedding prefix templates: placeholders, domain composition, registry with config override
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-19
 - **Confidence:** medium
 

@@ -1,6 +1,6 @@
 # 0006 — CLI subcommands via stdlib flag
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-20
 - **Confidence:** high
 
