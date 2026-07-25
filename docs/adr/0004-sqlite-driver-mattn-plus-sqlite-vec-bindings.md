@@ -1,6 +1,6 @@
 # 0004 — SQLite driver: mattn/go-sqlite3 with sqlite-vec cgo bindings
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-19
 - **Confidence:** high
 

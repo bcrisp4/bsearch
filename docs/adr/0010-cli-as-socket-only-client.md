@@ -1,6 +1,6 @@
 # 0010 — `bsearch search` is a socket-only client
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-24
 - **Confidence:** medium
 
