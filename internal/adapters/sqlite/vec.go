@@ -277,8 +277,11 @@ func (s *Store) UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][
 			return fmt.Errorf("check chunk ids: %w", err)
 		}
 		if live != len(chunkIDs) {
-			return fmt.Errorf("%d of %d chunk ids no longer exist (document re-indexed mid-embed?)",
-				len(chunkIDs)-live, len(chunkIDs))
+			// Re-chunked or purged under us. Wrapped so the caller can tell
+			// this apart from a broken store and stand down instead of
+			// failing the drain (domain.ErrDocumentSuperseded).
+			return fmt.Errorf("%d of %d chunk ids no longer exist: %w",
+				len(chunkIDs)-live, len(chunkIDs), domain.ErrDocumentSuperseded)
 		}
 
 		// vec0 has no upsert; delete-then-insert is the documented pattern.

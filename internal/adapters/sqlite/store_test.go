@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -19,6 +20,26 @@ func testDoc(id, path string) domain.Document {
 		MTime:       time.Unix(1700000000, 123456789),
 		State:       domain.DocStateChunked,
 	}
+}
+
+// seedUpsert is UpsertDocument with discovery's create in front of it, and
+// it exists because only discovery creates catalog rows: a pipeline-shaped
+// write (any state but discovered) against a row that is not there reports
+// domain.ErrDocumentGone rather than conjuring one. Production always gets
+// there in two steps — discovery announces the file, the pipeline works on
+// it — so a test that wants a chunked or failed document has to as well.
+func seedUpsert(t *testing.T, store *Store, doc domain.Document, chunks []domain.Chunk) ([]int64, error) {
+	t.Helper()
+	ctx := context.Background()
+	create := doc
+	create.State = domain.DocStateDiscovered
+	if _, err := store.UpsertDocument(ctx, create, nil); err != nil {
+		t.Fatalf("seed %s at %s: %v", doc.ID, doc.Path, err)
+	}
+	if doc.State == domain.DocStateDiscovered && len(chunks) == 0 {
+		return nil, nil
+	}
+	return store.UpsertDocument(ctx, doc, chunks)
 }
 
 func testChunks(docID string, texts ...string) []domain.Chunk {
@@ -43,7 +64,7 @@ func TestUpsertDocumentInsertsDocAndChunks(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha", "beta"))
+	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha", "beta"))
 	if err != nil {
 		t.Fatalf("UpsertDocument: %v", err)
 	}
@@ -74,7 +95,7 @@ func TestUpsertDocumentReplacesChunks(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	first, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha", "beta"))
+	first, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha", "beta"))
 	if err != nil {
 		t.Fatalf("first upsert: %v", err)
 	}
@@ -131,7 +152,7 @@ func TestDeleteDocumentCascades(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
+	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	if _, err := db.Writer().Exec(
@@ -154,16 +175,158 @@ func TestDeleteDocumentCascades(t *testing.T) {
 	}
 }
 
+func TestDeleteByPathPrefix(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	// /notes/sub is the target; /notes/sub.md and /notes/subway/ are the
+	// near misses a naive LIKE 'prefix%' would take with it.
+	paths := map[string]string{
+		"d_dir":     "/notes/sub",
+		"d_inside":  "/notes/sub/a.md",
+		"d_deeper":  "/notes/sub/deep/b.md",
+		"d_sibling": "/notes/sub.md",
+		"d_subway":  "/notes/subway/c.md",
+		"d_other":   "/notes/other.md",
+	}
+	for id, path := range paths {
+		if _, err := seedUpsert(t, store, testDoc(id, path), testChunks(id, "text")); err != nil {
+			t.Fatalf("upsert %s: %v", id, err)
+		}
+	}
+
+	removed, err := store.DeleteByPathPrefix(ctx, "/notes/sub")
+	if err != nil {
+		t.Fatalf("DeleteByPathPrefix: %v", err)
+	}
+	if removed != 3 {
+		t.Errorf("removed = %d, want 3 (the directory row and the two under it)", removed)
+	}
+
+	for _, id := range []string{"d_sibling", "d_subway", "d_other"} {
+		if _, ok, err := store.GetByPath(ctx, paths[id]); err != nil || !ok {
+			t.Errorf("%s (%s) was removed; only the prefix and its descendants should go", id, paths[id])
+		}
+	}
+	for _, id := range []string{"d_dir", "d_inside", "d_deeper"} {
+		if _, ok, err := store.GetByPath(ctx, paths[id]); err != nil || ok {
+			t.Errorf("%s (%s) survived the prefix delete", id, paths[id])
+		}
+	}
+	// Chunks cascade with their documents, as with DeleteDocument.
+	var chunks int
+	if err := db.Reader().QueryRow(
+		"SELECT count(*) FROM chunks WHERE doc_id IN ('d_dir','d_inside','d_deeper')").Scan(&chunks); err != nil {
+		t.Fatalf("count chunks: %v", err)
+	}
+	if chunks != 0 {
+		t.Errorf("chunks = %d after prefix delete, want 0", chunks)
+	}
+}
+
+func TestDeleteByPathPrefixRefusesToEmptyTheCatalog(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	for _, prefix := range []string{"", "/"} {
+		if _, err := store.DeleteByPathPrefix(ctx, prefix); err == nil {
+			t.Errorf("DeleteByPathPrefix(%q) = nil error, want a refusal", prefix)
+		}
+	}
+	if _, ok, err := store.GetByPath(ctx, "/notes/a.md"); err != nil || !ok {
+		t.Error("the document was removed by a refused prefix delete")
+	}
+}
+
+// The window this closes: the drain claims a document, the file is deleted,
+// the watcher's reconcile purges the row, and the pipeline then commits its
+// chunks. An INSERT there would put the document back and go on to embed and
+// finalize it, leaving a deleted file permanently searchable with nothing to
+// notice — the index would be serving content whose source is gone.
+func TestPipelineWritesDoNotResurrectAPurgedDocument(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := store.DeleteByPathPrefix(ctx, "/notes/a.md"); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+
+	// Every write the pipeline makes after the purge, in the order it makes
+	// them. All of them must refuse.
+	chunked := testDoc("d_1", "/notes/a.md")
+	chunked.State = domain.DocStateChunked
+	failed := testDoc("d_1", "/notes/a.md")
+	failed.State = domain.DocStateFailed
+	for name, write := range map[string]func() error{
+		"commit chunks": func() error {
+			_, err := store.UpsertDocument(ctx, chunked, testChunks("d_1", "alpha"))
+			return err
+		},
+		"record failure": func() error {
+			_, err := store.UpsertDocument(ctx, failed, nil)
+			return err
+		},
+		"finalize":    func() error { return store.UpdateDocumentState(ctx, "d_1", domain.DocStateIndexed) },
+		"mark failed": func() error { return store.MarkFailed(ctx, "d_1", "embed: boom") },
+		"refresh stat": func() error {
+			return store.UpdateDocumentStat(ctx, "d_1", 99, time.Unix(1700000001, 0))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := write(); !errors.Is(err, domain.ErrDocumentGone) {
+				t.Errorf("err = %v, want domain.ErrDocumentGone", err)
+			}
+			if _, ok, err := store.GetByPath(ctx, "/notes/a.md"); err != nil || ok {
+				t.Error("the purged document is back in the catalog")
+			}
+		})
+	}
+
+	// And nothing derived from it survived either.
+	var chunks int
+	if err := db.Reader().QueryRow("SELECT count(*) FROM chunks WHERE doc_id = 'd_1'").Scan(&chunks); err != nil {
+		t.Fatal(err)
+	}
+	if chunks != 0 {
+		t.Errorf("chunks = %d for a purged document, want 0", chunks)
+	}
+}
+
+// Discovery is the exception, and has to be: it is the thing that announces
+// a file exists, so its create cannot depend on the row already being there.
+func TestDiscoveryStillCreatesRows(t *testing.T) {
+	store := NewStore(openTestDB(t))
+	ctx := context.Background()
+
+	doc := testDoc("d_1", "/notes/a.md")
+	doc.State = domain.DocStateDiscovered
+	if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
+		t.Fatalf("discovery upsert: %v", err)
+	}
+	if _, ok, err := store.GetByPath(ctx, "/notes/a.md"); err != nil || !ok {
+		t.Error("discovery did not create the row")
+	}
+}
+
 func TestUpsertDocumentDisplacesPathOwner(t *testing.T) {
 	db := openTestDB(t)
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if _, err := store.UpsertDocument(ctx, testDoc("d_old", "/notes/a.md"), testChunks("d_old", "alpha")); err != nil {
+	if _, err := seedUpsert(t, store, testDoc("d_old", "/notes/a.md"), testChunks("d_old", "alpha")); err != nil {
 		t.Fatalf("upsert d_old: %v", err)
 	}
 	// New document ID claims the same path (deleted-and-recreated file).
-	if _, err := store.UpsertDocument(ctx, testDoc("d_new", "/notes/a.md"), testChunks("d_new", "beta")); err != nil {
+	if _, err := seedUpsert(t, store, testDoc("d_new", "/notes/a.md"), testChunks("d_new", "beta")); err != nil {
 		t.Fatalf("upsert d_new over same path: %v", err)
 	}
 
@@ -191,7 +354,7 @@ func TestUpsertDocumentResetsRetryColumnsForAChangedFile(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	if _, err := db.Writer().Exec(
@@ -227,7 +390,7 @@ func TestUpsertDocumentKeepsRetryColumnsMidPipeline(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	if _, err := db.Writer().Exec(
@@ -268,7 +431,7 @@ func TestUpsertDocumentKeepsRetryColumnsWhenRecordingFailure(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	if _, err := db.Writer().Exec(
@@ -306,7 +469,7 @@ func TestGetByContentHash(t *testing.T) {
 	docC := testDoc("d_c", "/notes/c.md")
 	docC.ContentHash = "hash-other"
 	for _, doc := range []domain.Document{docA, docB, docC} {
-		if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
+		if _, err := seedUpsert(t, store, doc, nil); err != nil {
 			t.Fatalf("upsert %s: %v", doc.ID, err)
 		}
 	}
@@ -342,7 +505,7 @@ func TestUpdateDocumentStat(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
+	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	if _, err := db.Writer().Exec(
@@ -388,7 +551,7 @@ func TestStageVersionsRoundTrip(t *testing.T) {
 
 	doc := testDoc("d_1", "/notes/a.md")
 	doc.StageVersions = map[string]string{"chunker": "1", "embedder": "test-model"}
-	if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
+	if _, err := seedUpsert(t, store, doc, nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	got, ok, err := store.GetByPath(ctx, "/notes/a.md")
@@ -418,7 +581,7 @@ func TestListIndexable(t *testing.T) {
 	for _, s := range seed {
 		doc := testDoc(s.id, s.path)
 		doc.State = s.state
-		if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
+		if _, err := seedUpsert(t, store, doc, nil); err != nil {
 			t.Fatalf("seed %s: %v", s.id, err)
 		}
 	}
@@ -446,7 +609,7 @@ func TestUpdateDocumentState(t *testing.T) {
 
 	doc := testDoc("d_1", "/notes/a.md")
 	doc.StageVersions = map[string]string{"chunker": "1"}
-	ids, err := store.UpsertDocument(ctx, doc, testChunks("d_1", "alpha"))
+	ids, err := seedUpsert(t, store, doc, testChunks("d_1", "alpha"))
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
@@ -492,7 +655,7 @@ func TestMarkFailed(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	if err := store.MarkFailed(ctx, "d_1", "undecodable: invalid UTF-8"); err != nil {
@@ -544,7 +707,7 @@ func TestCountsByStateReportsEveryStateIncludingZeros(t *testing.T) {
 	} {
 		doc := testDoc(tc.id, tc.path)
 		doc.State = tc.state
-		if _, err := store.UpsertDocument(ctx, doc, testChunks(tc.id, "text")); err != nil {
+		if _, err := seedUpsert(t, store, doc, testChunks(tc.id, "text")); err != nil {
 			t.Fatalf("UpsertDocument(%s): %v", tc.id, err)
 		}
 	}

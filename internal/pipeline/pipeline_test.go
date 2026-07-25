@@ -27,6 +27,9 @@ type fakeEmbedder struct {
 	// this substring; empty never fails.
 	passageErrOn string
 	passageErr   error
+	// duringEmbed runs inside EmbedPassages, standing in for whatever the
+	// watcher's reconcile does to the catalog while the network call is out.
+	duringEmbed func()
 }
 
 func (f *fakeEmbedder) vector(lead float32) []float32 {
@@ -54,6 +57,9 @@ func (f *fakeEmbedder) EmbedPassages(_ context.Context, chunks []domain.Chunk) (
 	f.passageCalls++
 	if f.passageErrOn != "" && len(chunks) > 0 && strings.Contains(chunks[0].Text, f.passageErrOn) {
 		return nil, f.passageErr
+	}
+	if f.duringEmbed != nil {
+		f.duringEmbed()
 	}
 	out := make([][]float32, len(chunks))
 	for i, c := range chunks {
@@ -374,6 +380,91 @@ func TestRunVanishedFileSkippedNotBurned(t *testing.T) {
 	// reset it (discovery's cheap check skips unchanged files).
 	if st := docState(t, store, doc.Path); st != domain.DocStateDiscovered {
 		t.Errorf("state = %q, want discovered (untouched)", st)
+	}
+}
+
+// The other half of a deleted file: not "gone before we read it" but "gone
+// while we were embedding it". The watcher's reconcile purges the row
+// mid-pipeline, and the write that lands afterwards must not put the
+// document back — a resurrected row goes on to be finalized and served,
+// leaving a deleted file permanently searchable.
+func TestProcessDocumentPurgedMidFlightIsSkippedNotResurrected(t *testing.T) {
+	store := openStore(t)
+	dir := t.TempDir()
+	doc := seedFile(t, store, dir, "doomed.md", "# Doomed\n\ntext\n")
+
+	emb := &fakeEmbedder{spec: testSpec("test-model")}
+	ix := newIndexer(t, store, emb, nil)
+	ctx := context.Background()
+
+	// Exactly the interleaving: the file is deleted and the row purged
+	// after the document was claimed, before the pipeline writes.
+	if err := os.Remove(doc.Path); err != nil {
+		t.Fatal(err)
+	}
+	content := "# Doomed\n\ntext\n"
+	if err := os.WriteFile(doc.Path, []byte(content), 0o600); err != nil {
+		t.Fatal(err) // restored so the read succeeds and the pipeline gets as far as writing
+	}
+	if _, err := store.DeleteByPathPrefix(ctx, doc.Path); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+
+	res, err := ix.ProcessDocument(ctx, doc, ix.StageVersions(3))
+	if err != nil {
+		t.Fatalf("ProcessDocument returned a fatal error for a deleted document: %v", err)
+	}
+	// Superseded, not Skipped: Skipped means "could not be read", which the
+	// scheduler reports as a possible Full Disk Access problem. A deleted
+	// file must not make a healthy daemon blame permissions.
+	if res.Outcome != OutcomeSuperseded {
+		t.Errorf("Outcome = %v, want OutcomeSuperseded", res.Outcome)
+	}
+	if !errors.Is(res.Err, domain.ErrDocumentGone) {
+		t.Errorf("Err = %v, want domain.ErrDocumentGone", res.Err)
+	}
+	if _, ok, err := store.GetByPath(ctx, doc.Path); err != nil || ok {
+		t.Error("the purged document was resurrected by the pipeline")
+	}
+}
+
+// The widest window of all: the document is purged *during* the embed, so the
+// chunks committed a moment earlier are gone by the time their vectors come
+// back. The vector write is the one store call the caller cannot retry its
+// way out of, and treating it as a store failure would gate the whole drain
+// on one deleted file.
+func TestProcessDocumentPurgedDuringEmbedStandsDown(t *testing.T) {
+	store := openStore(t)
+	dir := t.TempDir()
+	doc := seedFile(t, store, dir, "doomed.md", "# Doomed\n\ntext\n")
+
+	ctx := context.Background()
+	emb := &fakeEmbedder{spec: testSpec("test-model")}
+	emb.duringEmbed = func() {
+		// Stands in for the watcher's reconcile: the file went away while the
+		// embedding endpoint was thinking.
+		if _, err := store.DeleteByPathPrefix(ctx, doc.Path); err != nil {
+			t.Errorf("purge: %v", err)
+		}
+	}
+	ix := newIndexer(t, store, emb, nil)
+	dims, err := ix.Prepare(ctx)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+
+	res, err := ix.ProcessDocument(ctx, doc, ix.StageVersions(dims))
+	if err != nil {
+		t.Fatalf("ProcessDocument returned a fatal error for a document deleted mid-embed: %v", err)
+	}
+	if res.Outcome != OutcomeSuperseded {
+		t.Errorf("Outcome = %v, want OutcomeSuperseded", res.Outcome)
+	}
+	if !errors.Is(res.Err, domain.ErrDocumentSuperseded) {
+		t.Errorf("Err = %v, want domain.ErrDocumentSuperseded", res.Err)
+	}
+	if _, ok, err := store.GetByPath(ctx, doc.Path); err != nil || ok {
+		t.Error("the purged document came back")
 	}
 }
 

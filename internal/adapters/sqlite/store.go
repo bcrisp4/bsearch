@@ -86,6 +86,23 @@ func (s *Store) UpsertDocument(ctx context.Context, doc domain.Document, chunks 
 		// Bound rather than compared in SQL against a literal, so the rule
 		// reads off domain.DocStateDiscovered and cannot drift from it.
 		freshFile := doc.State == domain.DocStateDiscovered
+
+		// Only discovery creates rows. A pipeline write lands seconds after
+		// the document was claimed, and in those seconds the file can be
+		// deleted and the watcher's reconcile can purge it — at which point
+		// this INSERT would put it back, and the pipeline would go on to
+		// embed and finalize a document whose file is gone. Nothing would
+		// ever notice: the row looks indexed, and search serves it.
+		if !freshFile {
+			var live int
+			switch err := tx.QueryRowContext(ctx,
+				"SELECT 1 FROM documents WHERE id = ?", doc.ID).Scan(&live); {
+			case errors.Is(err, sql.ErrNoRows):
+				return fmt.Errorf("upsert document %s (%s): %w", doc.ID, doc.Path, domain.ErrDocumentGone)
+			case err != nil:
+				return fmt.Errorf("check document %s still exists: %w", doc.ID, err)
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO documents (id, path, content_hash, size, mtime, state, stage_versions, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -279,7 +296,10 @@ func (s *Store) updateDoc(ctx context.Context, op, docID, query string, args ...
 			return err
 		}
 		if n == 0 {
-			return fmt.Errorf("%s for %s: no such document", op, docID)
+			// Not a bug in the caller: the row can be purged between
+			// claiming a document and finishing with it, and the answer to
+			// that is to stop working on it, not to fail the daemon.
+			return fmt.Errorf("%s for %s: %w", op, docID, domain.ErrDocumentGone)
 		}
 		return nil
 	})
@@ -290,6 +310,74 @@ func (s *Store) DeleteDocument(ctx context.Context, docID string) error {
 	return s.withTx(ctx, func(tx *sql.Tx) error {
 		return deleteDocumentTx(ctx, tx, docID)
 	})
+}
+
+// DeleteByPathPrefix removes the document stored at dir and every document
+// stored beneath it, reporting how many rows went. One call covers both a
+// deleted file and a deleted directory, which is what the caller needs:
+// FSEvents reports a vanished path without saying which it was.
+//
+// The range predicate rather than LIKE: '/' is 0x2f and '0' is 0x30, so
+// everything under dir sorts between dir+"/" and dir+"0", which the UNIQUE
+// index on path serves as a range scan and which needs no escaping.
+func (s *Store) DeleteByPathPrefix(ctx context.Context, dir string) (int, error) {
+	// A prefix delete is the one operation here that can empty the catalog,
+	// so the degenerate inputs that would do it are refused rather than
+	// obeyed. Trailing separators go first, or "//" would walk straight past
+	// a guard written against "/". Neither spelling is reachable from a
+	// cleaned absolute event path; this is about what happens when one day
+	// it is.
+	trimmed := strings.TrimRight(dir, "/")
+	if trimmed == "" {
+		return 0, fmt.Errorf("delete by path prefix: refusing to purge the catalog for prefix %q", dir)
+	}
+	dir = trimmed
+
+	// One statement per vec generation plus one for the documents, however
+	// many rows are under dir. Deleting row by row would run a meta-table
+	// scan per document and hold the single writer connection for the length
+	// of the subtree — `rm -rf` on a large indexed folder is exactly the
+	// input, and a write transaction that scales with it is what the
+	// busy-timeout discipline exists to avoid.
+	const under = "documents.path = ? OR (documents.path > ? AND documents.path < ?)"
+	args := []any{dir, dir + "/", dir + "0"}
+
+	var removed int
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		// Vectors first, while the chunk rows still exist to find them by,
+		// and across every generation — a document deleted while model B is
+		// current must not resurface as orphan rowids under model A.
+		tables, err := listVecTables(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for table := range tables {
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+				DELETE FROM %s WHERE rowid IN (
+					SELECT chunks.id FROM chunks
+					JOIN documents ON documents.id = chunks.doc_id
+					WHERE %s)`, table, under), args...); err != nil {
+				return fmt.Errorf("delete vectors under %s from %s: %w", dir, table, err)
+			}
+		}
+
+		// Chunks and summaries cascade via FK.
+		res, err := tx.ExecContext(ctx,
+			"DELETE FROM documents WHERE "+under, args...)
+		if err != nil {
+			return fmt.Errorf("delete documents under %s: %w", dir, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("delete documents under %s: %w", dir, err)
+		}
+		removed = int(n)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return removed, nil
 }
 
 // deleteDocumentTx removes one document inside an open transaction. Chunks

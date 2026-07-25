@@ -232,6 +232,34 @@ type fakeScanner struct {
 	// of it run to completion and can be counted.
 	pinAt  int
 	pinned bool
+
+	// The watcher-driven half: what Roots reports, and what each ScanPaths
+	// call was given and returns.
+	roots        []string
+	rootErrs     []discovery.PathError
+	pathResult   discovery.Result
+	pathErr      error
+	scannedPaths [][]string
+}
+
+func (s *fakeScanner) ScanPaths(_ context.Context, paths []string) (discovery.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scannedPaths = append(s.scannedPaths, slices.Clone(paths))
+	return s.pathResult, s.pathErr
+}
+
+func (s *fakeScanner) Roots() ([]string, []discovery.PathError) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.roots, s.rootErrs
+}
+
+// reconciled returns the path lists ScanPaths has been given.
+func (s *fakeScanner) reconciled() [][]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.scannedPaths)
 }
 
 func (s *fakeScanner) Scan(ctx context.Context) (discovery.Result, error) {

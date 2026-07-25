@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bcrisp4/bsearch/internal/adapters/fsevents"
 	"github.com/bcrisp4/bsearch/internal/adapters/openai"
 	"github.com/bcrisp4/bsearch/internal/adapters/sqlite"
 	"github.com/bcrisp4/bsearch/internal/config"
@@ -27,8 +28,7 @@ import (
 
 // runServe runs the daemon: an HTTP+JSON API over a unix socket, plus the
 // background indexing loop that keeps the index current (DESIGN.md: Process
-// model, API; ADR 0011, ADR 0012). Discovery is still a periodic walk —
-// FSEvents-driven freshness lands with #13.
+// model, API; ADR 0011, ADR 0012, ADR 0013).
 func runServe(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(out)
@@ -210,7 +210,11 @@ func newScheduler(cfg *config.Config, embedder domain.Embedder, dbPath string, l
 			Include:  cfg.Paths.Include,
 			Excluded: cfg.ExcludeRules().Match,
 		}),
-		Logger: log,
+		// Constructing the watcher subscribes to nothing yet; the scheduler
+		// starts it, and a platform or a grant that will not allow it ends
+		// as scan-only with a reason in status, never as a failed startup.
+		Watcher: fsevents.New(),
+		Logger:  log,
 		// Always the AC policy for now: macOS power detection lands with M7.
 		// Assuming AC is the safe half of the guess — assuming battery would
 		// silently stop indexing on a desktop, and the failure would look
@@ -249,6 +253,15 @@ func indexingStatus(sched *scheduler.Scheduler, offReason string) server.Indexin
 		LastProgress:       optionalTime(snap.LastProgress),
 		ScanErrors:         snap.ScanErrs,
 		ScanReachedNothing: snap.ScanReachedNothing,
+		Watch: &server.WatchStatus{
+			Running:    snap.Watching,
+			Reason:     snap.WatchReason,
+			Roots:      snap.WatchRoots,
+			LastEvent:  optionalTime(snap.LastWatchEvent),
+			Reconciled: snap.WatchReconciled,
+			Deleted:    snap.WatchDeleted,
+			Rescans:    snap.WatchRescans,
+		},
 		Totals: server.IndexingTotals{
 			Indexed: snap.Indexed,
 			Failed:  snap.Failed,

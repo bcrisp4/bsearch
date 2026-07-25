@@ -8,19 +8,27 @@ daemon has to be running before you can search.
 There is no indexing command. The daemon is the only thing that writes the
 index ([ADR 0012](adr/0012-daemon-owns-the-index-writer.md)): it creates the
 database, walks your configured paths, and indexes what it finds. Save a note
-and it is searchable a few minutes later, with nothing to run.
+and it is searchable a few seconds later, with nothing to run.
 
-Discovery is still a periodic walk, so "a few minutes" means up to one scan
-interval; FSEvents-driven freshness lands with issue #13.
+"A few seconds" because the daemon watches your configured paths with
+FSEvents ([ADR 0013](adr/0013-fsevents-watcher-and-event-driven-reconcile.md))
+rather than waiting for the next walk. Delete a file and it stops showing up
+in search just as quickly.
 
 ## How indexing behaves
 
 | | |
 |---|---|
-| Filesystem scan | every 5 minutes |
+| Noticing a change | FSEvents, batched over a 10-second window |
+| Filesystem scan | every 15 minutes while watching, every 5 minutes if the watcher is off |
 | Indexing cycle | `[power].ac.index_interval` (default 5 minutes) |
 | Documents per batch | 32, re-reading the queue between batches so a file you just saved does not wait behind a backlog |
 | Retries | 5 attempts, backing off from 30 seconds to 15 minutes with jitter |
+
+The walk has not gone away — it is the backstop for events that never
+arrived, which is why it is slower rather than absent. `bsearch status` says
+which mode you are in on the `watching` line, and if the watcher is off it
+says why.
 
 Two behaviours are worth knowing about, both from
 [ADR 0011](adr/0011-indexing-queue-dispatch-and-retry.md):
@@ -120,6 +128,15 @@ Unreadable paths get their own section when a scan hits them, with a sample of
 the offending directories; on macOS this is almost always a missing Full Disk
 Access grant (issue #14 covers the onboarding for it).
 
+The *watching* line says whether changes are being noticed as they happen. It
+reads `off — <reason> (relying on the periodic scan)` when the watcher could
+not start, and it is worth a look when the daemon otherwise appears healthy:
+a watcher that has been running for hours with *no changes seen yet* is
+subscribed and being told nothing, which is the same missing Full Disk Access
+grant seen from the other side. Occasional *full rescans (events were lost)*
+are normal under heavy filesystem churn — the daemon noticed the event stream
+had gaps and fell back to a walk rather than trusting it.
+
 `bsearch status --json` emits the same document as `GET /v1/status`, verbatim,
 for scripts. The command exits 0 for any answer the daemon gives, however
 unhappy — a non-zero exit means the daemon could not be reached at all.
@@ -177,6 +194,30 @@ dialog for TCC-gated directories (`~/Documents`, `~/Desktop`, `~/Downloads`,
 iCloud Drive, most of `~/Library`) — it gets silent `EPERM`, so the binary
 needs a Full Disk Access grant in System Settings. Without it the daemon
 indexes whatever it can reach, logs a warning per unreadable path, and reports
-the count and a sample of those paths in `bsearch status`. Turning that into
-onboarding — detecting the missing grant and saying what to click — is issue
-#14.
+the count and a sample of those paths in `bsearch status`. The same grant
+gates FSEvents: without it the watcher subscribes successfully and is simply
+never told about changes under those directories, so `bsearch status` showing
+a watcher running with no changes ever seen is the signature to look for.
+Turning all of that into onboarding — detecting the missing grant and saying
+what to click — is issue #14.
+
+## What it does not notice yet
+
+A file deleted while the daemon is **running** normally disappears from
+search within about fifteen seconds. Three cases still do not, all of them
+the same trade: the daemon only deletes on positive evidence, and where it
+cannot get any it leaves the index alone.
+
+- A file deleted while the daemon was **not** running. The periodic walk sees
+  what exists, so nothing looks for catalog rows whose file is gone.
+- A deletion in a burst big enough to overflow the event stream. The daemon
+  falls back to a walk, and the walk cannot see absences either.
+- A whole folder that vanishes at once, when the daemon cannot confirm the
+  folder's own parent is still there. That is what an unmounting disk and a
+  revoked permission both look like from here.
+
+In every case, deleting the file again with the daemon running clears it, and
+issue [#57](https://github.com/bcrisp4/bsearch/issues/57) closes all three by
+reconciling from the catalog side. It is being taken slowly on purpose — "the
+walk didn't visit it, so it must be deleted" would turn an unmounted external
+disk into a wiped index.

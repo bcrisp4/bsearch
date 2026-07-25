@@ -53,16 +53,15 @@ const (
 	// how long a file saved a moment ago waits behind a bulk backlog: the
 	// queue is re-read, and priority re-evaluated, every batch.
 	defaultBatchSize = 32
-	// defaultScanInterval is how often the filesystem is walked. It is the
-	// freshness SLO for now: until FSEvents lands (#13) the scan is the only
-	// way a new file is noticed, so anything slower than five minutes would
-	// miss DESIGN.md's "new or changed file searchable ≤ 5 min on AC".
+	// defaultScanInterval is how often the filesystem is walked when the
+	// watcher is not running. Without events the scan is the only way a new
+	// file is noticed, so anything slower would miss DESIGN.md's "new or
+	// changed file searchable ≤ 5 min on AC". With the watcher running the
+	// scan is a backstop instead, and watchedScanInterval applies.
 	//
 	// Affordable because the deny-list does the work: a walk of a ~500k-file
 	// $HOME with VCS, dependency and Library trees pruned measures around a
-	// second warm, so this is well under a percent of one core. Once the
-	// watcher is primary this becomes the missed-event backstop and should
-	// get slower, not faster.
+	// second warm, so this is well under a percent of one core.
 	//
 	// Independent of the drain interval on purpose — one is a stat walk, the
 	// other talks to an inference server, and tying them together would mean
@@ -119,7 +118,13 @@ type Indexer interface {
 // Scanner reconciles the catalog with the filesystem, as implemented by
 // *discovery.Scanner.
 type Scanner interface {
+	// Scan walks every root — the periodic backstop.
 	Scan(ctx context.Context) (discovery.Result, error)
+	// ScanPaths reconciles a named set of paths — what the watcher drives.
+	ScanPaths(ctx context.Context, paths []string) (discovery.Result, error)
+	// Roots reports the directories a scan would walk, so the watcher
+	// subscribes to exactly those.
+	Roots() ([]string, []discovery.PathError)
 }
 
 // Options wires a Scheduler. Queue, Indexer and Scanner are required;
@@ -130,12 +135,22 @@ type Options struct {
 	Scanner Scanner
 	Logger  *slog.Logger
 
+	// Watcher delivers filesystem changes as they happen. Nil means
+	// scan-only, which is a working mode rather than a broken one — it is
+	// what a platform without FSEvents gets, and what a failed subscription
+	// falls back to.
+	Watcher domain.Watcher
+	// Debounce is how long watched events are collected before being
+	// reconciled; zero means the default.
+	Debounce time.Duration
+
 	// Power reports the policy for the current power state. Nil means always
 	// on AC — the honest default until macOS power detection lands (M7),
 	// because guessing "battery" would silently stop indexing on a desktop.
 	Power func() config.PowerPolicy
-	// ScanInterval is how often the filesystem is walked; zero means the
-	// default.
+	// ScanInterval pins how often the filesystem is walked. Zero means
+	// automatic: defaultScanInterval while scan-only, watchedScanInterval
+	// once the watcher is running.
 	ScanInterval time.Duration
 	// BatchSize is how many documents one claim returns; zero means the
 	// default.
@@ -176,12 +191,18 @@ type Snapshot struct {
 	// distinguishes a queue that is slow from one that is stuck.
 	LastProgress time.Time
 
-	Indexed  int // documents indexed since start
-	Failed   int // documents given up on since start
-	Skipped  int // documents unreadable at the time since start
-	Retried  int // transient failures rescheduled since start
-	Swept    int // documents re-queued by a stale sweep since start
-	ScanErrs int // per-path problems in the last scan (TCC, unreadable)
+	Indexed int // documents indexed since start
+	Failed  int // documents given up on since start
+	Skipped int // documents unreadable at the time since start
+	Retried int // transient failures rescheduled since start
+	Swept   int // documents re-queued by a stale sweep since start
+	// ScanErrs counts per-path problems (TCC, unreadable) the daemon has met
+	// since the last walk: the walk replaces the count, and each reconcile in
+	// between adds to it. Both sources on purpose — a permission error the
+	// watcher hit is exactly as first-class as one the walk hit, and with the
+	// walk down to a quarter-hour cadence, "wait for the next scan" is not an
+	// acceptable answer to "why is nothing being indexed".
+	ScanErrs int
 	// PathErrors is a sample of those problems — the first few, capped at
 	// maxLoggedPathErrors. A count alone says something is unreadable without
 	// saying what, and "~/Documents: operation not permitted" is the whole
@@ -193,6 +214,25 @@ type Snapshot struct {
 	// nothing (DESIGN.md: TCC is first-class state).
 	ScanReachedNothing bool
 	Deferring          bool
+
+	// Watching means the filesystem watcher is subscribed and delivering.
+	// When it is false, WatchReason says why in the user's terms and the
+	// scan is carrying freshness on its own.
+	Watching bool
+	// WatchReason is why the watcher is not running. Empty while it is.
+	WatchReason string
+	// WatchRoots is how many directories are subscribed.
+	WatchRoots int
+	// LastWatchEvent is when the watcher last delivered something. Against
+	// LastScan it is what distinguishes "nothing has changed" from "events
+	// have stopped arriving" — the signature of a watcher that is nominally
+	// running but is being starved of events, which on macOS means the
+	// daemon is missing Full Disk Access.
+	LastWatchEvent time.Time
+
+	WatchReconciled int // documents queued from watched events since start
+	WatchDeleted    int // documents purged because their file went away
+	WatchRescans    int // full scans forced by an incomplete event stream
 }
 
 // Scheduler runs the indexing loop. Construct with New, drive with Run.
@@ -200,10 +240,12 @@ type Scheduler struct {
 	queue   Queue
 	indexer Indexer
 	scanner Scanner
+	watcher domain.Watcher
 	log     *slog.Logger
 
 	power        func() config.PowerPolicy
 	scanInterval time.Duration
+	debounce     time.Duration
 	batchSize    int
 	maxAttempts  int
 	now          func() time.Time
@@ -223,6 +265,9 @@ type Scheduler struct {
 
 	mu   sync.Mutex
 	snap Snapshot
+	// forceScan is a walk requested out of band — by an incomplete event
+	// stream. Consumed by scanDue, so it survives a scan already in flight.
+	forceScan bool
 }
 
 // New builds a Scheduler.
@@ -234,9 +279,11 @@ func New(opts Options) (*Scheduler, error) {
 		queue:        opts.Queue,
 		indexer:      opts.Indexer,
 		scanner:      opts.Scanner,
+		watcher:      opts.Watcher,
 		log:          opts.Logger,
 		power:        opts.Power,
 		scanInterval: opts.ScanInterval,
+		debounce:     opts.Debounce,
 		batchSize:    opts.BatchSize,
 		maxAttempts:  opts.MaxAttempts,
 		now:          opts.Clock,
@@ -251,8 +298,8 @@ func New(opts Options) (*Scheduler, error) {
 			return config.PowerPolicy{IndexInterval: config.Interval{Duration: 5 * time.Minute}}
 		}
 	}
-	if s.scanInterval <= 0 {
-		s.scanInterval = defaultScanInterval
+	if s.debounce <= 0 {
+		s.debounce = defaultDebounce
 	}
 	if s.batchSize <= 0 {
 		s.batchSize = defaultBatchSize
@@ -308,10 +355,34 @@ func (s *Scheduler) Snapshot() Snapshot {
 // has been off for a week should not sit idle waiting for a tick before
 // noticing that the corpus moved on without it.
 func (s *Scheduler) Run(ctx context.Context) error {
+	// No scan_interval here: the cadence follows the watcher, and the watcher
+	// has not subscribed yet — the number would always be the scan-only one,
+	// contradicting the "watching" field beside it. watch logs the cadence it
+	// settles on once it knows.
 	s.log.Info("indexing scheduler started",
-		"scan_interval", s.scanInterval,
 		"batch_size", s.batchSize,
-		"max_attempts", s.maxAttempts)
+		"max_attempts", s.maxAttempts,
+		"watching", s.watcher != nil)
+
+	// The watcher runs alongside the cycle rather than inside it: its whole
+	// point is that a saved file does not wait for a drain that may be
+	// hours long. Run owns it so shutdown stays one story — cancel the
+	// context, and both goroutines are accounted for before Run returns.
+	var watching sync.WaitGroup
+	if s.watcher != nil {
+		// Recorded before the goroutine starts, not inside it: resolving
+		// roots stats every include path, which on a cold or network-backed
+		// volume is exactly the moment someone runs `bsearch status`. Without
+		// a reason here, that report reads "off — no reason given", which
+		// says the freshness feature is broken when it is merely starting.
+		s.mark(func(snap *Snapshot) { snap.WatchReason = WatchStarting })
+		watching.Add(1)
+		go func() {
+			defer watching.Done()
+			s.watch(ctx)
+		}()
+	}
+	defer watching.Wait()
 
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -365,8 +436,8 @@ func (s *Scheduler) cycle(ctx context.Context) time.Duration {
 	// inference: cheap enough to keep the catalog honest on battery, and
 	// leaving it out would mean a laptop that spent the day unplugged came
 	// back with no idea what had changed (DESIGN.md: cheap stages always run).
-	if s.scanDue() {
-		s.scan(ctx)
+	if due, forced := s.scanDue(); due {
+		s.scan(ctx, forced)
 	}
 	if ctx.Err() != nil {
 		return deferRecheckInterval
@@ -383,16 +454,58 @@ func (s *Scheduler) cycle(ctx context.Context) time.Duration {
 	return policy.IndexInterval.Duration
 }
 
-func (s *Scheduler) scanDue() bool {
-	snap := s.Snapshot()
-	return snap.LastScan.IsZero() || s.now().Sub(snap.LastScan) >= s.scanInterval
+// scanDue reports whether this cycle should walk the filesystem, and whether
+// the walk was asked for out of band. It consumes any such request as it
+// goes; a walk that then fails re-arms it (see scan).
+func (s *Scheduler) scanDue() (due, forced bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.forceScan {
+		// Cleared on consumption rather than after the walk: a request that
+		// arrives while this scan is running is about changes this scan may
+		// already have passed, and deserves its own.
+		s.forceScan = false
+		return true, true
+	}
+	return s.snap.LastScan.IsZero() || s.now().Sub(s.snap.LastScan) >= s.scanIntervalLocked(), false
+}
+
+// currentScanInterval is how long between walks right now.
+func (s *Scheduler) currentScanInterval() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.scanIntervalLocked()
+}
+
+// scanIntervalLocked requires s.mu.
+//
+// A configured interval wins; otherwise the cadence follows the watcher,
+// because the walk means two different things depending on it. Scan-only, it
+// is the freshness mechanism and has an SLO to meet. Watched, it is the
+// backstop for events that went missing, and walking $HOME twelve times an
+// hour to catch them is a battery cost with nothing behind it. Reading the
+// live flag rather than latching it at startup means a watcher that stops
+// restores the tighter cadence on its own.
+func (s *Scheduler) scanIntervalLocked() time.Duration {
+	switch {
+	case s.scanInterval > 0:
+		return s.scanInterval
+	case s.snap.Watching:
+		return watchedScanInterval
+	default:
+		return defaultScanInterval
+	}
 }
 
 // scan walks the filesystem and reconciles the catalog. Per-path problems are
 // reported, never fatal: a single unreadable directory must not stop the rest
 // of the corpus being indexed, and a permission error is a first-class state
 // the user needs to see (DESIGN.md: TCC).
-func (s *Scheduler) scan(ctx context.Context) {
+//
+// forced says the walk was asked for out of band rather than falling due,
+// which changes only what a failure means: the request is re-armed, because
+// nothing else knows what it was for.
+func (s *Scheduler) scan(ctx context.Context, forced bool) {
 	start := s.now()
 	res, err := s.scanner.Scan(ctx)
 	if err != nil {
@@ -401,21 +514,21 @@ func (s *Scheduler) scan(ctx context.Context) {
 		}
 		s.log.Error("scan failed", "error", err)
 		s.mark(func(snap *Snapshot) { snap.LastError = err.Error() })
+		if forced {
+			// A walk asked for out of band answers for events that were
+			// dropped, and those events exist nowhere else. LastScan is not
+			// advanced on this path either, so without re-arming, the retry
+			// would wait out a full interval — up to fifteen minutes while
+			// watching — for changes nothing else can find.
+			s.requestScan()
+		}
 		return
 	}
 
 	// The same cap serves the log and status: enough paths to recognise the
 	// pattern, few enough that neither turns into a haystack.
-	var sample []PathError
-	for i, pe := range res.PathErrors {
-		if i == maxLoggedPathErrors {
-			s.log.Warn("further scan path errors suppressed",
-				"suppressed", len(res.PathErrors)-maxLoggedPathErrors)
-			break
-		}
-		s.log.Warn("scan could not read a path", "path", pe.Path, "error", pe.Err)
-		sample = append(sample, PathError{Path: pe.Path, Err: pe.Err.Error()})
-	}
+	sample := s.logPathErrors(res.PathErrors, "scan could not read a path",
+		"further scan path errors suppressed", maxLoggedPathErrors)
 	reached := res.Discovered + res.Unchanged + res.Renamed + res.Dataless
 	if len(res.PathErrors) > 0 && reached == 0 {
 		// Every root failed and nothing was reachable. That is a permissions
@@ -444,6 +557,35 @@ func (s *Scheduler) scan(ctx context.Context) {
 		snap.PathErrors = sample
 		snap.ScanReachedNothing = len(res.PathErrors) > 0 && reached == 0
 	})
+}
+
+// logPathErrors reports per-path problems at Warn up to limit, says how many
+// it held back, and returns the same prefix in the Snapshot's shape. Shared
+// by the walk and the watcher's reconcile so the two cannot drift into
+// reporting the same class of problem differently.
+func (s *Scheduler) logPathErrors(errs []discovery.PathError, msg, suppressed string, limit int) []PathError {
+	var sample []PathError
+	for i, pe := range errs {
+		if i == limit {
+			s.log.Warn(suppressed, "suppressed", len(errs)-limit)
+			break
+		}
+		s.log.Warn(msg, "path", pe.Path, "error", pe.Err)
+		sample = append(sample, PathError{Path: pe.Path, Err: pe.Err.Error()})
+	}
+	return sample
+}
+
+// appendCapped adds src to dst, stopping at limit. Status shows a sample, not
+// a log: past a handful more paths stop adding information.
+func appendCapped(dst, src []PathError, limit int) []PathError {
+	for _, pe := range src {
+		if len(dst) >= limit {
+			break
+		}
+		dst = append(dst, pe)
+	}
+	return dst
 }
 
 // drain works the queue until it is empty, gated, or cancelled.
@@ -630,6 +772,14 @@ func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[
 			s.log.Debug("document unreadable, leaving it alone", "path", doc.Path, "error", res.Err)
 			skipped++
 			s.mark(func(snap *Snapshot) { snap.Skipped++ })
+		case pipeline.OutcomeSuperseded:
+			// Deleted or saved again while it was being indexed. Deliberately
+			// counted nowhere: it is not unreadable (which would make
+			// idleGate blame Full Disk Access for a working daemon) and not a
+			// failure. The reconcile that overtook this pass has already
+			// recorded what happened under the watcher's own counters.
+			s.log.Debug("document moved on while it was being indexed",
+				"path", doc.Path, "error", res.Err)
 		case pipeline.OutcomeTransient:
 			if !s.retry(ctx, doc, res.Err) {
 				return skipped, false
@@ -697,11 +847,11 @@ func (s *Scheduler) retry(ctx context.Context, doc domain.Document, cause error)
 		// one attempt later — self-correcting, and the reason collapsing this
 		// into one transaction is not worth a new store method.
 		if err := s.queue.Reschedule(ctx, doc.ID, attempts, s.now(), reason); err != nil {
-			return s.storeFailure(ctx, "record final attempt", err)
+			return s.documentGone(doc, err) || s.storeFailure(ctx, "record final attempt", err)
 		}
 		if err := s.queue.MarkFailed(ctx, doc.ID,
 			fmt.Sprintf("%s (after %d attempts)", reason, attempts)); err != nil {
-			return s.storeFailure(ctx, "mark failed", err)
+			return s.documentGone(doc, err) || s.storeFailure(ctx, "mark failed", err)
 		}
 		s.mark(func(snap *Snapshot) { snap.Failed++ })
 		return true
@@ -709,11 +859,30 @@ func (s *Scheduler) retry(ctx context.Context, doc domain.Document, cause error)
 
 	wait := fullJitter(attempts, defaultBackoffBase, defaultBackoffCap, s.rnd)
 	if err := s.queue.Reschedule(ctx, doc.ID, attempts, s.now().Add(wait), reason); err != nil {
-		return s.storeFailure(ctx, "reschedule", err)
+		return s.documentGone(doc, err) || s.storeFailure(ctx, "reschedule", err)
 	}
 	s.log.Debug("retrying a document later",
 		"path", doc.Path, "attempts", attempts, "retry_in_s", int(wait.Seconds()))
 	s.mark(func(snap *Snapshot) { snap.Retried++ })
+	return true
+}
+
+// documentGone reports whether a store error means the document was deleted
+// while the drain was working on it, in which case the drain carries on.
+//
+// It is the difference between "the index is broken" and "the file is gone",
+// which look identical from a failed write and are opposite situations:
+// gating the drain on the second would let one deleted file stop indexing
+// for everything behind it, and would report the deletion as an index write
+// failure in `bsearch status`.
+func (s *Scheduler) documentGone(doc domain.Document, err error) bool {
+	if !errors.Is(err, domain.ErrDocumentGone) {
+		return false
+	}
+	// Counted nowhere, for the same reason OutcomeSuperseded is: Skipped
+	// means "could not be read", which `bsearch status` reports as a
+	// permissions problem. A deleted file is not one.
+	s.log.Debug("document was deleted while it was being indexed", "path", doc.Path)
 	return true
 }
 

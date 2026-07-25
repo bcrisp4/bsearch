@@ -25,3 +25,26 @@ func Within(path, prefix string) bool {
 	}
 	return strings.HasPrefix(path, prefix+string(os.PathSeparator))
 }
+
+// DataVolumeRoot is the firmlink mount of the writable volume on macOS
+// 10.15+, where /Users is really /System/Volumes/Data/Users.
+const DataVolumeRoot = "/System/Volumes/Data"
+
+// FoldDataVolume rewrites a path spelled through the macOS data-volume
+// firmlink to the spelling everything else uses. Other paths are returned
+// unchanged, as is the firmlink root itself — folding that would leave "",
+// and a directory that merely starts with the same letters is a different
+// directory.
+//
+// It lives here, and not in the FSEvents adapter that first needed it,
+// because it only does any good applied to both sides of a comparison.
+// Folding event paths alone and leaving watch roots in the other spelling
+// makes every event fall outside every root — a watcher that subscribes,
+// delivers, and indexes nothing.
+func FoldDataVolume(path string) string {
+	rest := strings.TrimPrefix(path, DataVolumeRoot)
+	if rest == path || !strings.HasPrefix(rest, string(os.PathSeparator)) {
+		return path
+	}
+	return rest
+}

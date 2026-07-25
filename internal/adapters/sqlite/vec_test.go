@@ -86,7 +86,7 @@ func TestUpsertVectorsAndSearch(t *testing.T) {
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
-	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"),
+	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"),
 		testChunks("d_1", "north", "east", "up"))
 	if err != nil {
 		t.Fatalf("UpsertDocument: %v", err)
@@ -161,7 +161,7 @@ func TestSearchRankingIsMagnitudeInvariant(t *testing.T) {
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
-	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"),
+	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"),
 		testChunks("d_1", "north-big", "east"))
 	if err != nil {
 		t.Fatalf("UpsertDocument: %v", err)
@@ -228,7 +228,7 @@ func TestUpsertVectorsDimsMismatch(t *testing.T) {
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
-	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
+	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
 	if err != nil {
 		t.Fatalf("UpsertDocument: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestDeleteAndReplaceRemoveVectors(t *testing.T) {
 	}
 
 	// Replacement path: re-upserting a document must drop old chunk vectors.
-	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha", "beta"))
+	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha", "beta"))
 	if err != nil {
 		t.Fatalf("upsert d_1: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestDeleteAndReplaceRemoveVectors(t *testing.T) {
 	}
 
 	// Delete path.
-	ids, err = store.UpsertDocument(ctx, testDoc("d_2", "/notes/b.md"), testChunks("d_2", "delta"))
+	ids, err = seedUpsert(t, store, testDoc("d_2", "/notes/b.md"), testChunks("d_2", "delta"))
 	if err != nil {
 		t.Fatalf("upsert d_2: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestUpsertVectorsRejectsStaleChunkIDs(t *testing.T) {
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
-	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
+	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestDeleteCleansAllVecGenerations(t *testing.T) {
 	if err := store.EnsureVecTable(ctx, vecSpec("model-a"), 3); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
+	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
 	if err != nil {
 		t.Fatal(err)
 	}

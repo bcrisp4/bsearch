@@ -106,10 +106,34 @@ type IndexingStatus struct {
 	ScanErrors         int         `json:"scan_errors"`
 	ScanReachedNothing bool        `json:"scan_reached_nothing"`
 	PathErrors         []PathError `json:"path_errors,omitempty"`
+	// Watch is the filesystem watcher's half of freshness. Absent when the
+	// daemon has no indexing loop to report on at all; present and not
+	// running when the loop is scan-only, which is a working mode rather
+	// than a fault (DESIGN.md: Change detection).
+	Watch *WatchStatus `json:"watch,omitempty"`
 	// Totals are cumulative since the daemon started, not since the index was
 	// created: they describe this process, and the catalog counts describe the
 	// corpus.
 	Totals IndexingTotals `json:"totals"`
+}
+
+// WatchStatus is what the filesystem watcher is doing. When Running is
+// false, Reason says why and the periodic scan is carrying freshness alone.
+//
+// LastEvent is the field worth reading: a watcher that is running but has
+// never delivered anything is what a missing Full Disk Access grant looks
+// like from here — subscribed, healthy, and told nothing.
+type WatchStatus struct {
+	Running   bool       `json:"running"`
+	Reason    string     `json:"reason,omitempty"`
+	Roots     int        `json:"roots,omitempty"`
+	LastEvent *time.Time `json:"last_event,omitempty"`
+	// Reconciled counts documents queued from events, Deleted counts
+	// documents purged because their file went away, and Rescans counts
+	// full walks forced by an event stream that lost events.
+	Reconciled int `json:"reconciled"`
+	Deleted    int `json:"deleted"`
+	Rescans    int `json:"rescans"`
 }
 
 // PathError is one path the last scan could not read.
