@@ -1,6 +1,6 @@
 # 0011 — Indexing queue: dispatch, retry, and health gates
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-24
 - **Confidence:** medium
 

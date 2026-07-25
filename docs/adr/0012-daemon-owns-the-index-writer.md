@@ -1,6 +1,6 @@
 # 0012 — The daemon is the only index writer
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-24
 - **Confidence:** high
 
