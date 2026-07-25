@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -69,6 +70,14 @@ type Hit struct {
 	Chunk    Chunk
 	Distance float64
 }
+
+// ErrNoVecTable means there is no current vector table: nothing has been
+// embedded yet, or the generation search was using was superseded mid-flight
+// by an indexer running in another process. It lives here, not in the storage
+// adapter, because the query path must recognise it without importing an
+// adapter — "nothing to search right now" is a port-level outcome, not a
+// SQLite detail.
+var ErrNoVecTable = errors.New("no current vector table (nothing embedded yet?)")
 
 // VectorStore persists chunk embeddings and serves KNN search. A search can
 // only use one embedding model, so the store tracks a current vector table

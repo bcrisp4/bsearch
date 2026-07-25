@@ -26,11 +26,14 @@ import (
 	"github.com/bcrisp4/bsearch/internal/domain"
 	"github.com/bcrisp4/bsearch/internal/evalharness"
 	"github.com/bcrisp4/bsearch/internal/pipeline"
+	"github.com/bcrisp4/bsearch/internal/search"
 )
 
-// eval reuses search.go's overFetchFactor/maxKNNK/maxLimit constants and its
-// knnK helper directly — both live in this same package (main) — so eval's
-// over-fetch policy can never drift from production search's.
+// eval reuses internal/search's over-fetch policy (search.KnnK, search.MaxLimit)
+// rather than its own, so what the harness measures can never drift from what
+// the daemon serves. It does not call search.Service: it needs the uncollapsed
+// chunk hits and separate embed/KNN timings, and it runs against its own
+// scratch index, never the socket.
 const (
 	// evalProgressEvery prints a liveness line every N scored queries
 	// instead of per query — a large golden set (hundreds of queries)
@@ -83,8 +86,8 @@ func runEvalRun(args []string, out io.Writer) error {
 	if *corpusDir == "" {
 		return errors.New("eval run requires --corpus <dir>")
 	}
-	if *limit < 1 || *limit > maxLimit {
-		return fmt.Errorf("--limit %d out of range [1, %d]", *limit, maxLimit)
+	if *limit < 1 || *limit > search.MaxLimit {
+		return fmt.Errorf("--limit %d out of range [1, %d]", *limit, search.MaxLimit)
 	}
 
 	home, homeErr := os.UserHomeDir()
@@ -272,7 +275,7 @@ func runEvalRun(args []string, out io.Writer) error {
 		}
 
 		knnStart := time.Now()
-		k := knnK(*limit)
+		k := search.KnnK(*limit)
 		hits, err := store.SearchVectors(ctx, vec, k)
 		knnElapsed := time.Since(knnStart)
 		if err != nil {

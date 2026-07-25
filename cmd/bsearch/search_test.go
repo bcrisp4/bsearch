@@ -50,21 +50,6 @@ func TestRunSearchBadLimit(t *testing.T) {
 	}
 }
 
-func TestKNNKClampedToVecCeiling(t *testing.T) {
-	if got := knnK(10); got != 80 {
-		t.Errorf("knnK(10) = %d, want 80", got)
-	}
-	// sqlite-vec rejects k > 4096 outright; the largest --limit values
-	// must clamp rather than fail the query (found the hard way: any
-	// --limit >= 513 used to error).
-	if got := knnK(maxLimit); got != maxKNNK {
-		t.Errorf("knnK(%d) = %d, want clamped to %d", maxLimit, got, maxKNNK)
-	}
-	if maxLimit > maxKNNK {
-		t.Errorf("maxLimit %d > maxKNNK %d: clamped k could return fewer chunks than documents requested", maxLimit, maxKNNK)
-	}
-}
-
 func TestRunSearchBadFlag(t *testing.T) {
 	var out strings.Builder
 	if err := run([]string{"search", "--nope", "q"}, &out); err == nil {
@@ -239,21 +224,6 @@ func TestRunSearchJSON(t *testing.T) {
 	}
 }
 
-func TestWriteSearchJSONEmptyHits(t *testing.T) {
-	// hits must encode as [], never null — JSON consumers iterate it.
-	var out strings.Builder
-	if err := writeSearchJSON(&out, nil, 0); err != nil {
-		t.Fatal(err)
-	}
-	var resp map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(out.String()), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(string(resp["hits"])); got != "[]" {
-		t.Errorf("hits encoded as %s, want []", got)
-	}
-}
-
 func TestRunSearchModelChanged(t *testing.T) {
 	cfgPath, dbPath := searchFixture(t)
 
@@ -302,33 +272,6 @@ func TestRunSearchDimsChanged(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "dimensions") {
 		t.Errorf("error %q does not mention dimensions", err)
-	}
-}
-
-func TestPreview(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		max  int
-		want string
-	}{
-		{"short passthrough", "hello world", 150, "hello world"},
-		{"whitespace collapse", "a\n\nb\t c  d", 150, "a b c d"},
-		{"leading and trailing whitespace trimmed", "  a b  ", 150, "a b"},
-		{"exact limit not truncated", strings.Repeat("x", 150), 150, strings.Repeat("x", 150)},
-		{"over limit truncated", strings.Repeat("x", 151), 150, strings.Repeat("x", 150) + "…"},
-		{"multibyte at boundary", strings.Repeat("é", 151), 150, strings.Repeat("é", 150) + "…"},
-		{"emoji at boundary", strings.Repeat("🐟", 151), 150, strings.Repeat("🐟", 150) + "…"},
-		{"control chars stripped", "a\x1b]0;owned\x07b", 150, "a]0;ownedb"},
-		{"ansi escape initiator stripped", "red \x1b[31mtext", 150, "red [31mtext"},
-		{"empty", "", 150, ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := preview(tt.in, tt.max); got != tt.want {
-				t.Errorf("preview(%q, %d) = %q, want %q", tt.in, tt.max, got, tt.want)
-			}
-		})
 	}
 }
 
