@@ -9,17 +9,25 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
+	"github.com/bcrisp4/bsearch/internal/adapters/openai"
+	"github.com/bcrisp4/bsearch/internal/adapters/sqlite"
 	"github.com/bcrisp4/bsearch/internal/config"
 	"github.com/bcrisp4/bsearch/internal/daemon"
+	"github.com/bcrisp4/bsearch/internal/discovery"
+	"github.com/bcrisp4/bsearch/internal/domain"
+	"github.com/bcrisp4/bsearch/internal/pipeline"
+	"github.com/bcrisp4/bsearch/internal/scheduler"
 	"github.com/bcrisp4/bsearch/internal/server"
 	"github.com/bcrisp4/bsearch/internal/socket"
 )
 
-// runServe runs the daemon: an HTTP+JSON API over a unix socket
-// (DESIGN.md: Process model, API). Indexing still belongs to the one-shot
-// `bsearch index` command until the scheduler and watcher land (#12, #13).
+// runServe runs the daemon: an HTTP+JSON API over a unix socket, plus the
+// background indexing loop that keeps the index current (DESIGN.md: Process
+// model, API; ADR 0011, ADR 0012). Discovery is still a periodic walk —
+// FSEvents-driven freshness lands with #13.
 func runServe(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(out)
@@ -81,6 +89,14 @@ func runServe(args []string, out io.Writer) error {
 		}
 	}()
 
+	// The indexing side. It is set up defensively: every way it can fail to
+	// start leaves the daemon serving /v1/status, because a LaunchAgent that
+	// exits non-zero is a crash-loop with nothing able to explain itself, and
+	// "why is nothing being indexed" is exactly the question status exists to
+	// answer.
+	sched, closeIndexer := newScheduler(cfg, opts.Embedder, *dbPath, log)
+	defer closeIndexer()
+
 	ln, err := socket.Listen(*socketPath, *lockPath)
 	if err != nil {
 		if errors.Is(err, socket.ErrAlreadyRunning) {
@@ -101,12 +117,100 @@ func runServe(args []string, out io.Writer) error {
 		"config", *configPath,
 		"pid", os.Getpid(),
 	)
-	return server.New(server.Options{
+
+	// The scheduler gets its own cancellation rather than sharing the signal
+	// context, so shutdown is ordered: drain the HTTP server first, and only
+	// then stop indexing. The other order would abandon a document mid-write
+	// while requests were still arriving.
+	var wg sync.WaitGroup
+	indexCtx, stopIndexing := context.WithCancel(context.Background())
+	defer stopIndexing()
+	if sched != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := sched.Run(indexCtx); err != nil {
+				log.Error("indexing scheduler stopped", "error", err)
+			}
+		}()
+	}
+
+	serveErr := server.New(server.Options{
 		Backend: back,
 		Socket:  *socketPath,
 		DBPath:  *dbPath,
 		Logger:  log,
 	}).Serve(ctx, ln)
+
+	stopIndexing()
+	wg.Wait()
+	return serveErr
+}
+
+// newScheduler builds the indexing loop, returning nil when it cannot be
+// built. Every failure here is reported and survived rather than returned:
+// the daemon's job when something is misconfigured is to keep answering
+// status, not to exit.
+//
+// The returned close function releases the writer database and must run after
+// the scheduler has stopped.
+func newScheduler(cfg *config.Config, embedder domain.Embedder, dbPath string, log *slog.Logger) (*scheduler.Scheduler, func()) {
+	noop := func() {}
+	if embedder == nil {
+		// Already logged and reported through status by the caller.
+		return nil, noop
+	}
+
+	// Open, not OpenExisting: the daemon owns the writer role now, so it
+	// creates and migrates the index rather than waiting for something else
+	// to (ADR 0012). The query path keeps its own lazily-opened read handle.
+	db, err := sqlite.Open(dbPath)
+	if err != nil {
+		log.Error("indexing disabled: cannot open the index for writing", "db", dbPath, "error", err)
+		return nil, noop
+	}
+	closeDB := func() {
+		if err := db.Close(); err != nil {
+			log.Error("close index writer", "error", err)
+		}
+	}
+
+	store := sqlite.NewStore(db)
+	indexer, err := pipeline.New(pipeline.Options{
+		Store:     store,
+		Vectors:   store,
+		Embedder:  embedder,
+		Transient: openai.Transient,
+		// Progress lines are for a human watching a one-shot command. The
+		// daemon reports through the log, which has levels and structure.
+		Progress: io.Discard,
+	})
+	if err != nil {
+		log.Error("indexing disabled", "error", err)
+		closeDB()
+		return nil, noop
+	}
+
+	sched, err := scheduler.New(scheduler.Options{
+		Queue:   store,
+		Indexer: indexer,
+		Scanner: discovery.New(store, discovery.Options{
+			Include:  cfg.Paths.Include,
+			Excluded: cfg.ExcludeRules().Match,
+		}),
+		Logger: log,
+		// Always the AC policy for now: macOS power detection lands with M7.
+		// Assuming AC is the safe half of the guess — assuming battery would
+		// silently stop indexing on a desktop, and the failure would look
+		// like a bug rather than a default.
+		Power: func() config.PowerPolicy { return cfg.Power.AC },
+	})
+	if err != nil {
+		log.Error("indexing disabled", "error", err)
+		closeDB()
+		return nil, noop
+	}
+	return sched, closeDB
 }
 
 func parseLogLevel(name string) (slog.Level, error) {

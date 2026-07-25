@@ -63,6 +63,37 @@ type DocumentStore interface {
 	MarkFailed(ctx context.Context, docID, reason string) error
 }
 
+// Queue is the dispatch half of the catalog: which documents the scheduler
+// should work on next, and how a failed attempt is recorded so the next pass
+// treats it correctly (DESIGN.md: Indexing pipeline and queue).
+//
+// There is no claim method and no claimed state. One daemon runs one indexing
+// worker, and every pipeline stage is an idempotent upsert, so a crash
+// mid-document is redone rather than recovered (ADR 0011). That is why
+// ClaimBatch is a read: nothing is reserved, so nothing has to be released.
+type Queue interface {
+	// ClaimBatch returns up to limit documents due for work now: non-terminal
+	// state, and next_retry_at either unset or not in the future relative to
+	// now. Ordering is recency-first with aging, so a file saved a moment ago
+	// is worked before a backlog without the backlog ever starving.
+	ClaimBatch(ctx context.Context, now time.Time, limit int) ([]Document, error)
+	// Reschedule records a transient failure: attempts, the next due time,
+	// and the reason. State is left alone — the document keeps whatever
+	// progress it made, and the next pass resumes from there.
+	Reschedule(ctx context.Context, docID string, attempts int, at time.Time, reason string) error
+	// ResetStale moves documents whose derived data was produced by stage
+	// versions other than current back to discovered, clearing the retry
+	// columns, and reports how many moved. It is what makes a model or
+	// chunker change re-embed the corpus with no command run: the dispatch
+	// predicate skips terminal states, so without this a stale index would
+	// serve forever (DESIGN.md: Pipeline metadata — partial rebuilds).
+	//
+	// current is keyed by the Stage* constants. Keys absent from current are
+	// ignored, so a stage that has not run yet (conversion, summaries) never
+	// makes every document look stale.
+	ResetStale(ctx context.Context, current map[string]string) (int, error)
+}
+
 // Hit is one KNN result: the matching chunk, its document, and the raw
 // distance (model-dependent and uncalibrated — DESIGN.md: no score floor).
 type Hit struct {

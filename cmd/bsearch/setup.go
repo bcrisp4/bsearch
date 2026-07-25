@@ -9,13 +9,11 @@ import (
 )
 
 // loadInference loads config and builds the embedding client — the setup
-// shared by index, search, and eval. All commands must resolve the exact
-// same embedding spec from config, or queries would land in a different
-// vector space than the index (DESIGN.md: prefix templates); sharing the
-// wiring makes divergence impossible. The resolved spec is available as
-// embedder.Spec() (returned verbatim, never normalized). The default-db-path
-// check belongs to callers that own a db path (index, search); eval computes
-// its own work-db path after the spec is known, so it has none to check.
+// shared by the commands that need one up front. Every command must resolve
+// the exact same embedding spec from config, or queries would land in a
+// different vector space than the index (DESIGN.md: prefix templates);
+// sharing the wiring makes divergence impossible. The resolved spec is
+// available as embedder.Spec() (returned verbatim, never normalized).
 func loadInference(configPath string) (*config.Config, *openai.Embedder, error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {

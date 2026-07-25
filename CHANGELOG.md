@@ -13,6 +13,26 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- **The daemon now indexes on its own.** `bsearch serve` walks your configured
+  paths, indexes what it finds, and keeps up with new and changed files — no
+  command to run and nothing to remember. Save a note and it is searchable a
+  few minutes later. The daemon also creates the index database itself, so a
+  fresh install is `bsearch serve` and nothing else.
+
+  Two things it now handles for you. **A stopped inference server costs
+  nothing**: the daemon checks the embedding endpoint before working, and
+  checks again before blaming a document for a failure, so leaving LM Studio
+  closed for a week marks nothing as failed and indexing resumes by itself.
+  And **changing `inference.embedding_model` re-embeds your corpus**: restart
+  the daemon and it notices the index was built by a different model and works
+  through it again, so searches are thin rather than wrong while it catches
+  up. Documents that fail for their own reasons are retried five times with
+  backoff before being given up on.
+
+  Indexing scans every 5 minutes for now — the filesystem watcher that makes
+  it near-instant is still to come. Battery-aware scheduling is configurable
+  but not yet active. See [docs/daemon.md](docs/daemon.md).
+
 - New `bsearch serve` command: runs the bsearch daemon, serving search over
   an HTTP+JSON API on a unix socket at
   `~/Library/Application Support/bsearch/bsearch.sock` (mode 0600, so only
@@ -43,16 +63,24 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   `--json` output is byte-identical to what the daemon returns. Errors read
   the same as before — the daemon's message, on stderr, with exit status 1.
 
-  `bsearch index` is unaffected and still writes the index directly.
-
 - Semantic search now ranks by cosine distance instead of Euclidean (L2).
   For the normalized embedding models most people run, rankings are
   identical — but models that emit non-normalized vectors (or truncated
   ones) no longer silently skew results toward larger-magnitude embeddings.
   The `distance` in `bsearch search` output is now bounded [0, 2] (still
-  lower = better, still uncalibrated). Existing indexes migrate on the next
-  `bsearch index` run, which re-embeds everything automatically; until that
-  run, search keeps the old ranking behaviour. (ADR 0007)
+  lower = better, still uncalibrated). Existing indexes migrate automatically:
+  the daemon notices the change and re-embeds everything in the background,
+  and search keeps the old ranking behaviour until it catches up. (ADR 0007)
+
+### Removed
+
+- **`bsearch index` is gone.** The daemon indexes continuously now, so there
+  is nothing left for a one-shot command to do — and having two things that
+  write the index meant two things that could disagree about it. Run
+  `bsearch serve` and it takes care of itself; if you had `bsearch index` in a
+  cron job or a shell alias, delete it. A command to force a rebuild on demand
+  is coming separately, and matters less than it used to now that a
+  configuration change re-indexes by itself. (ADR 0012)
 
 ### Added
 

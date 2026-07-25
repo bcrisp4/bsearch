@@ -119,14 +119,14 @@ func (s *Service) Search(ctx context.Context, req Request) (Response, error) {
 		return Response{}, err
 	}
 
-	// Read the index's identity per request, never cached: an indexer in
-	// another process can cut the vector generation over at any moment
-	// (ADR 0009). Doing it before embedding also fails fast, ahead of the
-	// network call.
+	// Read the index's identity per request, never cached: the daemon's
+	// scheduler can cut the vector generation over at any moment, and a
+	// drop-and-reindex replaces the file outright (ADR 0009). Doing it before
+	// embedding also fails fast, ahead of the network call.
 	indexed, dims, err := s.index.CurrentVecSpec(ctx)
 	if err != nil {
 		if errors.Is(err, domain.ErrNoVecTable) {
-			return Response{}, fmt.Errorf("%w: nothing indexed yet — run 'bsearch index' first", ErrNotIndexed)
+			return Response{}, fmt.Errorf("%w: nothing indexed yet — the daemon indexes in the background; check 'bsearch serve' is running", ErrNotIndexed)
 		}
 		return Response{}, err
 	}
@@ -147,7 +147,7 @@ func (s *Service) Search(ctx context.Context, req Request) (Response, error) {
 	// changed on the inference server. The store would reject this too, but
 	// with a raw table error; name the remedy.
 	if len(vec) != dims {
-		return Response{}, fmt.Errorf("%w: the embedding server returned %d dimensions but the index was built with %d — the model behind %q changed; run 'bsearch index' to re-embed",
+		return Response{}, fmt.Errorf("%w: the embedding server returned %d dimensions but the index was built with %d — the model behind %q changed; the daemon re-embeds automatically, so this clears itself once it catches up",
 			ErrIndexMismatch, len(vec), dims, spec.Model)
 	}
 
@@ -237,10 +237,10 @@ func compatible(indexed, configured domain.EmbeddingSpec) error {
 	// Both remedies are named: the index may be stale, or the daemon may be
 	// running with a configuration older than the one that built the index.
 	if indexed.Model != want.Model {
-		return fmt.Errorf("%w: the index was built with model %q but the configuration says %q — run 'bsearch index' to re-embed, or restart the daemon if you changed its config",
+		return fmt.Errorf("%w: the index was built with model %q but the configuration says %q — restart the daemon, which re-embeds the corpus in the background under the configured model",
 			ErrIndexMismatch, indexed.Model, want.Model)
 	}
-	return fmt.Errorf("%w: the index was built with a different embedding configuration for model %q (prefix templates changed?) — run 'bsearch index' to re-embed, or restart the daemon if you changed its config",
+	return fmt.Errorf("%w: the index was built with a different embedding configuration for model %q (prefix templates changed?) — restart the daemon, which re-embeds the corpus in the background under the configured settings",
 		ErrIndexMismatch, want.Model)
 }
 

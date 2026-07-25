@@ -377,7 +377,7 @@ func TestReplacingTheIndexDoesNotBreakAnInFlightSearch(t *testing.T) {
 }
 
 func TestUnreadableIndexIsReportedAsNotIndexed(t *testing.T) {
-	// Every way opening can fail — a file that isn't a bsearch index, a
+	// Every way opening can fail — a file that isn't a bsearch index database, a
 	// schema this build is too old or too new for — says something
 	// actionable about the index. Without the sentinel they all arrive as
 	// an opaque 500 telling the user to check a log.
