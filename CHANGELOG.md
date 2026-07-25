@@ -49,40 +49,6 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   that was killed is reclaimed automatically. Configuration is read once at
   startup, so restart the daemon after editing `config.toml`.
 
-### Changed
-
-- **`bsearch search` now requires a running daemon.** It talks to
-  `bsearch serve` over the unix socket instead of opening the index itself,
-  which is what the architecture always described — one query path means one
-  place that agrees about prefix templates and index identity. Start the
-  daemon in another terminal (`bsearch serve`) before searching; a
-  LaunchAgent that starts it at login is coming.
-
-  Its flags change with it: `--socket` replaces `--config` and `--db`, which
-  move to `bsearch serve`. `--limit` and `--json` are unchanged, and the
-  `--json` output is byte-identical to what the daemon returns. Errors read
-  the same as before — the daemon's message, on stderr, with exit status 1.
-
-- Semantic search now ranks by cosine distance instead of Euclidean (L2).
-  For the normalized embedding models most people run, rankings are
-  identical — but models that emit non-normalized vectors (or truncated
-  ones) no longer silently skew results toward larger-magnitude embeddings.
-  The `distance` in `bsearch search` output is now bounded [0, 2] (still
-  lower = better, still uncalibrated). Existing indexes migrate automatically:
-  the daemon notices the change and re-embeds everything in the background,
-  and search keeps the old ranking behaviour until it catches up. (ADR 0007)
-
-### Removed
-
-- **`bsearch index` is gone.** The daemon indexes continuously now, so there
-  is nothing left for a one-shot command to do — and having two things that
-  write the index meant two things that could disagree about it. Run
-  `bsearch serve` and it takes care of itself; if you had `bsearch index` in a
-  cron job or a shell alias, delete it. A command to force a rebuild on demand
-  is coming separately, and matters less than it used to now that a
-  configuration change re-indexes by itself. (ADR 0012)
-
-### Added
 
 - New `bsearch eval run` command: scores an embedding model's retrieval
   quality against a golden query set (`--corpus <dir>`, a corpusgen-built
@@ -187,3 +153,38 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   of silently falling back to defaults. A built-in privacy deny-list
   (`~/.ssh`, `~/Library`, VCS internals, key/secret file patterns, …) is
   always active; `[paths].exclude` extends it.
+
+
+### Changed
+
+- **`bsearch search` now requires a running daemon.** It talks to
+  `bsearch serve` over the unix socket instead of opening the index itself,
+  which is what the architecture always described — one query path means one
+  place that agrees about prefix templates and index identity. Start the
+  daemon in another terminal (`bsearch serve`) before searching; a
+  LaunchAgent that starts it at login is coming.
+
+  Its flags change with it: `--socket` replaces `--config` and `--db`, which
+  move to `bsearch serve`. `--limit` and `--json` are unchanged, and the
+  `--json` output is byte-identical to what the daemon returns. Errors read
+  the same as before — the daemon's message, on stderr, with exit status 1.
+
+- Semantic search now ranks by cosine distance instead of Euclidean (L2).
+  For the normalized embedding models most people run, rankings are
+  identical — but models that emit non-normalized vectors (or truncated
+  ones) no longer silently skew results toward larger-magnitude embeddings.
+  The `distance` in `bsearch search` output is now bounded [0, 2] (still
+  lower = better, still uncalibrated). Existing indexes migrate automatically:
+  the daemon notices the change and re-embeds everything in the background,
+  and search keeps the old ranking behaviour until it catches up. (ADR 0007)
+
+
+### Removed
+
+- **`bsearch index` is gone.** The daemon indexes continuously now, so there
+  is nothing left for a one-shot command to do — and having two things that
+  write the index meant two things that could disagree about it. Run
+  `bsearch serve` and it takes care of itself; if you had `bsearch index` in a
+  cron job or a shell alias, delete it. A command to force a rebuild on demand
+  is coming separately, and matters less than it used to now that a
+  configuration change re-indexes by itself. (ADR 0012)

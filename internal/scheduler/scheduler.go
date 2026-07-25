@@ -319,6 +319,14 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		// makes the overrun policy Prefer Old (see the package comment) and
 		// what lets a power-state change take effect on the next interval
 		// rather than the next restart.
+		//
+		// No drain of timer.C between Stop and Reset. That idiom is for Go
+		// 1.22 and earlier, where the channel was buffered and a tick that
+		// landed while the cycle was running would survive the Reset and fire
+		// the next select immediately — which would defeat exactly the policy
+		// above. Since 1.23 the channel is unbuffered and Reset guarantees no
+		// stale value is received; go.mod requires 1.26, so the drain would
+		// now block forever on the common path where the timer never fired.
 		timer.Stop()
 		timer.Reset(next)
 	}

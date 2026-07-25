@@ -226,12 +226,26 @@ type fakeScanner struct {
 	err     error
 	entered chan struct{}
 	release chan struct{}
+	// pinAt is which scan (1-based) the entered/release pair holds open; zero
+	// means the first. Only one scan is ever pinned, so the cycles either side
+	// of it run to completion and can be counted.
+	pinAt  int
+	pinned bool
 }
 
 func (s *fakeScanner) Scan(ctx context.Context) (discovery.Result, error) {
 	s.mu.Lock()
 	s.scans++
-	entered, release := s.entered, s.release
+	var entered, release chan struct{}
+	pinAt := s.pinAt
+	if pinAt == 0 {
+		pinAt = 1
+	}
+	// The channels stay addressable so a test can still close release.
+	if !s.pinned && s.scans == pinAt {
+		s.pinned = true
+		entered, release = s.entered, s.release
+	}
 	s.mu.Unlock()
 	if entered != nil {
 		entered <- struct{}{}
@@ -441,6 +455,66 @@ func TestTriggersDuringACycleAreShed(t *testing.T) {
 		// the rest coalesce into it.
 		if n := sc.count(); n > 2 {
 			t.Errorf("scans = %d after release, want the shed triggers not to have queued up", n)
+		}
+	})
+}
+
+// A cycle that outlives its interval must not be followed immediately by
+// another. The timer necessarily fires while such a cycle is running, and if
+// that tick survived the Stop/Reset the next select would return at once —
+// Prefer Old would collapse into back-to-back cycles, which on a large
+// backlog is a hot loop against the inference server.
+//
+// (Go 1.23 made timer channels unbuffered, which is why Run does not drain
+// timer.C between Stop and Reset. This is what holds that reasoning to
+// account rather than trusting the release notes.)
+func TestACycleThatOutlivesItsIntervalStillWaitsAFullInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const interval = time.Minute
+		// The second cycle is the one held open. The first must complete so
+		// that the timer is armed for a full interval; a Notify then wakes the
+		// loop early, leaving that armed timer to expire mid-cycle. Pinning the
+		// first cycle would prove nothing — the initial timer has already
+		// fired by then and is not re-armed until the cycle returns.
+		sc := &fakeScanner{pinAt: 2, entered: make(chan struct{}), release: make(chan struct{})}
+		q := newFakeQueue()
+		ix := newFakeIndexer()
+		s := newScheduler(t, q, ix, sc, func(o *Options) {
+			o.ScanInterval = time.Nanosecond // every cycle scans
+			o.Power = func() config.PowerPolicy {
+				return config.PowerPolicy{IndexInterval: config.Interval{Duration: interval}}
+			}
+		})
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go func() { _ = s.Run(ctx) }()
+		synctest.Wait() // first cycle done; timer armed for a full interval
+
+		s.Notify()   // wake early, with the timer still armed
+		<-sc.entered // second cycle pinned inside Scan
+
+		// Five intervals elapse while the cycle is stuck, so the armed timer
+		// has certainly expired mid-cycle.
+		time.Sleep(5 * interval)
+		close(sc.release)
+		synctest.Wait()
+
+		if got := sc.count(); got != 2 {
+			t.Fatalf("scans = %d immediately after the long cycle finished, want 2 — a tick that expired mid-cycle fired an extra one", got)
+		}
+
+		// Just short of the interval: still nothing.
+		time.Sleep(interval - time.Second)
+		synctest.Wait()
+		if got := sc.count(); got != 2 {
+			t.Errorf("scans = %d before the interval elapsed, want 2", got)
+		}
+
+		time.Sleep(2 * time.Second)
+		synctest.Wait()
+		if got := sc.count(); got != 3 {
+			t.Errorf("scans = %d after the interval elapsed, want 3", got)
 		}
 	})
 }
