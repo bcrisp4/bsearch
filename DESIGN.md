@@ -369,6 +369,14 @@ bsearch status                    # index counts, queue depth, gate reasons, per
 bsearch reindex [path]            # force re-index of path or everything
 ```
 
+Every subcommand except `serve` is a client of the daemon's socket, with no
+direct-database fallback — one query path, so there is one place that agrees
+about prefix templates and index identity
+([ADR 0010](docs/adr/0010-cli-as-socket-only-client.md)). `bsearch index`
+is the exception and the transitional one: it is a writer, and it disappears
+once the daemon owns discovery and the queue, leaving `reindex` as the way to
+force the work.
+
 ### HTTP API (unix socket, JSON)
 
 Socket: `~/Library/Application Support/bsearch/bsearch.sock` (0600).
@@ -449,7 +457,31 @@ signal, and lists are long.
 **`GET /v1/docs/{doc_id}?level=full|64|16|4`** — single document: full
 markdown or pyramid level.
 
-**`GET /v1/status`** — same payload as `bsearch status --json`.
+**`GET /v1/status`** — same payload as `bsearch status --json`. Always answers
+`200`, including when there is no index or the daemon can't read it: an
+endpoint that fails when things are broken withholds exactly what is being
+asked for. The index half reports readiness and, whenever the database can be
+read at all, per-state document counts:
+
+```json
+{"version": "v0.2.0", "pid": 4312, "uptime_s": 90421,
+ "socket": "~/Library/Application Support/bsearch/bsearch.sock",
+ "db_path": "~/Library/Application Support/bsearch/bsearch.db",
+ "index": {"ready": true, "model": "text-embedding-embeddinggemma-300m", "dims": 768,
+           "documents": {"discovered": 0, "converted": 0, "chunked": 0,
+                         "embedded": 0, "indexed": 1204, "failed": 2, "deleted": 0}}}
+```
+
+When `ready` is false a `reason` says why ("no index database at …",
+"nothing embedded yet", a model/config disagreement). Queue depth, gate
+reasons, permission failures and disk footprint are additive fields on the
+same document.
+
+**Errors.** Every non-2xx response — including ones the HTTP router would
+otherwise answer in plain text — carries `{"error": {"code": …, "message": …}}`.
+`code` is a stable machine token; `message` is user-facing prose, rendered
+verbatim by the CLI. The code table and the request-decoding rules are in
+[ADR 0009](docs/adr/0009-unix-socket-http-api.md).
 
 **Summary ladder: 4 / 16 / 64 words / full text.** Generated at index time;
 stored, not computed per query.

@@ -4,6 +4,7 @@ package socket_test
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -287,5 +288,32 @@ func TestListenReportsLockDirectoryFailure(t *testing.T) {
 	_, err := socket.Listen(filepath.Join(dir, "s.sock"), filepath.Join(blocker, "s.lock"))
 	if err == nil {
 		t.Fatal("Listen with an uncreatable lock directory = nil error, want error")
+	}
+}
+
+func TestListenAcceptsADirectoryWeDoNotOwn(t *testing.T) {
+	// /tmp is root-owned and world-writable, and putting the socket there
+	// is legitimate — sometimes the only thing that fits sun_path. The
+	// directory cannot be tightened, and that must not stop the daemon:
+	// the socket's own 0600 is the access control.
+	socketPath := filepath.Join("/tmp", fmt.Sprintf("bs-%d.sock", os.Getpid()))
+	lockPath := socketPath + ".lock"
+	t.Cleanup(func() {
+		_ = os.Remove(socketPath)
+		_ = os.Remove(lockPath)
+	})
+
+	ln, err := socket.Listen(socketPath, lockPath)
+	if err != nil {
+		t.Fatalf("Listen under /tmp: %v", err)
+	}
+	defer ln.Close() //nolint:errcheck // best effort
+
+	fi, err := os.Lstat(socketPath)
+	if err != nil {
+		t.Fatalf("Lstat: %v", err)
+	}
+	if got := fi.Mode().Perm(); got != 0o600 {
+		t.Errorf("socket mode = %o, want 600", got)
 	}
 }

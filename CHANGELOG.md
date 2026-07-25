@@ -11,7 +11,39 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ## [Unreleased]
 
+### Added
+
+- New `bsearch serve` command: runs the bsearch daemon, serving search over
+  an HTTP+JSON API on a unix socket at
+  `~/Library/Application Support/bsearch/bsearch.sock` (mode 0600, so only
+  your account can reach it — there is no authentication in v1 and none is
+  needed). Endpoints are `POST /v1/search` and `GET /v1/status`; there is no
+  `bsearch status` command yet, so `curl --unix-socket` is how you read the
+  daemon's state. See [docs/daemon.md](docs/daemon.md).
+
+  The daemon starts whether or not you have an index: with none it reports
+  `index.ready: false` and why, and picks up an index created afterwards
+  without a restart. It also starts when `inference.embedding_model` is
+  unset, so a half-configured install can still be diagnosed rather than
+  crash-looping. Only one daemon runs at a time; a socket left behind by one
+  that was killed is reclaimed automatically. Configuration is read once at
+  startup, so restart the daemon after editing `config.toml`.
+
 ### Changed
+
+- **`bsearch search` now requires a running daemon.** It talks to
+  `bsearch serve` over the unix socket instead of opening the index itself,
+  which is what the architecture always described — one query path means one
+  place that agrees about prefix templates and index identity. Start the
+  daemon in another terminal (`bsearch serve`) before searching; a
+  LaunchAgent that starts it at login is coming.
+
+  Its flags change with it: `--socket` replaces `--config` and `--db`, which
+  move to `bsearch serve`. `--limit` and `--json` are unchanged, and the
+  `--json` output is byte-identical to what the daemon returns. Errors read
+  the same as before — the daemon's message, on stderr, with exit status 1.
+
+  `bsearch index` is unaffected and still writes the index directly.
 
 - Semantic search now ranks by cosine distance instead of Euclidean (L2).
   For the normalized embedding models most people run, rankings are
