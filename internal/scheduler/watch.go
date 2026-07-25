@@ -50,8 +50,11 @@ const (
 	// excluded. Distinct from a watcher that could not start: there is
 	// nothing wrong with the watcher, there is nothing to watch.
 	WatchOffNoRoots = "no watchable paths — check paths.include and the exclude rules"
-	// WatchOffStopped means the event stream ended on its own. It should not
-	// happen, which is exactly why it is worth being able to see.
+	// WatchOffStopped means the event stream ended on its own — a Watcher
+	// closed its channel without being asked to. It should not happen, which
+	// is exactly why it is worth being able to see. Currently unreachable
+	// with the FSEvents adapter, which has no way to report a dead stream
+	// (issue #65); a watcher that dies there stays reported as healthy.
 	WatchOffStopped = "the filesystem watcher stopped"
 )
 
@@ -64,10 +67,18 @@ const (
 // Roots are resolved once and subscribed to once. An include root created
 // after the daemon started is not watched, and a stream that ends is not
 // re-subscribed — both need a restart. Deliberate rather than overlooked:
-// re-resolving on a timer is a retry loop to tune, and the failure it would
-// cover already degrades safely (the walk tightens back to
-// defaultScanInterval and `bsearch status` says the watcher stopped) rather
-// than silently. Worth revisiting if it turns out to happen.
+// re-resolving on a timer is a retry loop to tune.
+//
+// The fallback below is conditional on something this package cannot
+// enforce. Closing the batch channel is how a Watcher says its stream is
+// gone, and only then does the loop exit, clear Watching, and let the walk
+// tighten back to defaultScanInterval. The FSEvents adapter cannot send that
+// signal today: fsnotify/fsevents never closes the channel it delivers on,
+// so a stream that dies leaves this goroutine parked on a receive with
+// `bsearch status` still reporting a healthy watcher on the lazy backstop
+// cadence. Giving the watcher a liveness signal is issue #65; until it
+// lands, treat the graceful-degradation path here as reachable only when a
+// Watcher implementation closes the channel.
 func (s *Scheduler) watch(ctx context.Context) {
 	roots, rootErrs := s.scanner.Roots()
 	for _, pe := range rootErrs {

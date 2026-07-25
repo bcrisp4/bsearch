@@ -138,9 +138,16 @@ type Queue interface {
 // rather than a correctness one.
 type Watcher interface {
 	// Watch subscribes to changes under roots and delivers them until ctx is
-	// done, when the channel is closed. An error means no subscription was
-	// made at all (an unsupported platform, a rejected root); the caller
-	// keeps working from the periodic scan.
+	// done. An error means no subscription was made at all (an unsupported
+	// platform, a rejected root); the caller keeps working from the periodic
+	// scan.
+	//
+	// Closing the channel is the only way an implementation can say its
+	// stream is gone, and the caller's fallback to scan-only depends on it:
+	// close on ctx cancellation, and close if the stream dies underneath
+	// you. An implementation that cannot detect the second case leaves the
+	// caller believing it is still being watched — which is the state issue
+	// #65 is about.
 	Watch(ctx context.Context, roots []string) (<-chan WatchBatch, error)
 }
 
