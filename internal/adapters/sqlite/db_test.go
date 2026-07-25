@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -184,5 +185,61 @@ func TestOpenTightensPreexistingDirPermissions(t *testing.T) {
 	}
 	if perm := st.Mode().Perm(); perm != 0o700 {
 		t.Errorf("pre-existing db dir mode = %o after Open, want 700", perm)
+	}
+}
+
+func TestOpenExistingRefusesMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data", "bsearch.db")
+
+	db, err := OpenExisting(path)
+	if err == nil {
+		_ = db.Close()
+		t.Fatal("OpenExisting(missing) = nil error, want error")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("OpenExisting(missing) error %v, want one wrapping os.ErrNotExist", err)
+	}
+	// The point of the call: a reader must never bring an empty index into
+	// existence as a side effect of trying to read it.
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("OpenExisting created %s; must not", path)
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Errorf("OpenExisting created the parent directory; must not")
+	}
+}
+
+func TestOpenExistingOpensAnExistingDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data", "bsearch.db")
+	created, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := created.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	db, err := OpenExisting(path)
+	if err != nil {
+		t.Fatalf("OpenExisting: %v", err)
+	}
+	defer db.Close() //nolint:errcheck // best effort in test cleanup
+
+	// Same pragma discipline as Open — the daemon must not read through a
+	// differently-configured connection than the indexer writes through.
+	var journal string
+	if err := db.Reader().QueryRow("PRAGMA journal_mode").Scan(&journal); err != nil {
+		t.Fatalf("PRAGMA journal_mode: %v", err)
+	}
+	if journal != "wal" {
+		t.Errorf("journal_mode = %q, want %q", journal, "wal")
+	}
+	// The migration Open applied must be visible, not re-run.
+	var version int
+	if err := db.Reader().QueryRow("SELECT max(version) FROM schema_migrations").Scan(&version); err != nil {
+		t.Fatalf("read schema_migrations: %v", err)
+	}
+	if version != schemaVersion {
+		t.Errorf("schema version = %d, want %d", version, schemaVersion)
 	}
 }

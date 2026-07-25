@@ -450,6 +450,32 @@ func TestDefaultDBPath(t *testing.T) {
 	}
 }
 
+func TestDefaultSocketPath(t *testing.T) {
+	home := setHome(t)
+	want := filepath.Join(home, "Library", "Application Support", "bsearch", "bsearch.sock")
+	if got := config.DefaultSocketPath(); got != want {
+		t.Errorf("DefaultSocketPath() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultLockPath(t *testing.T) {
+	home := setHome(t)
+	want := filepath.Join(home, "Library", "Application Support", "bsearch", "bsearch.lock")
+	if got := config.DefaultLockPath(); got != want {
+		t.Errorf("DefaultLockPath() = %q, want %q", got, want)
+	}
+}
+
+// The daemon's lock must sit beside its socket: the lock guards removal of a
+// stale socket, which is only sound if both are in the same directory the
+// daemon owns and creates at 0700.
+func TestDefaultLockPathIsBesideSocket(t *testing.T) {
+	setHome(t)
+	if got, want := filepath.Dir(config.DefaultLockPath()), filepath.Dir(config.DefaultSocketPath()); got != want {
+		t.Errorf("lock directory %q != socket directory %q", got, want)
+	}
+}
+
 func TestLoadErrorsAreNotFsNotExist(t *testing.T) {
 	setHome(t)
 	// Guard the missing-file-is-fine contract: a *parse* failure must not

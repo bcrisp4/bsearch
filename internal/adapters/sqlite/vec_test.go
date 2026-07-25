@@ -577,3 +577,28 @@ func TestEnsureVecTableRejectsInvalidInputs(t *testing.T) {
 		t.Errorf("meta has %d rows after rejected calls, want 0", n)
 	}
 }
+
+func TestSearchVectorsDoesNotMistakeDamageForACutover(t *testing.T) {
+	// A retired vector generation is transient — "try again" is right advice.
+	// A missing chunks table is permanent damage, and the KNN statement joins
+	// it, so a broad "no such table" match would tell the user to retry
+	// forever.
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, domain.EmbeddingSpec{Model: "m"}, 3); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+	if _, err := db.Writer().ExecContext(ctx, "DROP TABLE chunks"); err != nil {
+		t.Fatalf("drop chunks: %v", err)
+	}
+
+	_, err := store.SearchVectors(ctx, []float32{1, 0, 0}, 10)
+	if err == nil {
+		t.Fatal("SearchVectors against a damaged database = nil error")
+	}
+	if errors.Is(err, ErrNoVecTable) {
+		t.Errorf("a missing chunks table was reported as a retired generation: %v", err)
+	}
+}

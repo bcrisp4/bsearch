@@ -184,11 +184,34 @@ func DefaultPath() string {
 // ~/Library/Application Support; hand-edited config under ~/.config — the
 // split is deliberate (DESIGN.md: Config).
 func DefaultDBPath() string {
+	return dataPath("bsearch.db")
+}
+
+// DefaultSocketPath returns the daemon's unix socket location:
+// ~/Library/Application Support/bsearch/bsearch.sock. Deliberately not a
+// config key — the search client no longer loads config, so a config-driven
+// socket path would be unreachable to the very process that needs it. The
+// `--socket` flag is the override (DESIGN.md: API; ADR 0009).
+func DefaultSocketPath() string {
+	return dataPath("bsearch.sock")
+}
+
+// DefaultLockPath returns the daemon's single-instance lock file, held under
+// flock for the process lifetime. It sits beside the socket because acquiring
+// it is what makes removing a stale socket safe (ADR 0009).
+func DefaultLockPath() string {
+	return dataPath("bsearch.lock")
+}
+
+// dataPath joins name onto the data directory, or returns "" when the home
+// directory can't be resolved — callers treat an empty path as "no default,
+// pass the flag".
+func dataPath(name string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "bsearch", "bsearch.db")
+	return filepath.Join(home, "Library", "Application Support", "bsearch", name)
 }
 
 // Load reads the config file at path. A missing file is not an error:

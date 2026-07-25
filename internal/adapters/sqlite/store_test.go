@@ -443,3 +443,67 @@ func TestMarkFailed(t *testing.T) {
 		t.Error("MarkFailed(unknown id) = nil, want error")
 	}
 }
+
+func TestCountsByStateReportsEveryStateIncludingZeros(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		id    string
+		path  string
+		state domain.DocState
+	}{
+		{"d_1", "/notes/a.md", domain.DocStateIndexed},
+		{"d_2", "/notes/b.md", domain.DocStateIndexed},
+		{"d_3", "/notes/c.md", domain.DocStateFailed},
+	} {
+		doc := testDoc(tc.id, tc.path)
+		doc.State = tc.state
+		if _, err := store.UpsertDocument(ctx, doc, testChunks(tc.id, "text")); err != nil {
+			t.Fatalf("UpsertDocument(%s): %v", tc.id, err)
+		}
+	}
+
+	counts, err := store.CountsByState(ctx)
+	if err != nil {
+		t.Fatalf("CountsByState: %v", err)
+	}
+
+	// Every state must be present: a consumer must never have to tell
+	// "no documents in this state" apart from "this build forgot the state".
+	if len(counts) != len(domain.DocStates) {
+		t.Errorf("CountsByState returned %d states, want %d", len(counts), len(domain.DocStates))
+	}
+	want := map[domain.DocState]int{
+		domain.DocStateDiscovered: 0,
+		domain.DocStateConverted:  0,
+		domain.DocStateChunked:    0,
+		domain.DocStateEmbedded:   0,
+		domain.DocStateIndexed:    2,
+		domain.DocStateFailed:     1,
+		domain.DocStateDeleted:    0,
+	}
+	for state, n := range want {
+		if got, ok := counts[state]; !ok {
+			t.Errorf("CountsByState missing state %q", state)
+		} else if got != n {
+			t.Errorf("CountsByState[%q] = %d, want %d", state, got, n)
+		}
+	}
+}
+
+func TestCountsByStateOnEmptyIndexIsAllZeros(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+
+	counts, err := store.CountsByState(context.Background())
+	if err != nil {
+		t.Fatalf("CountsByState: %v", err)
+	}
+	for _, state := range domain.DocStates {
+		if got, ok := counts[state]; !ok || got != 0 {
+			t.Errorf("CountsByState[%q] = %d (present %t), want 0 present", state, got, ok)
+		}
+	}
+}

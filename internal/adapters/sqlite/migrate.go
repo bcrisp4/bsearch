@@ -70,6 +70,32 @@ CREATE TABLE meta (
 `,
 }
 
+// schemaVersion is the schema this build writes and reads: the highest
+// migration it carries.
+var schemaVersion = len(migrations)
+
+// checkSchema verifies that an existing database is one this build can read,
+// without writing to it. Read-only openers (the daemon) use this in place of
+// migrate: taking a write lock to discover there is nothing to migrate would
+// contend with the indexer for no gain, and a schema the build doesn't
+// understand must be reported, not silently served.
+func checkSchema(reader *sql.DB) error {
+	var current int
+	if err := reader.QueryRow(
+		"SELECT coalesce(max(version), 0) FROM schema_migrations").Scan(&current); err != nil {
+		return fmt.Errorf("read schema version (not a bsearch index?): %w", err)
+	}
+	switch {
+	case current < schemaVersion:
+		return fmt.Errorf("index schema is version %d but this build expects %d — run 'bsearch index' to migrate it",
+			current, schemaVersion)
+	case current > schemaVersion:
+		return fmt.Errorf("index schema is version %d, newer than this build supports (%d) — upgrade bsearch",
+			current, schemaVersion)
+	}
+	return nil
+}
+
 // migrate brings the schema up to the current version.
 func migrate(writer *sql.DB) error {
 	if _, err := writer.Exec(

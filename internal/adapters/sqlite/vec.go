@@ -19,7 +19,10 @@ var _ domain.VectorStore = (*Store)(nil)
 
 // ErrNoVecTable means nothing has been embedded yet (or the configured model
 // has no vector table). Callers surface it, never treat it as empty results.
-var ErrNoVecTable = errors.New("no current vector table (nothing embedded yet?)")
+// The sentinel itself belongs to the port (domain) so the query path can
+// recognise it without importing this adapter; this alias keeps the storage
+// package's own call sites reading naturally.
+var ErrNoVecTable = domain.ErrNoVecTable
 
 // vecDescriptor is the identity of one vector-table generation, stored as
 // JSON in meta under vec_table:<name>. The table name itself is just a
@@ -334,6 +337,17 @@ func (s *Store) SearchVectors(ctx context.Context, query []float32, limit int) (
 		JOIN documents d ON d.id = c.doc_id
 		ORDER BY v.distance`, prefixDocColumns("d"), table), blob, limit)
 	if err != nil {
+		// An indexer in another process can retire this generation between
+		// the lookup above and the query — the table is simply gone. That's
+		// "nothing to search right now", not a storage fault, so it reports
+		// as ErrNoVecTable. SQLite gives no distinct result code for a
+		// missing table, hence the message match; it names the vector table
+		// specifically, because the statement also joins chunks and
+		// documents and a missing one of those is permanent damage, not a
+		// generation cutover worth retrying.
+		if strings.Contains(err.Error(), "no such table: "+table) {
+			return nil, fmt.Errorf("vector table %s was retired mid-query: %w", table, ErrNoVecTable)
+		}
 		return nil, fmt.Errorf("knn query on %s: %w", table, err)
 	}
 	defer rows.Close()

@@ -92,6 +92,45 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("chmod db file: %w", err)
 	}
 
+	db, err := openPools(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrate(db.writer); err != nil {
+		_ = db.Close() // already failing; best-effort cleanup
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	return db, nil
+}
+
+// OpenExisting opens the database at path for reading, refusing to create it.
+// Open would bring an empty, migrated database into existence as a side
+// effect of a read — for the daemon (which must report "nothing indexed yet",
+// not manufacture an empty index) that side effect is a bug, so the guard is
+// structural here rather than a Stat call at each call site. The schema is
+// checked, not migrated: migrating is the indexer's job, and taking the write
+// lock to find nothing to do would only contend with it.
+//
+// Both pools are still opened. WAL readers write to the -shm/-wal sidecars,
+// so a genuinely read-only handle (mode=ro) is not an option; the writer pool
+// simply goes unused.
+func OpenExisting(path string) (*DB, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("open index: %w", err)
+	}
+	db, err := openPools(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkSchema(db.reader); err != nil {
+		_ = db.Close() // already failing; best-effort cleanup
+		return nil, err
+	}
+	return db, nil
+}
+
+// openPools opens both pools over path and verifies sqlite-vec is loaded.
+func openPools(path string) (*DB, error) {
 	dsn := fmt.Sprintf("file:%s?%s", escapeURIPath(path), dsnPragmas)
 
 	writer, err := openPool(dsn+"&_txlock=immediate", 1, 1)
@@ -112,11 +151,6 @@ func Open(path string) (*DB, error) {
 	if err := db.reader.QueryRow("SELECT vec_version()").Scan(&vecVersion); err != nil {
 		_ = db.Close() // already failing; best-effort cleanup
 		return nil, fmt.Errorf("sqlite-vec not loaded: %w", err)
-	}
-
-	if err := migrate(db.writer); err != nil {
-		_ = db.Close() // already failing; best-effort cleanup
-		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return db, nil
 }
