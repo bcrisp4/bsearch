@@ -400,3 +400,29 @@ func TestPreview(t *testing.T) {
 		})
 	}
 }
+
+func TestMessageStripsTheSentinelPrefix(t *testing.T) {
+	svc, _, _ := newService(t)
+
+	_, err := svc.Search(context.Background(), search.Request{Query: ""})
+	if err == nil {
+		t.Fatal("Search(empty) = nil error")
+	}
+	got := search.Message(err)
+	if strings.HasPrefix(got, search.ErrInvalidRequest.Error()) {
+		t.Errorf("Message(%v) = %q, want the classifier prefix removed", err, got)
+	}
+	if !strings.Contains(got, "empty") {
+		t.Errorf("Message(%v) = %q, want the user-facing text kept", err, got)
+	}
+}
+
+func TestMessagePassesThroughUnclassifiedErrors(t *testing.T) {
+	err := errors.New("disk gone")
+	if got := search.Message(err); got != "disk gone" {
+		t.Errorf("Message(%v) = %q, want it unchanged", err, got)
+	}
+	if got := search.Message(nil); got != "" {
+		t.Errorf("Message(nil) = %q, want empty", got)
+	}
+}

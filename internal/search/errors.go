@@ -1,6 +1,9 @@
 package search
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // Sentinels classifying every way a search can fail. Transports map them to
 // their own vocabulary — the HTTP server to status codes and error codes (ADR
@@ -33,3 +36,29 @@ var (
 	// stays a context error, because it points at a different problem.
 	ErrEmbedder = errors.New("could not embed the query")
 )
+
+// sentinels is the classification set, most specific first.
+var sentinels = []error{ErrInvalidRequest, ErrNotIndexed, ErrIndexMismatch, ErrEmbedder}
+
+// Message returns the user-facing part of a search error: the sentinel is a
+// classifier for transports, not something a person should read, so
+// "invalid search request: the query is empty" renders as "the query is
+// empty". Errors that carry no sentinel are returned whole.
+//
+// Both transports use this — the HTTP server for the envelope's message and
+// the CLI for its stderr line — so the same failure reads the same way
+// whether or not it crossed the socket.
+func Message(err error) string {
+	if err == nil {
+		return ""
+	}
+	for _, sentinel := range sentinels {
+		if !errors.Is(err, sentinel) {
+			continue
+		}
+		if msg, ok := strings.CutPrefix(err.Error(), sentinel.Error()+": "); ok {
+			return msg
+		}
+	}
+	return err.Error()
+}

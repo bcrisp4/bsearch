@@ -67,7 +67,7 @@ func runSearch(args []string, out io.Writer) error {
 	// "the query is empty" should not arrive behind "no index database".
 	// Search re-validates — this is the same check, not a second one.
 	if _, err := req.Validate(); err != nil {
-		return unwrapSearchError(err)
+		return errors.New(search.Message(err))
 	}
 
 	if *dbPath == "" {
@@ -80,7 +80,7 @@ func runSearch(args []string, out io.Writer) error {
 	// Also before opening the index: an over-long query is the caller's
 	// mistake and shouldn't be reported behind a missing-database error.
 	if err := req.CheckLength(embedder.Spec()); err != nil {
-		return unwrapSearchError(err)
+		return errors.New(search.Message(err))
 	}
 
 	// Search is read-only: OpenExisting refuses to bring an empty index into
@@ -102,7 +102,7 @@ func runSearch(args []string, out io.Writer) error {
 
 	resp, err := search.New(store, embedder).Search(ctx, req)
 	if err != nil {
-		return unwrapSearchError(err)
+		return errors.New(search.Message(err))
 	}
 
 	if *asJSON {
@@ -110,26 +110,6 @@ func runSearch(args []string, out io.Writer) error {
 	}
 	writeSearchHuman(out, resp)
 	return nil
-}
-
-// unwrapSearchError strips the sentinel prefix the service adds for
-// transports that classify by errors.Is: the CLI classifies nothing, and
-// "invalid search request: the query is empty" reads worse than the message
-// alone. The sentinel's own text is the prefix, so cutting at the first
-// ": " after it is enough.
-func unwrapSearchError(err error) error {
-	for _, sentinel := range []error{
-		search.ErrInvalidRequest, search.ErrNotIndexed,
-		search.ErrIndexMismatch, search.ErrEmbedder,
-	} {
-		if !errors.Is(err, sentinel) {
-			continue
-		}
-		if msg, ok := strings.CutPrefix(err.Error(), sentinel.Error()+": "); ok {
-			return errors.New(msg)
-		}
-	}
-	return err
 }
 
 func writeSearchHuman(out io.Writer, resp search.Response) {
