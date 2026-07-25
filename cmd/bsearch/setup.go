@@ -22,20 +22,34 @@ func loadInference(configPath string) (*config.Config, *openai.Embedder, error) 
 		return nil, nil, err
 	}
 	if cfg.Inference.EmbeddingModel == "" {
-		return nil, nil, fmt.Errorf("inference.embedding_model is not set — add it to %s (the M2 bake-off records recommended defaults in DESIGN.md)", configPath)
+		return nil, nil, fmt.Errorf("inference.embedding_model is not set — add it to %s (%s)", configPath, missingModelHint)
 	}
+	embedder, err := newEmbedder(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, embedder, nil
+}
+
+// missingModelHint points at where the recorded default comes from. Shared so
+// the daemon (which tolerates the missing setting) and the one-shot commands
+// (which don't) give the same advice.
+const missingModelHint = "DESIGN.md records the default from the synthetic-corpus evaluation"
+
+// newEmbedder builds the embedding client for a loaded config. Separate from
+// loadInference because the daemon must start without one: a LaunchAgent
+// installed before the user configures a model would otherwise crash-loop,
+// with `bsearch status` — the one thing that could explain why —
+// unreachable.
+func newEmbedder(cfg *config.Config) (*openai.Embedder, error) {
 	spec := embedding.ResolveSpec(
 		cfg.Inference.EmbeddingModel,
 		cfg.Inference.QueryTemplate,
 		cfg.Inference.PassageTemplate,
 		cfg.Inference.InputCeilingTokens,
 	)
-	embedder, err := openai.NewEmbedder(openai.EmbedderConfig{
+	return openai.NewEmbedder(openai.EmbedderConfig{
 		Endpoint: cfg.Inference.Endpoint,
 		Spec:     spec,
 	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return cfg, embedder, nil
 }
