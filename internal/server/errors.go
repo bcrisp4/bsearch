@@ -13,17 +13,23 @@ import (
 // Error codes. Stable machine tokens: clients switch on them, so they are
 // part of the API contract (ADR 0009) and outlive any rewording of messages.
 const (
-	codeBadRequest      = "bad_request"
-	codeNotFound        = "not_found"
-	codeMethodNotAllwed = "method_not_allowed"
-	codeIndexMismatch   = "index_mismatch"
-	codeTooLarge        = "payload_too_large"
-	codeInternal        = "internal"
-	codeEmbedder        = "embedder_unavailable"
-	codeNotIndexed      = "not_indexed"
-	codeBusy            = "busy"
-	codeTimeout         = "timeout"
+	codeBadRequest       = "bad_request"
+	codeClientClosed     = "client_closed"
+	codeNotFound         = "not_found"
+	codeMethodNotAllowed = "method_not_allowed"
+	codeIndexMismatch    = "index_mismatch"
+	codeTooLarge         = "payload_too_large"
+	codeInternal         = "internal"
+	codeEmbedder         = "embedder_unavailable"
+	codeNotIndexed       = "not_indexed"
+	codeBusy             = "busy"
+	codeTimeout          = "timeout"
 )
+
+// statusClientClosed is nginx's non-standard 499: the client went away before
+// the response was written. No RFC assigns it, and no client reads it — it
+// exists so a routine disconnect isn't recorded as the daemon's own failure.
+const statusClientClosed = 499
 
 // genericInternalMessage is what a client sees for an unclassified failure.
 // The real error goes to the log: it can carry paths, driver internals, or
@@ -67,6 +73,11 @@ func writeJSON(w http.ResponseWriter, log *slog.Logger, payload any) {
 // where the problem is.
 func classify(err error) (status int, code, message string) {
 	switch {
+	case errors.Is(err, context.Canceled):
+		// The caller hung up — Ctrl-C on the CLI, a closed tab. Nothing
+		// reads this status; it exists so the daemon doesn't log a routine
+		// disconnect as its own failure. 499 is nginx's convention for it.
+		return statusClientClosed, codeClientClosed, "the client closed the connection"
 	case errors.Is(err, context.DeadlineExceeded):
 		return http.StatusGatewayTimeout, codeTimeout, "the search took too long — the inference server may be slow or loading a model"
 	case errors.Is(err, search.ErrInvalidRequest):

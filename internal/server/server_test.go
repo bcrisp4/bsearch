@@ -484,3 +484,55 @@ func TestRequestLogNeverCarriesQueryText(t *testing.T) {
 		t.Errorf("request log does not record the route:\n%s", logged.String())
 	}
 }
+
+func TestPanicIsLoggedWithTheRequestIDTheClientSees(t *testing.T) {
+	// The correlation ID exists so a user reporting a failure can point at
+	// a log line. If the recover handler sits outside the logging
+	// middleware it sees the pre-ID request and logs an empty one, and the
+	// panicking request produces no request line at all.
+	var logged strings.Builder
+	srv := server.New(server.Options{
+		Backend: &fakeBackend{err: errPanic},
+		Logger:  slog.New(slog.NewTextHandler(&logged, nil)),
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := ts.Client().Post(ts.URL+"/v1/search", "application/json", strings.NewReader(`{"query":"q"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := resp.Header.Get("X-Request-Id")
+	_ = resp.Body.Close()
+	if id == "" {
+		t.Fatal("no X-Request-Id header")
+	}
+	if !strings.Contains(logged.String(), id) {
+		t.Errorf("log does not contain the request ID %q the client was given:\n%s", id, logged.String())
+	}
+	// The request line must exist too, and record the 500.
+	if !strings.Contains(logged.String(), "status=500") {
+		t.Errorf("panicking request produced no request log line:\n%s", logged.String())
+	}
+}
+
+func TestClientDisconnectIsNotAnInternalError(t *testing.T) {
+	// Ctrl-C on the CLI cancels the request context. Treating that as a
+	// server fault fills the daemon's log with ERROR lines for something
+	// entirely routine.
+	var logged strings.Builder
+	srv := server.New(server.Options{
+		Backend: &fakeBackend{err: context.Canceled},
+		Logger:  slog.New(slog.NewTextHandler(&logged, nil)),
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	rep := post(t, ts, "/v1/search", `{"query":"q"}`)
+	if rep.status == http.StatusInternalServerError {
+		t.Errorf("status = 500 for a cancelled request; want it distinguished")
+	}
+	if strings.Contains(logged.String(), "level=ERROR") {
+		t.Errorf("a client disconnect was logged at ERROR:\n%s", logged.String())
+	}
+}

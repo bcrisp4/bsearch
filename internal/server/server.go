@@ -156,7 +156,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/status", s.methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("/", s.notFound)
 
-	return s.recoverPanics(s.logRequests(mux))
+	// Logging is outermost so a panicking request still produces a request
+	// line, and so the recover handler sees the context carrying the ID the
+	// client was given — an ID nothing can be correlated with is no ID.
+	return s.logRequests(s.recoverPanics(mux))
 }
 
 // Serve runs until ctx is cancelled, then drains. Ordering matters: stop
@@ -216,7 +219,14 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 // (DESIGN.md: a stalled queue must always be distinguishable from a deferred
 // one).
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	index, err := s.backend.Status(r.Context())
+	// Bounded like any other request: reading status touches the database,
+	// and on an unresponsive mount an unbounded handler would blow past the
+	// write timeout and hand the client a dead connection instead of the
+	// document this endpoint promises to always produce.
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+
+	index, err := s.backend.Status(ctx)
 	if err != nil {
 		s.log.Warn("status", "error", err)
 		index = IndexStatus{Ready: false, Reason: err.Error()}
@@ -304,7 +314,7 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 func (s *Server) methodNotAllowed(allowed string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", allowed)
-		writeError(w, s.log, http.StatusMethodNotAllowed, codeMethodNotAllwed,
+		writeError(w, s.log, http.StatusMethodNotAllowed, codeMethodNotAllowed,
 			r.Method+" is not allowed here; use "+allowed)
 	}
 }

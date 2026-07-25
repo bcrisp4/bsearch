@@ -104,9 +104,16 @@ func (c *Client) do(ctx context.Context, method, path string, payload []byte) ([
 	}
 	defer resp.Body.Close() //nolint:errcheck // response fully read below
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	// One byte past the cap, so an over-long response is an error rather
+	// than a silent truncation: --json copies the body through without
+	// parsing it, so a truncated read would put invalid JSON on stdout and
+	// exit 0.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read response from the daemon: %w", err)
+	}
+	if len(data) > maxResponseBytes {
+		return nil, fmt.Errorf("the bsearch daemon sent more than %d bytes — refusing a response this large", maxResponseBytes)
 	}
 	if resp.StatusCode/100 != 2 {
 		return nil, decodeError(resp.StatusCode, data)

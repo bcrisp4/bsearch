@@ -40,21 +40,75 @@ type Daemon struct {
 	embedder domain.Embedder
 	notReady string
 
-	// gate serialises access to the handle below. A channel rather than a
+	// gate serialises swapping the handle below. A channel rather than a
 	// sync.Mutex because it can be acquired under a context: a mutex would
 	// let one slow open blow every waiting request's deadline, and the
 	// clients would see dead connections instead of a timeout they can read.
 	gate chan struct{}
 
-	db    *sqlite.DB
-	store *sqlite.Store
-	// opened identifies the file the handle refers to, for detecting a
-	// replaced database (drop-and-reindex creates a new inode).
-	opened os.FileInfo
-	closed bool
+	current *handle
+	closed  bool
 
 	closeOnce sync.Once
 	closeErr  error
+}
+
+// handle is one open database, reference-counted so it outlives a swap.
+//
+// Requests hold a reference for the whole of their work, which spans several
+// queries. Without the count, a concurrent request that noticed a replaced
+// database would close the handle mid-search and the first request would die
+// with "sql: database is closed" — an unclassifiable error, so the user would
+// see an opaque 500 for something they did nothing to cause.
+type handle struct {
+	db    *sqlite.DB
+	store *sqlite.Store
+	// file identifies the database this handle refers to, for detecting a
+	// replacement (drop-and-reindex creates a new inode).
+	file os.FileInfo
+
+	mu      sync.Mutex
+	refs    int
+	retired bool
+}
+
+// ref claims the handle for one request's duration.
+func (h *handle) ref() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.refs++
+}
+
+// release drops a request's claim, closing the database if this was the last
+// one and the handle has been retired. A close error is dropped here: the
+// last request out is not the one that can act on it, and by then the caller
+// has its answer.
+func (h *handle) release() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.refs--
+	_ = h.closeIfDone()
+}
+
+// retire marks the handle superseded, closing it if nothing is using it. When
+// requests are still in flight the close is deferred to the last of them —
+// which is the point: a swap must never pull the file out from under a query
+// that is already running.
+func (h *handle) retire() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.retired = true
+	return h.closeIfDone()
+}
+
+// closeIfDone closes the database once nothing is using it.
+func (h *handle) closeIfDone() error {
+	if !h.retired || h.refs > 0 || h.db == nil {
+		return nil
+	}
+	err := h.db.Close()
+	h.db = nil
+	return err
 }
 
 var _ server.Backend = (*Daemon)(nil)
@@ -75,11 +129,12 @@ func (d *Daemon) Search(ctx context.Context, req search.Request) (search.Respons
 	if d.embedder == nil {
 		return search.Response{}, fmt.Errorf("%w: %s", search.ErrNotIndexed, d.unavailableReason())
 	}
-	store, err := d.acquire(ctx)
+	h, err := d.acquire(ctx)
 	if err != nil {
 		return search.Response{}, err
 	}
-	return search.New(store, d.embedder).Search(ctx, req)
+	defer h.release()
+	return search.New(h.store, d.embedder).Search(ctx, req)
 }
 
 // Status reports what the daemon can see. It answers as fully as it can at
@@ -87,7 +142,7 @@ func (d *Daemon) Search(ctx context.Context, req search.Request) (search.Respons
 // index built under a different model all produce counts where counts exist
 // and a reason where they don't.
 func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
-	store, err := d.acquire(ctx)
+	h, err := d.acquire(ctx)
 	if err != nil {
 		if errors.Is(err, search.ErrNotIndexed) {
 			// A missing model outranks a missing index: indexing wouldn't
@@ -100,9 +155,10 @@ func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
 		}
 		return server.IndexStatus{}, err
 	}
+	defer h.release()
 
 	status := server.IndexStatus{Documents: map[string]int{}}
-	counts, err := store.CountsByState(ctx)
+	counts, err := h.store.CountsByState(ctx)
 	if err != nil {
 		return server.IndexStatus{}, err
 	}
@@ -110,7 +166,7 @@ func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
 		status.Documents[string(state)] = n
 	}
 
-	indexed, dims, err := store.CurrentVecSpec(ctx)
+	indexed, dims, err := h.store.CurrentVecSpec(ctx)
 	if err != nil {
 		if errors.Is(err, domain.ErrNoVecTable) {
 			status.Reason = "nothing embedded yet — run 'bsearch index'"
@@ -146,10 +202,7 @@ func (d *Daemon) Close() error {
 		d.gate <- struct{}{}
 		defer func() { <-d.gate }()
 		d.closed = true
-		if d.db != nil {
-			d.closeErr = d.db.Close()
-			d.db, d.store, d.opened = nil, nil, nil
-		}
+		d.closeErr = d.retireCurrent()
 	})
 	return d.closeErr
 }
@@ -162,7 +215,7 @@ func (d *Daemon) Close() error {
 // time: `bsearch index` runs in another process, so a drop-and-reindex
 // replaces the inode underneath us, and a cached handle would go on serving
 // an unlinked file with no error to give it away.
-func (d *Daemon) acquire(ctx context.Context) (*sqlite.Store, error) {
+func (d *Daemon) acquire(ctx context.Context) (*handle, error) {
 	select {
 	case d.gate <- struct{}{}:
 		defer func() { <-d.gate }()
@@ -176,22 +229,28 @@ func (d *Daemon) acquire(ctx context.Context) (*sqlite.Store, error) {
 	fi, err := os.Stat(d.dbPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			d.dropHandle()
+			_ = d.retireCurrent()
 			return nil, fmt.Errorf("%w: no index database at %s — run 'bsearch index' first", search.ErrNotIndexed, d.dbPath)
 		}
 		return nil, fmt.Errorf("check index: %w", err)
 	}
 
-	if d.store != nil {
-		if os.SameFile(fi, d.opened) {
-			return d.store, nil
+	if d.current != nil {
+		if os.SameFile(fi, d.current.file) {
+			d.current.ref()
+			return d.current, nil
 		}
-		d.dropHandle() // replaced on disk; the open handle points at a ghost
+		_ = d.retireCurrent() // replaced on disk; the open handle points at a ghost
 	}
 
 	db, err := sqlite.OpenExisting(d.dbPath)
 	if err != nil {
-		return nil, err
+		// Every reason this can fail — the file vanished between the stat
+		// and the open, a schema this build is too old or too new for — is
+		// a statement about the index, not a daemon fault, and each carries
+		// text worth reading. Without the sentinel they would all arrive as
+		// an opaque 500 telling the user to check a log.
+		return nil, fmt.Errorf("%w: %w", search.ErrNotIndexed, err)
 	}
 	// A daemon holds its connections for weeks. The DSN gives every
 	// connection a 64 MiB page cache, so idle connections are the
@@ -202,19 +261,20 @@ func (d *Daemon) acquire(ctx context.Context) (*sqlite.Store, error) {
 	// The daemon never writes; keep no writer connection warm.
 	db.Writer().SetMaxIdleConns(0)
 
-	d.db, d.store, d.opened = db, sqlite.NewStore(db), fi
-	return d.store, nil
+	d.current = &handle{db: db, store: sqlite.NewStore(db), file: fi, refs: 1}
+	return d.current, nil
 }
 
-// dropHandle closes the current handle, ignoring the close error: the caller
-// is already moving on to a fresh open, and a failure to close a database
-// that no longer exists is not actionable.
-func (d *Daemon) dropHandle() {
-	if d.db == nil {
-		return
+// retireCurrent supersedes the open handle, reporting the close error when
+// the close happened here. With requests in flight the close is deferred to
+// the last of them, so a nil return means "closed cleanly, or not yet".
+func (d *Daemon) retireCurrent() error {
+	if d.current == nil {
+		return nil
 	}
-	_ = d.db.Close()
-	d.db, d.store, d.opened = nil, nil, nil
+	err := d.current.retire()
+	d.current = nil
+	return err
 }
 
 func (d *Daemon) unavailableReason() string {

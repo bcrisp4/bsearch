@@ -43,11 +43,18 @@ and a second unlink can delete a *successor's* socket under launchd
 naming the flag, because `sockaddr_un.sun_path` is a fixed 104-byte field and
 `bind()` would otherwise fail with a bare `EINVAL`.
 
-**Permissions.** Parent directory `0700` (explicitly `Chmod`ed, since
-`MkdirAll` is a no-op on an existing directory), socket `0600` immediately
-after `Listen`. `net.Listen` creates the node at `0777 &^ umask`, so there is
-a brief window at a laxer mode; we accept it, because `connect()` requires
-`x` on every path component and the 0700 parent already denies non-owners.
+**Permissions.** The socket is `0600` immediately after `Listen`, and that is
+the access control. A parent directory the daemon *creates* is `0700`; one
+that already exists is left exactly as it is, because the socket path is the
+user's choice and its parent is frequently not ours to re-permission —
+`--socket ~/bsearch.sock` would otherwise chmod `$HOME`, a relative path would
+chmod the working directory, and `/tmp` would fail outright.
+
+`net.Listen` creates the node at `0777 &^ umask`, so there is a brief window
+at a laxer mode before the chmod. We accept it. A 0700 parent closes it
+entirely (`connect()` needs the execute bit on every path component), which
+is what the default data directory gives; under a shared parent the window
+remains, sub-millisecond and same-machine.
 
 **Errors.** Every non-2xx response — including ones `net/http` would answer
 in plain text — carries `{"error": {"code": "...", "message": "..."}}`.
@@ -66,6 +73,11 @@ CLI renders it verbatim as `bsearch: <message>`.
 | `not_indexed` | 503 | no index available to search |
 | `busy` | 503 | in-flight request limit reached |
 | `timeout` | 504 | the request exceeded the server's deadline |
+| `client_closed` | 499 | the caller hung up before the response was written |
+
+`client_closed` uses nginx's non-standard 499. No client reads it — the
+connection is already gone. It exists so a routine disconnect (Ctrl-C on the
+CLI) is not recorded as the daemon's own failure.
 
 `embedder_unavailable` means "could not embed", not specifically "connection
 refused" — the inference adapter exposes no sentinels to distinguish causes,

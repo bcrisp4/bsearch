@@ -183,3 +183,21 @@ func TestContextCancellationIsHonoured(t *testing.T) {
 		t.Error("Search with a cancelled context = nil error")
 	}
 }
+
+func TestOversizedResponseIsAnErrorNotATruncation(t *testing.T) {
+	// --json copies the body through without parsing it, so truncating a
+	// too-large response would put invalid JSON on stdout and exit 0.
+	c, _ := serveStub(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		big := strings.Repeat("x", 9<<20)
+		_, _ = w.Write([]byte(`{"hits":[],"pad":"` + big + `"}`))
+	})
+
+	body, err := c.Search(context.Background(), search.Request{Query: "q"})
+	if err == nil {
+		t.Fatalf("Search = nil error with a %d-byte body, want an error", len(body))
+	}
+	if !strings.Contains(err.Error(), "too large") && !strings.Contains(err.Error(), "more than") {
+		t.Errorf("error %q does not say the response was too large", err)
+	}
+}

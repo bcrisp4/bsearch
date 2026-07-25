@@ -101,43 +101,27 @@ func (l *Listener) Close() error {
 	return l.closeErr
 }
 
-// ensureDir creates dir and tightens it to 0700 when it is ours. MkdirAll is
-// a no-op on an existing directory, so the explicit chmod is what actually
-// guarantees the mode (the same reason sqlite.Open does it for the data
-// directory).
+// ensureDir makes sure dir exists, at 0700 if this call creates it.
 //
-// A directory we don't own is left alone rather than treated as an error.
-// Putting the socket somewhere shared like /tmp is legitimate — sometimes the
-// only choice that fits sun_path — and chmod'ing /tmp would fail here and be
-// worse if it succeeded. Nothing is being skipped silently: the socket's own
-// 0600 is the access control, and the directory mode only narrows the
-// sub-millisecond window between bind() and that chmod.
+// A directory that already exists is left exactly as it is. The socket path
+// is the user's choice and its parent is very often not ours to
+// re-permission: `--socket ~/bsearch.sock` would chmod $HOME to 0700, a
+// relative path would chmod the working directory, and /tmp would fail
+// outright. Nothing is being skipped silently — the socket's own 0600 is the
+// access control, and the directory mode only narrows the sub-millisecond
+// window between bind() (which uses the umask) and that chmod.
 func ensureDir(dir string) error {
+	if _, err := os.Stat(dir); err == nil {
+		return nil // pre-existing: not ours to re-permission
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	// MkdirAll applies the mode only to directories it creates, and only
+	// after the umask — hence the explicit chmod on the leaf.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	owned, err := ownedByUs(dir)
-	if err != nil {
-		return err
-	}
-	if !owned {
-		return nil
-	}
 	return os.Chmod(dir, 0o700) // #nosec G302 -- directory: owner needs the execute bit
-}
-
-// ownedByUs reports whether path belongs to the effective user.
-func ownedByUs(path string) (bool, error) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return false, err
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		// Unknown FileInfo backing: assume not ours and leave it be.
-		return false, nil
-	}
-	return int(st.Uid) == os.Geteuid(), nil
 }
 
 // acquireLock takes an exclusive, non-blocking flock. The returned file must

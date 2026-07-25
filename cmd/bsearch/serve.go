@@ -41,8 +41,8 @@ func runServe(args []string, out io.Writer) error {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("serve takes no arguments (got %q)", fs.Arg(0))
 	}
-	if *socketPath == "" || *dbPath == "" {
-		return errors.New("cannot resolve the default socket or database path (no home directory?) — pass --socket and --db")
+	if *socketPath == "" || *dbPath == "" || *lockPath == "" {
+		return errors.New("cannot resolve the default socket, lock, or database path (no home directory?) — pass --socket, --lock and --db")
 	}
 	level, err := parseLogLevel(*logLevel)
 	if err != nil {

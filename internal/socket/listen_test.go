@@ -102,10 +102,12 @@ func TestListenPermissions(t *testing.T) {
 	}
 }
 
-func TestListenTightensExistingDirectory(t *testing.T) {
+func TestListenLeavesAnExistingDirectoryAlone(t *testing.T) {
+	// The socket path is the user's choice, and its parent may be somewhere
+	// that is emphatically not ours to re-permission: --socket ~/bsearch.sock
+	// would otherwise chmod $HOME to 0700, and a relative path would chmod
+	// the working directory. Only directories this call creates are tightened.
 	dir := shortDir(t)
-	// MkdirAll is a no-op on an existing directory, so a lax directory must
-	// be tightened explicitly or the permission story quietly fails.
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatalf("Chmod: %v", err)
 	}
@@ -120,8 +122,29 @@ func TestListenTightensExistingDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
+	if got := fi.Mode().Perm(); got != 0o755 {
+		t.Errorf("directory mode = %o, want it untouched at 755", got)
+	}
+}
+
+func TestListenTightensDirectoriesItCreates(t *testing.T) {
+	// The one it does own: a directory brought into existence for the socket
+	// starts at 0700, narrowing the window between bind() (umask-derived
+	// mode) and the socket's own chmod.
+	socketPath, lockPath := paths(t) // parent does not exist yet
+
+	ln, err := socket.Listen(socketPath, lockPath)
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer ln.Close() //nolint:errcheck // best effort
+
+	fi, err := os.Stat(filepath.Dir(socketPath))
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
 	if got := fi.Mode().Perm(); got != 0o700 {
-		t.Errorf("directory mode = %o, want 700", got)
+		t.Errorf("created directory mode = %o, want 700", got)
 	}
 }
 

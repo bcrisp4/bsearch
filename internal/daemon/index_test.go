@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bcrisp4/bsearch/internal/adapters/sqlite"
 	"github.com/bcrisp4/bsearch/internal/daemon"
@@ -300,5 +301,103 @@ func TestUnconfiguredEmbedderIsReportedNotCrashed(t *testing.T) {
 	_, err = d.Search(context.Background(), search.Request{Query: "alpha"})
 	if !errors.Is(err, search.ErrNotIndexed) {
 		t.Errorf("Search without an embedder = %v, want ErrNotIndexed", err)
+	}
+}
+
+// blockingEmbedder stalls inside EmbedQuery so a test can hold a search
+// mid-flight — after the index handle is acquired, before the KNN query.
+type blockingEmbedder struct {
+	fakeEmbedder
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingEmbedder) EmbedQuery(ctx context.Context, q string) ([]float32, error) {
+	b.entered <- struct{}{}
+	select {
+	case <-b.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return b.fakeEmbedder.EmbedQuery(ctx, q)
+}
+
+func TestReplacingTheIndexDoesNotBreakAnInFlightSearch(t *testing.T) {
+	// A search holds the index handle across two queries. If another
+	// request notices a replaced database in between and closes the handle,
+	// the first search dies with "sql: database is closed" — which carries
+	// no sentinel, so the user gets an opaque 500 for something they did
+	// nothing wrong to cause.
+	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
+	writeIndex(t, dbPath, "d_old", "alpha text")
+
+	embedder := &blockingEmbedder{
+		fakeEmbedder: *newEmbedder(),
+		entered:      make(chan struct{}),
+		release:      make(chan struct{}),
+	}
+	d := daemon.New(daemon.Options{DBPath: dbPath, Embedder: embedder})
+	t.Cleanup(func() { _ = d.Close() })
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := d.Search(context.Background(), search.Request{Query: "alpha"})
+		result <- err
+	}()
+
+	select {
+	case <-embedder.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("search never reached the embedder")
+	}
+
+	// Replace the database while that search holds its handle.
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.Remove(dbPath + suffix); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove: %v", err)
+		}
+	}
+	writeIndex(t, dbPath, "d_new", "alpha text")
+
+	// A concurrent request notices the replacement and retires the old
+	// handle. It must not close a database another request is still using.
+	if _, err := d.Status(context.Background()); err != nil {
+		t.Fatalf("Status during the swap: %v", err)
+	}
+
+	close(embedder.release)
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Errorf("in-flight search = %v, want it to complete against the index it started on", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("in-flight search never finished")
+	}
+}
+
+func TestUnreadableIndexIsReportedAsNotIndexed(t *testing.T) {
+	// Every way opening can fail — a file that isn't a bsearch index, a
+	// schema this build is too old or too new for — says something
+	// actionable about the index. Without the sentinel they all arrive as
+	// an opaque 500 telling the user to check a log.
+	dbPath := filepath.Join(t.TempDir(), "bsearch.db")
+	if err := os.WriteFile(dbPath, []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := newDaemon(t, dbPath)
+
+	_, err := d.Search(context.Background(), search.Request{Query: "alpha"})
+	if !errors.Is(err, search.ErrNotIndexed) {
+		t.Errorf("Search against an unreadable index = %v, want ErrNotIndexed", err)
+	}
+
+	// Status must still answer, with the reason rather than a failure.
+	status, err := d.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if status.Ready || status.Reason == "" {
+		t.Errorf("status = %+v, want not-ready with a reason", status)
 	}
 }
