@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -58,13 +59,17 @@ type daemonFixture struct {
 	cfgPath    string
 }
 
-// TestMain keeps SIGINT from killing the test binary. The daemon tests signal
+// TestMain keeps SIGTERM from killing the test binary. The daemon tests signal
 // this process to exercise the production shutdown path (signal.NotifyContext
 // in runServe) rather than a test-only hook, and a signal that arrives while
 // no daemon is running would otherwise terminate the run.
+//
+// Signalling the test process itself is the compromise of running the daemon
+// in-process; issue #54 covers driving a real child process instead, which
+// would retire this.
 func TestMain(m *testing.M) {
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, syscall.SIGTERM)
 	os.Exit(m.Run())
 }
 
@@ -100,7 +105,7 @@ func startDaemonWith(t *testing.T, cfgPath, dbPath string) *daemonFixture {
 	}()
 	t.Cleanup(func() {
 		// SIGTERM is the shutdown path launchd uses; exercise that one.
-		if err := syscallKillSelf(); err != nil {
+		if err := signalSelf(); err != nil {
 			t.Errorf("signal self: %v", err)
 		}
 		select {
@@ -358,7 +363,7 @@ func TestServeStartsWithoutAnEmbeddingModel(t *testing.T) {
 		t.Errorf("index = %+v, want not-ready naming the missing setting", out.Index)
 	}
 
-	if err := syscallKillSelf(); err != nil {
+	if err := signalSelf(); err != nil {
 		t.Fatalf("signal self: %v", err)
 	}
 	select {
@@ -407,7 +412,7 @@ func TestServeCleansUpItsSocket(t *testing.T) {
 	}()
 	waitForDaemon(t, socketClient(socketPath))
 
-	if err := syscallKillSelf(); err != nil {
+	if err := signalSelf(); err != nil {
 		t.Fatalf("signal self: %v", err)
 	}
 	select {
@@ -429,14 +434,14 @@ func TestServeCleansUpItsSocket(t *testing.T) {
 // on the unix targets this daemon supports.
 var errNoSignal = errors.New("cannot signal this process")
 
-// syscallKillSelf sends SIGTERM to the test binary, which is how the daemon
-// under test is asked to shut down: run() installs the same handler a real
-// daemon uses, so this exercises the production shutdown path rather than a
-// test-only hook.
-func syscallKillSelf() error {
+// signalSelf sends SIGTERM to the test binary, which is how the daemon under
+// test is asked to shut down: runServe installs the same handler a real daemon
+// uses, so this exercises the production shutdown path — and SIGTERM
+// specifically, because that is the signal launchd sends.
+func signalSelf() error {
 	p, err := os.FindProcess(os.Getpid())
 	if err != nil {
 		return fmt.Errorf("%w: %w", errNoSignal, err)
 	}
-	return p.Signal(os.Interrupt)
+	return p.Signal(syscall.SIGTERM)
 }

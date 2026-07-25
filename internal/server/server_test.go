@@ -536,3 +536,38 @@ func TestClientDisconnectIsNotAnInternalError(t *testing.T) {
 		t.Errorf("a client disconnect was logged at ERROR:\n%s", logged.String())
 	}
 }
+
+func TestSearchRejectsTrailingContent(t *testing.T) {
+	// Strict decoding is the contract, so a body that isn't exactly one JSON
+	// object is a 400. json.Decoder.More() catches a second document and
+	// trailing garbage, but returns false for a stray closing brace — the
+	// check has to be "the next decode is EOF", not "no more elements".
+	for _, body := range []string{
+		`{"query":"q"} {"query":"two"}`,
+		`{"query":"q"} garbage`,
+		`{"query":"q"}}`,
+		`{"query":"q"}]`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			ts := newTestServer(t, &fakeBackend{})
+
+			rep := post(t, ts, "/v1/search", body)
+			if rep.status != http.StatusBadRequest {
+				t.Fatalf("status = %d (%s), want 400", rep.status, rep.body)
+			}
+			if code, _ := decodeError(t, rep.body); code != "bad_request" {
+				t.Errorf("code = %q, want bad_request", code)
+			}
+		})
+	}
+}
+
+func TestSearchAcceptsTrailingWhitespace(t *testing.T) {
+	// Curl and shell heredocs add a trailing newline; that is not garbage.
+	ts := newTestServer(t, &fakeBackend{resp: search.Response{Hits: []search.Hit{}}})
+
+	rep := post(t, ts, "/v1/search", "{\"query\":\"q\"}\n\n")
+	if rep.status != http.StatusOK {
+		t.Fatalf("status = %d (%s), want 200", rep.status, rep.body)
+	}
+}

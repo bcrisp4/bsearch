@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -102,4 +103,14 @@ func newStrictDecoder(r io.Reader) *json.Decoder {
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
 	return dec
+}
+
+// expectEOF reports whether the decoder is exhausted, i.e. the body held
+// exactly one JSON document. Decoder.More() is not enough: it answers "is
+// there another element in the current array or object", so it catches a
+// second document and trailing garbage but returns false for a stray `}` or
+// `]`. Attempting one more decode and requiring io.EOF is the whole contract.
+// Trailing whitespace still reads as EOF, so a curl heredoc's newline is fine.
+func expectEOF(dec *json.Decoder) bool {
+	return errors.Is(dec.Decode(new(json.RawMessage)), io.EOF)
 }

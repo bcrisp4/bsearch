@@ -111,9 +111,15 @@ func (l *Listener) Close() error {
 // access control, and the directory mode only narrows the sub-millisecond
 // window between bind() (which uses the umask) and that chmod.
 func ensureDir(dir string) error {
-	if _, err := os.Stat(dir); err == nil {
+	switch fi, err := os.Stat(dir); {
+	case err == nil && fi.IsDir():
 		return nil // pre-existing: not ours to re-permission
-	} else if !os.IsNotExist(err) {
+	case err == nil:
+		// Every later call would fail with "not a directory" from somewhere
+		// further in — bind(), or opening the lock file. Say it here, where
+		// the path the user got wrong is the subject.
+		return fmt.Errorf("%s is not a directory", dir)
+	case !os.IsNotExist(err):
 		return err
 	}
 	// MkdirAll applies the mode only to directories it creates, and only

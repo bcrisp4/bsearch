@@ -297,8 +297,7 @@ func (s *Server) decodeSearch(w http.ResponseWriter, r *http.Request) (search.Re
 			"could not read the request: "+err.Error())
 		return search.Request{}, false
 	}
-	// A second value means the caller sent more than one JSON document.
-	if dec.More() {
+	if !expectEOF(dec) {
 		writeError(w, s.log, http.StatusBadRequest, codeBadRequest,
 			"the request body has trailing content after the JSON object")
 		return search.Request{}, false

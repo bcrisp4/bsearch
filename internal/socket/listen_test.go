@@ -340,3 +340,25 @@ func TestListenAcceptsADirectoryWeDoNotOwn(t *testing.T) {
 		t.Errorf("socket mode = %o, want 600", got)
 	}
 }
+
+func TestListenRefusesAFileWhereADirectoryBelongs(t *testing.T) {
+	// A regular file in the socket path's place makes every later call fail
+	// with "not a directory" from somewhere further in; naming it here means
+	// the error points at the path the user actually got wrong.
+	dir := shortDir(t)
+	blocker := filepath.Join(dir, "f")
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := socket.Listen(filepath.Join(blocker, "s.sock"), filepath.Join(dir, "s.lock"))
+	if err == nil {
+		t.Fatal("Listen under a regular file = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("error %q does not say the path is not a directory", err)
+	}
+	if !strings.Contains(err.Error(), blocker) {
+		t.Errorf("error %q does not name the offending path", err)
+	}
+}
