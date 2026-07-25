@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -852,6 +853,67 @@ func TestScanReachingNoFilesIsRecorded(t *testing.T) {
 		}
 		if snap.ScanErrs != 2 {
 			t.Errorf("ScanErrs = %d, want 2", snap.ScanErrs)
+		}
+		want := []PathError{
+			{Path: "/Users/ben/Documents", Err: "operation not permitted"},
+			{Path: "/Users/ben/Desktop", Err: "operation not permitted"},
+		}
+		if !slices.Equal(snap.PathErrors, want) {
+			t.Errorf("PathErrors = %+v, want %+v — a count alone does not say which directory", snap.PathErrors, want)
+		}
+	})
+}
+
+// The sample is capped so status stays readable when a revoked grant produces
+// one error per directory, but the count must still report the whole truth.
+func TestScanPathErrorSampleIsCapped(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var errs []discovery.PathError
+		for i := range maxLoggedPathErrors + 3 {
+			errs = append(errs, discovery.PathError{
+				Path: "/x/" + itoa(i), Err: errors.New("operation not permitted"),
+			})
+		}
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(),
+			&fakeScanner{result: discovery.Result{PathErrors: errs}}, nil)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go func() { _ = s.Run(ctx) }()
+		synctest.Wait()
+
+		snap := s.Snapshot()
+		if len(snap.PathErrors) != maxLoggedPathErrors {
+			t.Errorf("sampled %d path errors, want the cap of %d", len(snap.PathErrors), maxLoggedPathErrors)
+		}
+		if snap.ScanErrs != len(errs) {
+			t.Errorf("ScanErrs = %d, want the full %d — the cap is on the sample, not the count", snap.ScanErrs, len(errs))
+		}
+	})
+}
+
+// A snapshot is a value the status handler may hold while the next scan runs.
+// Returning the struct copies the slice header, not the backing array, so
+// without an explicit clone the caller reads memory the scheduler overwrites.
+func TestSnapshotDoesNotAliasPathErrors(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := &fakeScanner{result: discovery.Result{
+			PathErrors: []discovery.PathError{{Path: "/x", Err: errors.New("operation not permitted")}},
+		}}
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, nil)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go func() { _ = s.Run(ctx) }()
+		synctest.Wait()
+
+		snap := s.Snapshot()
+		if len(snap.PathErrors) != 1 {
+			t.Fatalf("PathErrors = %+v, want one", snap.PathErrors)
+		}
+		snap.PathErrors[0].Path = "/mutated"
+		if again := s.Snapshot(); again.PathErrors[0].Path != "/x" {
+			t.Errorf("scheduler state = %q after a caller wrote to its snapshot; the slice is shared", again.PathErrors[0].Path)
 		}
 	})
 }

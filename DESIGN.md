@@ -332,7 +332,11 @@ means re-embedding everything. The metadata buys:
 - **Partial rebuilds:** chunker change → re-chunk + re-embed only affected
   docs; summarizer change → regenerate summaries only, vectors untouched.
 - **Auditability:** `bsearch status` reports exactly what's stale against
-  current config.
+  current config. *Implementation status: status reports how many documents
+  the stale sweep re-queued this process, and the backlog they became; the
+  pre-sweep "what would be stale" audit has no reader now that the sweep is
+  automatic (ADR 0011) — it becomes useful again with `bsearch reindex`
+  (issue #24), which needs to say what it is about to do.*
 
 **Disk budget:** vectors are the dominant term — ~4 GB float32 at the 1M ×
 1024-dim cap (quantized index adds ~3%; FTS + stored markdown on top).
@@ -486,22 +490,45 @@ markdown or pyramid level.
 **`GET /v1/status`** — same payload as `bsearch status --json`. Always answers
 `200`, including when there is no index or the daemon can't read it: an
 endpoint that fails when things are broken withholds exactly what is being
-asked for. The index half reports readiness and, whenever the database can be
-read at all, per-state document counts:
+asked for.
+
+Two halves, from sources that fail independently: `index` is what the database
+holds, `indexing` is what the background loop is doing — "nothing is indexed"
+and "nothing is indexing" are different problems, and the second is readable
+even when there is no database at all.
 
 ```json
 {"version": "v0.2.0", "pid": 4312, "uptime_s": 90421,
  "socket": "~/Library/Application Support/bsearch/bsearch.sock",
  "db_path": "~/Library/Application Support/bsearch/bsearch.db",
  "index": {"ready": true, "model": "text-embedding-embeddinggemma-300m", "dims": 768,
-           "documents": {"discovered": 0, "converted": 0, "chunked": 0,
-                         "embedded": 0, "indexed": 1204, "failed": 2, "deleted": 0}}}
+           "documents": {"discovered": 35, "converted": 0, "chunked": 2,
+                         "embedded": 0, "indexed": 1204, "failed": 2, "deleted": 0},
+           "queue": {"pending": 37, "retrying": 2},
+           "failures": [{"reason": "file is not valid UTF-8", "documents": 2,
+                         "example_path": "~/Documents/notes/legacy.txt"}],
+           "disk": {"db_bytes": 432013312, "wal_bytes": 4096, "total_bytes": 432017408}},
+ "indexing": {"running": true, "gate": "idle — nothing to index", "deferring": false,
+              "last_scan": "2026-07-25T11:58:00Z", "last_cycle": "2026-07-25T11:58:30Z",
+              "last_progress": "2026-07-25T11:56:00Z",
+              "scan_errors": 0, "scan_reached_nothing": false,
+              "totals": {"indexed": 1204, "failed": 2, "skipped": 0, "retried": 0, "swept": 0}}}
 ```
 
 When `ready` is false a `reason` says why ("no index database at …",
-"nothing embedded yet", a model/config disagreement). Queue depth, gate
-reasons, permission failures and disk footprint are additive fields on the
-same document.
+"nothing embedded yet", a model/config disagreement); the document counts are
+still reported, because a database full of discovered-but-unindexed rows is
+when they matter most. `gate` is why the last indexing cycle did no work, in
+the user's terms, and `last_progress` against `last_cycle` is what
+distinguishes a slow queue from a stalled one. A scan that hit permission
+errors adds `path_errors` (a capped sample of `{path, error}`);
+`scan_reached_nothing` is the missing-Full-Disk-Access signature. When the
+indexing loop could not be started at all, `indexing` is
+`{"running": false, "reason": …}`.
+
+Every field is additive and omitted when absent, so `bsearch status --json`
+copies the daemon's bytes through unparsed and a newer daemon's fields reach
+consumers that understand them.
 
 **Errors.** Every non-2xx response — including ones the HTTP router would
 otherwise answer in plain text — carries `{"error": {"code": …, "message": …}}`.

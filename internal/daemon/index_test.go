@@ -14,6 +14,7 @@ import (
 	"github.com/bcrisp4/bsearch/internal/daemon"
 	"github.com/bcrisp4/bsearch/internal/domain"
 	"github.com/bcrisp4/bsearch/internal/search"
+	"github.com/bcrisp4/bsearch/internal/server"
 )
 
 var testSpec = domain.EmbeddingSpec{
@@ -67,6 +68,32 @@ func writeIndex(t *testing.T, path, docID, text string) {
 	}
 	if err := store.UpsertVectors(ctx, chunkIDs, [][]float32{{1, 0, 0}}); err != nil {
 		t.Fatalf("UpsertVectors: %v", err)
+	}
+}
+
+// addDocument adds a catalog row in the given state to an existing index,
+// with no chunks — the shape of a document the pipeline has not finished (or
+// has given up on). A non-empty failure reason is recorded as last_error.
+func addDocument(t *testing.T, path, docID string, state domain.DocState, failure string) {
+	t.Helper()
+	db, err := sqlite.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close() //nolint:errcheck // test fixture
+
+	store := sqlite.NewStore(db)
+	ctx := context.Background()
+	doc := domain.Document{
+		ID: docID, Path: "/notes/" + docID + ".md", ContentHash: "h", State: state,
+	}
+	if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
+		t.Fatalf("UpsertDocument: %v", err)
+	}
+	if failure != "" {
+		if err := store.MarkFailed(ctx, docID, failure); err != nil {
+			t.Fatalf("MarkFailed: %v", err)
+		}
 	}
 }
 
@@ -243,6 +270,50 @@ func TestStatusWithAnIndex(t *testing.T) {
 		if _, ok := status.Documents[string(state)]; !ok {
 			t.Errorf("documents is missing state %q", state)
 		}
+	}
+}
+
+func TestStatusReportsTheBacklogAndFootprint(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
+	writeIndex(t, dbPath, "d_1", "alpha text")
+	// A document waiting to be worked and one given up on, so the backlog and
+	// the failure list both have something to say.
+	addDocument(t, dbPath, "d_2", domain.DocStateDiscovered, "")
+	addDocument(t, dbPath, "d_3", domain.DocStateFailed, "not valid UTF-8")
+	d := newDaemon(t, dbPath)
+
+	status, err := d.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if status.Queue == nil || status.Queue.Pending != 1 {
+		t.Errorf("queue = %+v, want one pending document", status.Queue)
+	}
+	want := []server.FailureGroup{{Reason: "not valid UTF-8", Documents: 1, ExamplePath: "/notes/d_3.md"}}
+	if len(status.Failures) != 1 || status.Failures[0] != want[0] {
+		t.Errorf("failures = %+v, want %+v", status.Failures, want)
+	}
+	if status.Disk == nil || status.Disk.DBBytes == 0 {
+		t.Errorf("disk = %+v, want a measured footprint", status.Disk)
+	}
+	if status.Disk != nil && status.Disk.TotalBytes < status.Disk.DBBytes {
+		t.Errorf("disk = %+v, want the total to include the database", status.Disk)
+	}
+}
+
+// A clean index reports no failures at all rather than an empty-reason group:
+// the CLI hides the section entirely, and "Failures (0)" is noise.
+func TestStatusOmitsFailuresWhenNothingFailed(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
+	writeIndex(t, dbPath, "d_1", "alpha text")
+	d := newDaemon(t, dbPath)
+
+	status, err := d.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if len(status.Failures) != 0 {
+		t.Errorf("failures = %+v, want none", status.Failures)
 	}
 }
 
