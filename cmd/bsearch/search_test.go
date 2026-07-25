@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,8 @@ func TestRunSearchRejectsExtraArgs(t *testing.T) {
 }
 
 func TestRunSearchRejectsBlankQuery(t *testing.T) {
+	// Rejected locally: an obviously bad query should not need a running
+	// daemon to be turned away.
 	var out strings.Builder
 	err := run([]string{"search", "   "}, &out)
 	if err == nil || !strings.Contains(err.Error(), "empty") {
@@ -67,35 +70,31 @@ func TestRunSearchHelp(t *testing.T) {
 	}
 }
 
-func TestRunSearchNoIndex(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := writeTestConfig(t, dir, dir, "http://localhost:1")
-	dbPath := filepath.Join(dir, "data", "bsearch.db")
+func TestRunSearchWithoutADaemon(t *testing.T) {
+	socketPath, _ := shortSocketPath(t) // never bound
 
 	var out strings.Builder
-	err := run([]string{"search", "--config", cfgPath, "--db", dbPath, "q"}, &out)
-	if err == nil || !strings.Contains(err.Error(), "run 'bsearch index' first") {
-		t.Fatalf("run(search, no db) = %v, want run-index-first error", err)
+	err := run([]string{"search", "--socket", socketPath, "alpha"}, &out)
+	if err == nil {
+		t.Fatal("run(search) with no daemon = nil, want an error")
 	}
-	// A read-only command must not create the database as a side effect.
-	if _, statErr := os.Stat(dbPath); !os.IsNotExist(statErr) {
-		t.Errorf("search created %s (stat err %v), want it untouched", dbPath, statErr)
+	// The fix is to start the daemon, so the error has to say so.
+	if !strings.Contains(err.Error(), "not running") || !strings.Contains(err.Error(), "bsearch serve") {
+		t.Errorf("error %q should say the daemon is not running and how to start it", err)
 	}
 }
 
-func TestRunSearchQueryTooLong(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	// Ceiling 80 tokens ≈ 320 bytes (domain.MinCeilingTokens floor).
-	cfg := "[inference]\nendpoint = \"http://localhost:1\"\nembedding_model = \"test-model\"\ninput_ceiling_tokens = 80\n"
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
-		t.Fatal(err)
-	}
+func TestRunSearchAgainstAnEmptyIndex(t *testing.T) {
+	f := startDaemon(t)
 
 	var out strings.Builder
-	err := run([]string{"search", "--config", cfgPath, "--db", filepath.Join(dir, "db"), strings.Repeat("x", 400)}, &out)
-	if err == nil || !strings.Contains(err.Error(), "too long") {
-		t.Fatalf("run(search, 400-byte query, 320-byte ceiling) = %v, want query-too-long error", err)
+	err := run([]string{"search", "--socket", f.socketPath, "alpha"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "bsearch index") {
+		t.Fatalf("run(search) with nothing indexed = %v, want a run-index error", err)
+	}
+	// The daemon's prose reaches the user directly — never the envelope.
+	if strings.Contains(err.Error(), "{") {
+		t.Errorf("error %q looks like raw JSON", err)
 	}
 }
 
@@ -113,14 +112,13 @@ func contentVec(_ int, input string) []float32 {
 	}
 }
 
-// searchFixture indexes a temp corpus against a content-keyed fake
-// embeddings server and returns config and db paths.
-func searchFixture(t *testing.T) (cfgPath, dbPath string) {
+// indexedCorpus writes a two-document corpus, indexes it, and returns the
+// config and database paths. a.md has two alpha sections, so collapse has
+// something to collapse.
+func indexedCorpus(t *testing.T) (cfgPath, dbPath string) {
 	t.Helper()
 	srv := fakeEmbeddingsServer(t, contentVec)
-
 	dir := t.TempDir()
-	// a.md has TWO alpha sections: collapse must return it once.
 	corpus := writeTestCorpus(t, dir, map[string]string{
 		"a.md": "# Alpha One\n\nalpha text here\n\n# Alpha Two\n\nmore alpha text\n",
 		"b.md": "# Beta\n\nbeta text\n",
@@ -135,11 +133,18 @@ func searchFixture(t *testing.T) (cfgPath, dbPath string) {
 	return cfgPath, dbPath
 }
 
+// searchFixture indexes a corpus and serves it, returning the daemon.
+func searchFixture(t *testing.T) *daemonFixture {
+	t.Helper()
+	cfgPath, dbPath := indexedCorpus(t)
+	return startDaemonWith(t, cfgPath, dbPath)
+}
+
 func TestRunSearchEndToEnd(t *testing.T) {
-	cfgPath, dbPath := searchFixture(t)
+	f := searchFixture(t)
 
 	var out strings.Builder
-	if err := run([]string{"search", "--config", cfgPath, "--db", dbPath, "alpha"}, &out); err != nil {
+	if err := run([]string{"search", "--socket", f.socketPath, "alpha"}, &out); err != nil {
 		t.Fatalf("search: %v\noutput:\n%s", err, out.String())
 	}
 	got := out.String()
@@ -167,21 +172,21 @@ func TestRunSearchEndToEnd(t *testing.T) {
 }
 
 func TestRunSearchLargeLimitSucceeds(t *testing.T) {
-	cfgPath, dbPath := searchFixture(t)
+	f := searchFixture(t)
 
 	// --limit 600 → un-clamped k would be 4800, over sqlite-vec's 4096
 	// ceiling; the clamp must keep the query working.
 	var out strings.Builder
-	if err := run([]string{"search", "--config", cfgPath, "--db", dbPath, "--limit", "600", "alpha"}, &out); err != nil {
+	if err := run([]string{"search", "--socket", f.socketPath, "--limit", "600", "alpha"}, &out); err != nil {
 		t.Fatalf("search --limit 600: %v\noutput:\n%s", err, out.String())
 	}
 }
 
 func TestRunSearchJSON(t *testing.T) {
-	cfgPath, dbPath := searchFixture(t)
+	f := searchFixture(t)
 
 	var out strings.Builder
-	if err := run([]string{"search", "--config", cfgPath, "--db", dbPath, "--json", "alpha"}, &out); err != nil {
+	if err := run([]string{"search", "--socket", f.socketPath, "--json", "alpha"}, &out); err != nil {
 		t.Fatalf("search --json: %v\noutput:\n%s", err, out.String())
 	}
 
@@ -224,11 +229,41 @@ func TestRunSearchJSON(t *testing.T) {
 	}
 }
 
-func TestRunSearchModelChanged(t *testing.T) {
-	cfgPath, dbPath := searchFixture(t)
+func TestRunSearchJSONIsTheDaemonsBytes(t *testing.T) {
+	// --json copies the daemon's body through rather than re-encoding it,
+	// so a field this binary has never heard of still reaches a consumer
+	// that understands it.
+	f := searchFixture(t)
 
-	// Rewrite config to a different model name (same fake server, same dims):
-	// searching would hit the wrong vector space — must fail loud.
+	var out strings.Builder
+	if err := run([]string{"search", "--socket", f.socketPath, "--json", "alpha"}, &out); err != nil {
+		t.Fatalf("search --json: %v", err)
+	}
+	direct, status := f.post(t, "/v1/search", `{"query":"alpha","limit":10}`)
+	if direct != 200 {
+		t.Fatalf("direct search: status %d", direct)
+	}
+	// took_ms differs between the two calls; compare the hits only.
+	if gotHits, wantHits := hitsOnly(t, out.String()), hitsOnly(t, string(status)); gotHits != wantHits {
+		t.Errorf("CLI --json hits = %s, daemon hits = %s; want them identical", gotHits, wantHits)
+	}
+}
+
+// hitsOnly extracts the raw hits array from a search response.
+func hitsOnly(t *testing.T, body string) string {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &fields); err != nil {
+		t.Fatalf("decode %q: %v", body, err)
+	}
+	return string(fields["hits"])
+}
+
+func TestRunSearchModelChanged(t *testing.T) {
+	cfgPath, dbPath := indexedCorpus(t)
+
+	// Point the daemon at a different model name (same fake server, same
+	// dims): searching would hit the wrong vector space — must fail loud.
 	raw, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
@@ -237,12 +272,14 @@ func TestRunSearchModelChanged(t *testing.T) {
 	if changed == string(raw) {
 		t.Fatal("fixture config did not contain expected model line")
 	}
-	if err := os.WriteFile(cfgPath, []byte(changed), 0o600); err != nil {
+	changedPath := filepath.Join(filepath.Dir(cfgPath), "changed.toml")
+	if err := os.WriteFile(changedPath, []byte(changed), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	f := startDaemonWith(t, changedPath, dbPath)
 
 	var out strings.Builder
-	err = run([]string{"search", "--config", cfgPath, "--db", dbPath, "alpha"}, &out)
+	err = run([]string{"search", "--socket", f.socketPath, "alpha"}, &out)
 	if err == nil || !strings.Contains(err.Error(), "re-embed") {
 		t.Fatalf("run(search, model changed) = %v, want built-with-model error", err)
 	}
@@ -254,7 +291,7 @@ func TestRunSearchModelChanged(t *testing.T) {
 }
 
 func TestRunSearchDimsChanged(t *testing.T) {
-	cfgPath, dbPath := searchFixture(t)
+	cfgPath, dbPath := indexedCorpus(t)
 
 	// Same model name, but the server now returns 4-dim vectors (the
 	// operator swapped the model behind the name). The identity pre-flight
@@ -264,14 +301,28 @@ func TestRunSearchDimsChanged(t *testing.T) {
 	})
 	dir := filepath.Dir(cfgPath)
 	newCfg := writeTestConfig(t, dir, dir, srv.URL)
+	f := startDaemonWith(t, newCfg, dbPath)
 
 	var out strings.Builder
-	err := run([]string{"search", "--config", newCfg, "--db", dbPath, "alpha"}, &out)
+	err := run([]string{"search", "--socket", f.socketPath, "alpha"}, &out)
 	if err == nil || !strings.Contains(err.Error(), "run 'bsearch index'") {
 		t.Fatalf("run(search, dims changed) = %v, want re-index error", err)
 	}
 	if !strings.Contains(err.Error(), "dimensions") {
 		t.Errorf("error %q does not mention dimensions", err)
+	}
+}
+
+func TestRunSearchStatusIsReachableWhileSearching(t *testing.T) {
+	// Sanity that the CLI and a raw client can share one daemon: the CLI is
+	// not a privileged path.
+	f := searchFixture(t)
+
+	if err := run([]string{"search", "--socket", f.socketPath, "alpha"}, io.Discard); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if status, body := f.get(t, "/v1/status"); status != 200 {
+		t.Fatalf("status = %d (%s)", status, body)
 	}
 }
 
@@ -298,17 +349,22 @@ func TestTildePath(t *testing.T) {
 	tests := []struct {
 		in, want string
 	}{
-		{filepath.Join(home, "notes", "a.md"), filepath.Join("~", "notes", "a.md")},
-		{home, "~"},
-		{"/opt/other/a.md", "/opt/other/a.md"},
-		{home + "stuff/a.md", home + "stuff/a.md"}, // prefix but not a path boundary
+		{"/Users/testuser/notes/a.md", "~/notes/a.md"},
+		{"/Users/testuser", "~"},
+		{"/Users/testuser2/notes/a.md", "/Users/testuser2/notes/a.md"},
+		{"/etc/hosts", "/etc/hosts"},
 	}
 	for _, tt := range tests {
-		if got := tildePath(home, tt.in); got != tt.want {
-			t.Errorf("tildePath(%q, %q) = %q, want %q", home, tt.in, got, tt.want)
-		}
+		t.Run(tt.in, func(t *testing.T) {
+			if got := tildePath(home, tt.in); got != tt.want {
+				t.Errorf("tildePath(%q, %q) = %q, want %q", home, tt.in, got, tt.want)
+			}
+		})
 	}
-	if got := tildePath("", "/Users/x/a.md"); got != "/Users/x/a.md" {
-		t.Errorf("tildePath with no home = %q, want path unchanged", got)
+}
+
+func TestTildePathWithoutHome(t *testing.T) {
+	if got := tildePath("", "/Users/testuser/a.md"); got != "/Users/testuser/a.md" {
+		t.Errorf("tildePath(\"\", path) = %q, want the path unchanged", got)
 	}
 }

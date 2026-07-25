@@ -68,22 +68,28 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func startDaemon(t *testing.T, args ...string) *daemonFixture {
+// startDaemon runs a daemon over a one-document corpus with nothing indexed.
+func startDaemon(t *testing.T) *daemonFixture {
 	t.Helper()
 	dir := t.TempDir()
 	corpus := writeTestCorpus(t, dir, map[string]string{"alpha.md": "# Alpha\n\nalpha document body\n"})
 	srv := fakeEmbeddingsServer(t, contentVec)
-	cfgPath := writeTestConfig(t, dir, corpus, srv.URL)
-	dbPath := filepath.Join(dir, "data", "bsearch.db")
+	return startDaemonWith(t, writeTestConfig(t, dir, corpus, srv.URL), filepath.Join(dir, "data", "bsearch.db"))
+}
+
+// startDaemonWith runs a daemon over an explicit config and database, so a
+// test can point the daemon at a configuration that disagrees with the index.
+func startDaemonWith(t *testing.T, cfgPath, dbPath string) *daemonFixture {
+	t.Helper()
 	socketPath, lockPath := shortSocketPath(t)
 
-	full := append([]string{
+	full := []string{
 		"serve",
 		"--config", cfgPath,
 		"--db", dbPath,
 		"--socket", socketPath,
 		"--lock", lockPath,
-	}, args...)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)

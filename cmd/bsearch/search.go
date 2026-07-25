@@ -12,33 +12,25 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 	"unicode"
 
-	"github.com/bcrisp4/bsearch/internal/adapters/sqlite"
+	"github.com/bcrisp4/bsearch/internal/client"
 	"github.com/bcrisp4/bsearch/internal/config"
 	"github.com/bcrisp4/bsearch/internal/search"
 )
 
-// searchTimeout bounds the whole query interactively. The embedder's shared
-// HTTP client allows 60s (sized for bulk index batches); 30s still tolerates
-// an inference server cold-loading the embedding model on the first query
-// (DESIGN.md: Constraints).
-const searchTimeout = 30 * time.Second
-
-// runSearch is the one-shot semantic search command (DESIGN.md: Milestone
-// M1): embed the query with the model's query prefix, brute-force KNN over
-// the current vector table, collapse to best-chunk-per-document, print.
-// The query path itself lives in internal/search, shared with the daemon.
+// runSearch queries the daemon over its unix socket (ADR 0010). It holds no
+// index and no inference configuration of its own: the daemon owns both, so
+// there is one place where a query is validated, embedded, and matched
+// against the index's embedding identity.
 func runSearch(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("search", flag.ContinueOnError)
 	fs.SetOutput(out)
-	configPath := fs.String("config", config.DefaultPath(), "config file")
-	dbPath := fs.String("db", config.DefaultDBPath(), "index database file")
+	socketPath := fs.String("socket", config.DefaultSocketPath(), "daemon socket")
 	limit := fs.Int("limit", search.DefaultLimit, "maximum documents to return")
 	asJSON := fs.Bool("json", false, "emit JSON instead of human-readable output")
 	fs.Usage = func() {
-		fmt.Fprintln(out, `usage: bsearch search [--config <path>] [--db <path>] [--limit <n>] [--json] <query>`)
+		fmt.Fprintln(out, `usage: bsearch search [--socket <path>] [--limit <n>] [--json] <query>`)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -56,6 +48,9 @@ func runSearch(args []string, out io.Writer) error {
 		// NArg 2 — the hint must cover both mistakes.
 		return fmt.Errorf("search takes one query argument (got %d) — flags go before the query; quote multi-word queries", fs.NArg())
 	}
+	if *socketPath == "" {
+		return errors.New("cannot resolve the default socket path (no home directory?) — pass --socket")
+	}
 	// A flag always has a value, so an explicit --limit 0 is a mistake; in
 	// the JSON request an absent limit is legitimately 0 and means "use the
 	// default". The rules genuinely differ, so the flag carries its own.
@@ -63,50 +58,31 @@ func runSearch(args []string, out io.Writer) error {
 		return fmt.Errorf("--limit %d out of range [1, %d]", *limit, search.MaxLimit)
 	}
 	req := search.Request{Query: fs.Arg(0), Limit: *limit}
-	// Reject a bad request before loading config and opening the index:
-	// "the query is empty" should not arrive behind "no index database".
-	// Search re-validates — this is the same check, not a second one.
+	// The daemon validates too — this is the same function, not a second
+	// rule — but running it here means an obviously bad query doesn't need
+	// a daemon to be rejected.
 	if _, err := req.Validate(); err != nil {
 		return errors.New(search.Message(err))
 	}
 
-	if *dbPath == "" {
-		return errors.New("cannot resolve the default database path (no home directory?) — pass --db")
-	}
-	_, embedder, err := loadInference(*configPath)
-	if err != nil {
-		return err
-	}
-	// Also before opening the index: an over-long query is the caller's
-	// mistake and shouldn't be reported behind a missing-database error.
-	if err := req.CheckLength(embedder.Spec()); err != nil {
-		return errors.New(search.Message(err))
-	}
-
-	// Search is read-only: OpenExisting refuses to bring an empty index into
-	// existence as a side effect, so a missing database is reported as one.
-	db, err := sqlite.OpenExisting(*dbPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("no index database at %s — run 'bsearch index' first", *dbPath)
-		}
-		return err
-	}
-	defer db.Close()
-	store := sqlite.NewStore(db)
-
-	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ctx, cancel := context.WithTimeout(sigCtx, searchTimeout)
-	defer cancel()
 
-	resp, err := search.New(store, embedder).Search(ctx, req)
+	body, err := client.New(*socketPath).Search(ctx, req)
 	if err != nil {
-		return errors.New(search.Message(err))
+		return err
 	}
 
 	if *asJSON {
-		return json.NewEncoder(out).Encode(resp)
+		// Copied through rather than re-encoded: fields a newer daemon adds
+		// reach consumers that understand them, even when this binary
+		// doesn't.
+		_, err := out.Write(body)
+		return err
+	}
+	var resp search.Response
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("the daemon sent a response this version cannot read: %w", err)
 	}
 	writeSearchHuman(out, resp)
 	return nil
@@ -133,7 +109,7 @@ func writeSearchHuman(out io.Writer, resp search.Response) {
 		if hp := search.Preview(h.HeadingPath, search.PreviewRunes); hp != "" {
 			fmt.Fprintf(out, "    %s\n", hp)
 		}
-		fmt.Fprintf(out, "    %s\n", h.ChunkPreview)
+		fmt.Fprintf(out, "    %s\n", search.Preview(h.ChunkPreview, search.PreviewRunes))
 	}
 }
 
