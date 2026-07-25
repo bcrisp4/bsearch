@@ -88,6 +88,18 @@ const (
 	// the caller decides between retrying with backoff and treating it as
 	// an outage, which is a judgement only the caller can make.
 	OutcomeTransient
+	// OutcomeSuperseded: the document moved on while it was being worked on
+	// — its file was deleted and the row purged, or the file was saved again
+	// and the row reset to `discovered` with fresh chunks. Nothing is wrong
+	// and nothing is owed: whatever superseded this pass already left the
+	// catalog in the right state, and the next pass sees it.
+	//
+	// Distinct from Skipped because the two mean opposite things to the
+	// caller. Skipped is "this file could not be read", which in bulk is how
+	// a missing Full Disk Access grant announces itself; treating a routine
+	// save-during-index as that would have `bsearch status` blame
+	// permissions for a working daemon.
+	OutcomeSuperseded
 )
 
 // Result is one document's outcome and, when there is one, the cause.
@@ -177,6 +189,10 @@ func (ix *Indexer) Run(ctx context.Context, docs []domain.Document) (Summary, er
 			sum.Failed++
 		case OutcomeSkipped:
 			sum.Skipped++
+		case OutcomeSuperseded:
+			// Nothing to count: the document this run was working on is not
+			// the document in the catalog any more, and whatever replaced it
+			// is already queued.
 		case OutcomeTransient:
 			// One-shot has nowhere to put a retry, so endpoint trouble ends
 			// the run. The document stays chunked and resumes next time;
@@ -290,6 +306,9 @@ func (ix *Indexer) ProcessDocument(ctx context.Context, doc domain.Document, sv 
 	doc.State = domain.DocStateChunked
 	chunkIDs, err := ix.opts.Store.UpsertDocument(ctx, doc, res.Chunks)
 	if err != nil {
+		if gone, r := ix.movedOn(doc, err); gone {
+			return r, nil
+		}
 		return Result{}, fmt.Errorf("store %s: %w", doc.Path, err)
 	}
 
@@ -311,15 +330,45 @@ func (ix *Indexer) ProcessDocument(ctx context.Context, doc domain.Document, sv 
 			return ix.failWith(ctx, doc, out, fmt.Sprintf("embed: %v", err))
 		}
 		if err := ix.opts.Vectors.UpsertVectors(ctx, chunkIDs, vectors); err != nil {
+			// The widest window in the pipeline: an embed is seconds of
+			// network, and both a delete and a re-save inside it land here as
+			// chunk IDs that no longer exist.
+			if gone, r := ix.movedOn(doc, err); gone {
+				return r, nil
+			}
 			return Result{}, fmt.Errorf("store vectors for %s: %w", doc.Path, err)
 		}
 	}
 
 	if err := ix.opts.Store.UpdateDocumentState(ctx, doc.ID, domain.DocStateIndexed); err != nil {
+		if gone, r := ix.movedOn(doc, err); gone {
+			return r, nil
+		}
 		return Result{}, fmt.Errorf("finalize %s: %w", doc.Path, err)
 	}
 	fmt.Fprintf(ix.opts.Progress, "indexed %s (%d chunks)\n", doc.Path, len(res.Chunks))
 	return out, nil
+}
+
+// movedOn classifies a store error as "the document moved on while we were
+// working on it" — deleted (ErrDocumentGone) or rewritten
+// (ErrDocumentSuperseded) — which is an outcome rather than a fault.
+//
+// Not failed: failed is a claim about the document's content that would sit
+// in `bsearch status` under a reason, and the content this pass was making
+// claims about is not the content in the catalog any more. Nothing is left
+// behind either — the row is purged, or already reset to `discovered` by the
+// reconcile that overtook us, so the next pass picks up the current file.
+func (ix *Indexer) movedOn(doc domain.Document, err error) (bool, Result) {
+	switch {
+	case errors.Is(err, domain.ErrDocumentGone):
+		fmt.Fprintf(ix.opts.Progress, "skipped %s: deleted while it was being indexed\n", doc.Path)
+	case errors.Is(err, domain.ErrDocumentSuperseded):
+		fmt.Fprintf(ix.opts.Progress, "skipped %s: changed again while it was being indexed\n", doc.Path)
+	default:
+		return false, Result{}
+	}
+	return true, Result{Outcome: OutcomeSuperseded, Err: err}
 }
 
 // fail records a permanent failure for a document that has no Result in
@@ -336,9 +385,15 @@ func (ix *Indexer) fail(ctx context.Context, doc domain.Document, reason string)
 func (ix *Indexer) failWith(ctx context.Context, doc domain.Document, out Result, reason string) (Result, error) {
 	doc.State = domain.DocStateFailed
 	if _, err := ix.opts.Store.UpsertDocument(ctx, doc, nil); err != nil {
+		if gone, r := ix.movedOn(doc, err); gone {
+			return r, nil
+		}
 		return Result{}, fmt.Errorf("record failure for %s: %w", doc.Path, err)
 	}
 	if err := ix.opts.Store.MarkFailed(ctx, doc.ID, reason); err != nil {
+		if gone, r := ix.movedOn(doc, err); gone {
+			return r, nil
+		}
 		return Result{}, err
 	}
 	fmt.Fprintf(ix.opts.Progress, "failed %s: %s\n", doc.Path, reason)

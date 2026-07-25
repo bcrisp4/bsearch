@@ -13,6 +13,33 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- **Save a file, and it is searchable in seconds.** The daemon now watches
+  your configured paths instead of waiting for its next walk, so a note you
+  just wrote turns up in search about fifteen seconds later rather than up to
+  five minutes. Deleting a file now works too, for the first time: it stops
+  appearing in search just as quickly, instead of lingering in the index
+  pointing at a path that is not there. Renames and folder moves keep a
+  document's identity, so anything holding onto a `doc_id` still resolves.
+
+  The periodic walk has not gone away — it is the backstop for changes the
+  event stream missed, and it now runs every fifteen minutes rather than
+  every five, so the daemon costs less in the background while being fresher.
+
+  `bsearch status` gains a `watching` line saying whether changes are being
+  noticed as they happen, and if not, why. Worth a look when everything else
+  reads healthy: a watcher that has never seen a change is usually a missing
+  Full Disk Access grant. On a machine without FSEvents the daemon falls back
+  to the walk and says so, rather than failing to start.
+
+  Deletion has deliberate gaps, all with the same shape: when the daemon
+  cannot be sure a file is really gone, it leaves the index alone rather than
+  risk destroying it. A file deleted while the daemon was *not* running stays
+  indexed; so does one deleted in a burst large enough to overflow the event
+  stream, or one whose whole folder vanished at once (which is what an
+  unmounting disk looks like from here). In every case, deleting the file
+  again with the daemon running clears it. Closing the gaps properly is
+  [#57](https://github.com/bcrisp4/bsearch/issues/57).
+
 - **New `bsearch status` command: what the daemon is doing, and why it isn't.**
   It reports the index — ready or not and why, the embedding model, per-state
   document counts, and what the index costs on disk — alongside the
@@ -34,9 +61,8 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 - **The daemon now indexes on its own.** `bsearch serve` walks your configured
   paths, indexes what it finds, and keeps up with new and changed files — no
-  command to run and nothing to remember. Save a note and it is searchable a
-  few minutes later. The daemon also creates the index database itself, so a
-  fresh install is `bsearch serve` and nothing else.
+  command to run and nothing to remember. The daemon also creates the index
+  database itself, so a fresh install is `bsearch serve` and nothing else.
 
   Two things it now handles for you. **A stopped inference server costs
   nothing**: the daemon checks the embedding endpoint before working, and
@@ -48,9 +74,8 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   up. Documents that fail for their own reasons are retried five times with
   backoff before being given up on.
 
-  Indexing scans every 5 minutes for now — the filesystem watcher that makes
-  it near-instant is still to come. Battery-aware scheduling is configurable
-  but not yet active. See [docs/daemon.md](docs/daemon.md).
+  Battery-aware scheduling is configurable but not yet active. See
+  [docs/daemon.md](docs/daemon.md).
 
 - New `bsearch serve` command: runs the bsearch daemon, serving search over
   an HTTP+JSON API on a unix socket at

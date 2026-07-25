@@ -158,7 +158,7 @@ granted Full Disk Access — see the TCC constraint below.)
 |---|---|---|
 | Search latency (warm) | p95 < 500 ms | vector index in-process/local; embedding model resident (see Constraints) |
 | Search latency (cold daemon) | < 3 s | acceptable to lazily open index |
-| Index freshness (on AC) | new/changed file searchable ≤ 5 min | polling/FSEvents batch interval, not per-write |
+| Index freshness (on AC) | new/changed file searchable ≤ 5 min, ~15 s typical while watching | FSEvents debounce window, not per-write. The ≤ 5 min bound is the scan-only cadence and is what the walk alone has to meet. A change the watcher was never told about waits for the walk, which is deliberately slower (15 min) while watching — the two together, not either alone, are the freshness story ([ADR 0013](docs/adr/0013-fsevents-watcher-and-event-driven-reconcile.md)) |
 | Index freshness (battery) | ≤ 60 min or deferred, configurable | battery constraint |
 | Corpus scale | ~100k docs, ~1M chunks | single-node embedded storage sufficient; no server DB. A PDF/email-heavy corpus may exceed 1M chunks — quantization is the planned configuration at that scale (see Vector search) |
 | Availability | daemon auto-restarts (launchd); no nines target | it's a laptop |
@@ -179,7 +179,7 @@ storage and vector-search rows first.
 | Vector search | sqlite-vec `vec0`. Float32 brute-force KNN up to a few hundred thousand chunks; **binary quantization + rescore is the planned configuration at full corpus scale (~1M chunks)**, not an emergency lever. No ANN | Exact (or near-exact with rescore), zero index maintenance, delete-friendly. Scan cost is ~linear in vectors × dims: published 100k×768 runs well under 100 ms warm, but extrapolating the same numbers puts 1M×768 ≈ ~700 ms — over the SLO; the author's own ceiling for float vectors is "the hundreds of thousands". Quantized scan (32× smaller, XOR+popcount distance) + full-precision rescore of top-k×8 retains ~95% recall at ~1.03× total storage. ANN (DiskANN/IVF) immature in sqlite-vec and unneeded at this scale | Further levers: raise mmap/cache (make scan RAM-bound), partition keys. **Acknowledged bet:** sqlite-vec is pre-1.0 (no stable on-disk format guarantee) — version pinned; a format break is covered by drop-and-reindex |
 | Keyword search | FTS5 + BM25 over chunks, fused with chunk-level KNN via RRF (k=60 default; semantic/keyword weights configurable). Results collapse to best-chunk-per-document | Hybrid beats pure vector on exact terms (invoice numbers, names); same engine, same database file, one consistency/backup story. Pattern implemented in lore (chunk breadcrumbs + RRF) though never measured there — M2 measures it here | Same DB, additive |
 | Doc conversion | bscribe over HTTP behind `ConverterPort`; plain text/markdown handled in-process. Adapter sends bscribe's required bearer token (from config); v1 uses the sync `POST /v1/convert` endpoint and reads the JSON envelope's `content` field. bscribe's native port is 8000 — `localhost:18000` is this machine's host mapping | No parser deps in the binary; LibreOffice/OCR churn isolated in a hardened container (non-root baked into the image; read-only rootfs, capability drop, and memory cap are operator run-flags — required flags recorded in deployment docs); bscribe already runs here and anticipated bsearch as a consumer | Adapter swap (lit CLI subprocess, docling) without touching domain; async job API available if large-doc sync timeouts warrant it |
-| Change detection | FSEvents watch (macOS API behind `WatcherPort`) for near-real-time creates, edits, **and deletes**, plus periodic full scan for missed events; change = cheap size/mtime check, content hash to confirm | Freshness SLO without constant scanning; battery-friendly | Linux port = new watcher adapter (inotify) |
+| Change detection | FSEvents watch (macOS API behind `WatcherPort`, via `fsnotify/fsevents`) for near-real-time creates, edits, **and deletes**, plus periodic full scan for missed events; change = cheap size/mtime check, content hash to confirm. Events are debounced ~10 s and reconciled path-by-path against the same change detection the walk uses; an event stream that overflows or reports a volume appearing/disappearing escalates to a full walk rather than trusting a partial path list. The walk's cadence follows the watcher — 5 min scan-only, 15 min while watching ([ADR 0013](docs/adr/0013-fsevents-watcher-and-event-driven-reconcile.md)) | Freshness SLO without constant scanning; battery-friendly | Linux port = new watcher adapter (inotify) |
 | Chunking | Markdown-aware, hand-rolled in Go (see below) | Everything is markdown post-conversion; tractable, dependency-free algorithm | Isolated pure function, versioned |
 | Summaries | Pyramid summaries per document: 4 / 16 / 64 words + full text, generated at index time by the summary LLM. Word counts are targets, not contracts (validated and trimmed post-hoc). Documents exceeding the summarizer's context are handled map-reduce style: section/chunk summaries reduced to document summaries; the summarizer's minimum context requirement is part of the versioned stage | Agent context economy — survey cheap, zoom on demand (StrongDM pyramid-summaries technique, which pairs the ladder with MapReduce for over-context inputs) | Additive; regenerable without touching vectors |
 | Embeddings / LLM | OpenAI-compatible HTTP (`EmbedderPort`, `SummarizerPort`); model names + endpoints in config. **Per-model query/passage prefix templates** (E5 `query:`/`passage:`, Nomic `search_query:`/`search_document:`, BGE/Qwen3 query instructions) stored in versioned pipeline metadata and applied identically at index and query time — asymmetric embedders lose substantial recall without matched prefixes (lore solves this per model family; lesson carried alongside the breadcrumb one) | BYO inference; LM Studio today | Config change; embedding model swap requires full re-embed (see pipeline metadata for the migration path) |
@@ -204,10 +204,14 @@ The queue is a SQLite-backed state machine — no external queue infrastructure.
   pipeline gate.
 - **Enqueue:** FSEvents callbacks and the periodic scan both upsert
   "needs work" rows — idempotent, so rapid saves coalesce naturally. A
-  debounce window (~10 s) avoids grabbing files mid-write. Permission errors
-  (TCC) are recorded per path and surfaced in `status`, never silently
-  skipped. Dataless iCloud files (Optimize Storage placeholders) are skipped,
-  not materialized — indexing must never trigger cloud downloads.
+  debounce window (10 s, fixed and armed by the first event of a burst — a
+  window that reset on activity would never close on a file being written
+  continuously) avoids grabbing files mid-write; closing early is harmless,
+  since the content hash makes the work idempotent and the rest of the write
+  opens another window. Permission errors (TCC) are recorded per path and
+  surfaced in `status`, never silently skipped. Dataless iCloud files
+  (Optimize Storage placeholders) are skipped, not materialized — indexing
+  must never trigger cloud downloads.
 - **Dispatch:** a scheduler loop wakes on timer/notify and reads a batch
   (`SELECT … WHERE state NOT IN ('indexed', 'failed', 'deleted') AND
   next_retry_at <= now LIMIT n`), served by a partial index that excludes
@@ -224,11 +228,13 @@ The queue is a SQLite-backed state machine — no external queue infrastructure.
   working, not hung, and a second concurrent drain would contend for the same
   rows and the same inference server. Nothing is lost: the queue is durable
   and the next cycle re-reads it.
-- **Stated limits (ADR 0011).** Batch 32 documents; 5 attempts; backoff base
-  30 s, cap 15 min; scan every 5 min, independent of the drain interval.
-  Queue **depth is deliberately unbounded** — the queue is the catalog, one
-  row per file, bounded by the corpus, with no submission path that can
-  inflate it.
+- **Stated limits (ADR 0011, ADR 0013).** Batch 32 documents; 5 attempts;
+  backoff base 30 s, cap 15 min; scan every 5 min scan-only or 15 min while
+  watching, independent of the drain interval. Watcher: 1 s FSEvents
+  coalescing latency, 10 s debounce window, and a held-back batch collapses
+  to a full-walk request past 8192 paths. Queue **depth is deliberately
+  unbounded** — the queue is the catalog, one row per file, bounded by the
+  corpus, with no submission path that can inflate it.
 - **Staleness is swept, not waited for.** Dispatch skips terminal states, so a
   corpus fully indexed under a superseded model looks like no work at all.
   Once per process the scheduler moves documents whose `stage_versions`
@@ -512,6 +518,9 @@ even when there is no database at all.
               "last_scan": "2026-07-25T11:58:00Z", "last_cycle": "2026-07-25T11:58:30Z",
               "last_progress": "2026-07-25T11:56:00Z",
               "scan_errors": 0, "scan_reached_nothing": false,
+              "watch": {"running": true, "roots": 1,
+                        "last_event": "2026-07-25T11:56:00Z",
+                        "reconciled": 42, "deleted": 3, "rescans": 0},
               "totals": {"indexed": 1204, "failed": 2, "skipped": 0, "retried": 0, "swept": 0}}}
 ```
 
@@ -525,6 +534,13 @@ errors adds `path_errors` (a capped sample of `{path, error}`);
 `scan_reached_nothing` is the missing-Full-Disk-Access signature. When the
 indexing loop could not be started at all, `indexing` is
 `{"running": false, "reason": …}`.
+
+`watch` is the near-real-time half of freshness, and it is reported separately
+for the same reason `indexing` is: it fails on its own. `running: false`
+carries a `reason` and means the periodic scan is carrying freshness alone —
+a working mode, not a fault. A watcher that is running with no `last_event`
+is the other shape worth recognising: subscribed, healthy, and being told
+nothing, which on macOS means the daemon is missing Full Disk Access.
 
 Every field is additive and omitted when absent, so `bsearch status --json`
 copies the daemon's bytes through unparsed and a newer daemon's fields reach
@@ -670,12 +686,21 @@ listener ships. Recorded so it isn't bolted on casually.
   integrations. Rare and accepted — schema migrations are preferred precisely
   so rebuilds stay exceptional.
 - **Deletion follows source, near-real-time.** Deletes arrive via FSEvents
-  like creates and edits (the periodic scan is the backstop for missed
-  events) → catalog row, chunks, vectors, summaries, FTS entries purged. At
-  the index level the content is gone — no longer searchable or retrievable.
+  like creates and edits → catalog row, chunks, vectors, summaries, FTS
+  entries purged, for the path and everything beneath it (an event does not
+  say whether the vanished path was a file or a directory). At the index
+  level the content is gone — no longer searchable or retrievable.
   Storage-layer honesty: SQLite leaves deleted bytes in freelist/WAL pages
   until checkpoint/vacuum; accepted residue, covered by FileVault, not worth
-  `secure_delete` write-amplification.
+  `secure_delete` write-amplification. *Implementation status: the event path
+  ships (ADR 0013), and it purges only on positive evidence — an `ENOENT` on
+  a path an event named, whose parent is still there. The two cases that
+  guard rules out — a file deleted while the daemon was not running, and a
+  subtree that vanished without its own directory event — stay indexed until
+  the scan-side reconcile lands
+  ([#57](https://github.com/bcrisp4/bsearch/issues/57)). Being slow there is
+  deliberate: a naive "the walk didn't visit it, so it's gone" turns an
+  unmounted volume or a revoked TCC grant into a corpus wipe.*
 - **No history.** Only the current version of a file is indexed; edits replace
   prior chunks/embeddings.
 - **Backups:** the daemon sets a Time Machine exclusion on its data directory
@@ -750,10 +775,18 @@ Missing features).
 - **Embedding context strategy for long documents.** Chunk-level embeddings
   decided; whether to also embed summaries (a doc-level vector for coarse
   retrieval) — decide during M4 when pyramid data exists.
-- **FSEvents edge cases.** Volumes appearing/disappearing (external disks),
-  packages/bundles, event-stream overflow handling. Handle in M3; may narrow
-  supported paths. (iCloud dataless files already resolved: skipped, never
-  materialized.)
+- **FSEvents edge cases — mostly closed (ADR 0013).** Overflow, dropped
+  events, volumes appearing/disappearing, and a watch root being replaced all
+  resolve the same way: the batch collapses to a full-walk request rather
+  than a partial path list. Directory moves are handled by descending an
+  existing directory in the event set, so a renamed folder keeps its
+  documents' ids. (iCloud dataless files were already resolved: skipped,
+  never materialized.) **Still open:** packages/bundles are indexed as
+  ordinary directories, so a `.app` or `.rtfd` under an include root is
+  walked rather than treated as one item; whether that needs narrowing waits
+  on a real corpus. Overflow escalates to a *full* walk rather than the
+  subtree `MustScanSubDirs` names — precision deferred, since a walk is about
+  a second warm.
 
 ## Closed issues
 

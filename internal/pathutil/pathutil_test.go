@@ -28,3 +28,21 @@ func TestWithin(t *testing.T) {
 		})
 	}
 }
+
+func TestFoldDataVolume(t *testing.T) {
+	for name, tc := range map[string]struct{ in, want string }{
+		"firmlink spelling": {pathutil.DataVolumeRoot + "/Users/ben/a.md", "/Users/ben/a.md"},
+		"already folded":    {"/Users/ben/a.md", "/Users/ben/a.md"},
+		// The firmlink root itself would fold to "", and a directory that
+		// merely starts with the same letters is a different directory.
+		"the root itself": {pathutil.DataVolumeRoot, pathutil.DataVolumeRoot},
+		"similar prefix":  {pathutil.DataVolumeRoot + "Extra/a.md", pathutil.DataVolumeRoot + "Extra/a.md"},
+		"unrelated":       {"/tmp/x", "/tmp/x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := pathutil.FoldDataVolume(tc.in); got != tc.want {
+				t.Errorf("FoldDataVolume(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}

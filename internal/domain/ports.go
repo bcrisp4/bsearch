@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// Ports for milestone M1. Converter, Watcher, and Summarizer ports land
-// with their own issues (#21, #13, #18).
+// Ports for milestones M1 and M3. Converter and Summarizer ports land with
+// their own issues (#21, #18).
 //
 // Naming: DESIGN.md's *Port suffix is conceptual. In code the ports are
 // this file's interfaces, with plain Go names (domain.Embedder is
@@ -27,11 +27,43 @@ type Embedder interface {
 	Spec() EmbeddingSpec
 }
 
+// ErrDocumentGone means the catalog row a write was aimed at is not there.
+//
+// It exists because discovery is the only thing that creates catalog rows,
+// and the pipeline writes to rows it claimed some seconds earlier. Those
+// seconds are enough for the file to be deleted and the watcher's reconcile
+// to purge it, and a write that quietly re-created the row would make the
+// deleted file permanently searchable — the index would keep serving content
+// whose source is gone, with nothing to notice it (DESIGN.md: Data
+// retention). So a write against a missing row reports the fact instead, and
+// the caller treats the document as what it is: gone, and nothing to index.
+var ErrDocumentGone = errors.New("the catalog row no longer exists (deleted while in flight?)")
+
+// ErrDocumentSuperseded means the row is still there but was rewritten while
+// a write was in flight, so the write is aimed at a document that no longer
+// exists in the shape it was aimed at.
+//
+// The sibling of ErrDocumentGone, and for the same reason: the watcher's
+// reconcile now runs concurrently with a drain, so a file saved again during
+// its own embed resets the row to `discovered` and replaces its chunks. The
+// vectors coming back from that embed key on chunk IDs that have since been
+// deleted, and writing them anyway would attach one version's vectors to
+// another version's text. Reported rather than written, and the caller stands
+// down: the reconcile already re-queued the document, so the current content
+// is indexed by the next pass. Not a fault on either side — the file changed,
+// which is the one thing the pipeline cannot ask it not to do.
+var ErrDocumentSuperseded = errors.New("the catalog row was rewritten while this write was in flight")
+
 // DocumentStore persists the catalog: documents and their chunks.
 type DocumentStore interface {
 	// UpsertDocument writes the document row and replaces its chunks in one
 	// transaction, returning the storage IDs of the new chunks in ordinal
 	// order (vector upserts key on them).
+	//
+	// A state of `discovered` creates the row if it is missing — that is
+	// discovery announcing a file. Any other state is a pipeline write to a
+	// row that is expected to exist, and reports ErrDocumentGone rather than
+	// creating one.
 	UpsertDocument(ctx context.Context, doc Document, chunks []Chunk) ([]int64, error)
 	// GetByPath fetches the catalog row for a path; ok is false when the
 	// path has never been stored. Cheap change detection (hash/size/mtime).
@@ -46,6 +78,11 @@ type DocumentStore interface {
 	// DeleteDocument removes the document and everything derived from it
 	// (chunks, summaries, vectors).
 	DeleteDocument(ctx context.Context, docID string) error
+	// DeleteByPathPrefix removes the document at dir and every document
+	// under it, returning how many went. Deletion follows the source
+	// (DESIGN.md: Data retention), and a vanished path does not say whether
+	// it was a file or a directory — so one call answers both.
+	DeleteByPathPrefix(ctx context.Context, dir string) (int, error)
 	// ListIndexable returns every catalog row the pipeline may need to work
 	// on — every state except deleted — ordered by path. Metadata only
 	// (no chunk text). Indexed and failed rows are included: whether a row
@@ -94,6 +131,44 @@ type Queue interface {
 	ResetStale(ctx context.Context, current map[string]string) (int, error)
 }
 
+// Watcher reports filesystem changes under a set of roots as they happen —
+// DESIGN.md's WatcherPort, and the reason a saved file is searchable in
+// seconds rather than at the next walk. The periodic scan remains the
+// backstop, which is what makes every degradation below a latency cost
+// rather than a correctness one.
+type Watcher interface {
+	// Watch subscribes to changes under roots and delivers them until ctx is
+	// done. An error means no subscription was made at all (an unsupported
+	// platform, a rejected root); the caller keeps working from the periodic
+	// scan.
+	//
+	// Closing the channel is the only way an implementation can say its
+	// stream is gone, and the caller's fallback to scan-only depends on it:
+	// close on ctx cancellation, and close if the stream dies underneath
+	// you. An implementation that cannot detect the second case leaves the
+	// caller believing it is still being watched — which is the state issue
+	// #65 is about.
+	Watch(ctx context.Context, roots []string) (<-chan WatchBatch, error)
+}
+
+// WatchBatch is one delivery from a Watcher.
+//
+// Batches rather than single events, because the coalescing is what makes a
+// rename resolvable: a move arrives as the old path and the new path
+// together, and only a caller holding both can recognise it as one document
+// rather than a deletion and a creation.
+type WatchBatch struct {
+	// Paths are absolute paths whose content or existence may have changed.
+	// "May": a watcher is allowed to be imprecise in this direction, and the
+	// caller confirms with a stat and a hash.
+	Paths []string
+	// Rescan means Paths cannot be trusted to be the whole story — the event
+	// stream overflowed, a volume appeared or went away, or a watch root was
+	// replaced underneath us. The honest response is a full walk, so a
+	// Rescan batch is a request for one and its Paths are advisory.
+	Rescan bool
+}
+
 // Hit is one KNN result: the matching chunk, its document, and the raw
 // distance (model-dependent and uncalibrated — DESIGN.md: no score floor).
 type Hit struct {
@@ -122,7 +197,9 @@ type VectorStore interface {
 	// from the first embedding batch — vec0 fixes them at CREATE.
 	EnsureVecTable(ctx context.Context, spec EmbeddingSpec, dims int) error
 	// UpsertVectors stores one vector per chunk storage ID (from
-	// DocumentStore.UpsertDocument), replacing any existing rows.
+	// DocumentStore.UpsertDocument), replacing any existing rows. A chunk ID
+	// that no longer exists means the document was re-chunked during the
+	// embed, and reports ErrDocumentSuperseded rather than orphaning vectors.
 	UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][]float32) error
 	// SearchVectors returns the limit nearest chunks by ascending distance.
 	// Loud error when no current vec table exists (nothing embedded yet or

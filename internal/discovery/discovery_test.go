@@ -21,10 +21,11 @@ import (
 type fakeStore struct {
 	docs map[string]domain.Document // keyed by path
 
-	upserts     []domain.Document
-	statUpdates []string // doc IDs
-	pathLookups []string // paths passed to GetByPath
-	failWith    error    // returned by every method when set
+	upserts       []domain.Document
+	statUpdates   []string // doc IDs
+	pathLookups   []string // paths passed to GetByPath
+	prefixDeletes []string // paths passed to DeleteByPathPrefix
+	failWith      error    // returned by every method when set
 }
 
 func newFakeStore() *fakeStore {
@@ -94,6 +95,21 @@ func (f *fakeStore) DeleteDocument(_ context.Context, docID string) error {
 		}
 	}
 	return nil
+}
+
+func (f *fakeStore) DeleteByPathPrefix(_ context.Context, dir string) (int, error) {
+	if f.failWith != nil {
+		return 0, f.failWith
+	}
+	f.prefixDeletes = append(f.prefixDeletes, dir)
+	var removed int
+	for path := range f.docs {
+		if path == dir || strings.HasPrefix(path, dir+string(filepath.Separator)) {
+			delete(f.docs, path)
+			removed++
+		}
+	}
+	return removed, nil
 }
 
 // Discovery never lists, flips state, or fails documents — pipeline-side

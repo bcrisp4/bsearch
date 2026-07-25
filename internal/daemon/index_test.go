@@ -58,7 +58,14 @@ func writeIndex(t *testing.T, path, docID, text string) {
 
 	store := sqlite.NewStore(db)
 	ctx := context.Background()
-	doc := domain.Document{ID: docID, Path: "/notes/" + docID + ".md", ContentHash: "h", State: domain.DocStateIndexed}
+	// Two writes, because only discovery creates catalog rows: a
+	// pipeline-shaped upsert against a row that is not there reports
+	// domain.ErrDocumentGone rather than conjuring one.
+	doc := domain.Document{ID: docID, Path: "/notes/" + docID + ".md", ContentHash: "h", State: domain.DocStateDiscovered}
+	if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
+		t.Fatalf("UpsertDocument (discover): %v", err)
+	}
+	doc.State = domain.DocStateIndexed
 	chunkIDs, err := store.UpsertDocument(ctx, doc, []domain.Chunk{{DocID: docID, Ordinal: 0, Text: text}})
 	if err != nil {
 		t.Fatalf("UpsertDocument: %v", err)
@@ -85,10 +92,15 @@ func addDocument(t *testing.T, path, docID string, state domain.DocState, failur
 	store := sqlite.NewStore(db)
 	ctx := context.Background()
 	doc := domain.Document{
-		ID: docID, Path: "/notes/" + docID + ".md", ContentHash: "h", State: state,
+		ID: docID, Path: "/notes/" + docID + ".md", ContentHash: "h", State: domain.DocStateDiscovered,
 	}
 	if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
-		t.Fatalf("UpsertDocument: %v", err)
+		t.Fatalf("UpsertDocument (discover): %v", err)
+	}
+	if state != domain.DocStateDiscovered {
+		if err := store.UpdateDocumentState(ctx, docID, state); err != nil {
+			t.Fatalf("UpdateDocumentState: %v", err)
+		}
 	}
 	if failure != "" {
 		if err := store.MarkFailed(ctx, docID, failure); err != nil {

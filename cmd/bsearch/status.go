@@ -186,6 +186,9 @@ func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now ti
 		gate = "working"
 	}
 	fields := []field{{"gate", stripControl(gate)}}
+	if line := watchLine(indexing.Watch, now); line != "" {
+		fields = append(fields, field{"watching", line})
+	}
 	if indexing.LastScan != nil {
 		fields = append(fields, field{"last scan", ago(*indexing.LastScan, now) + scanTrouble(indexing)})
 	}
@@ -207,6 +210,46 @@ func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now ti
 		fields = append(fields, field{"last error", search.Preview(indexing.LastError, maxProseRunes)})
 	}
 	writeFields(out, fields)
+}
+
+// watchLine renders the filesystem watcher onto one line, or "" when there
+// is nothing to say (an older daemon that does not report it).
+//
+// Not running is stated plainly with its reason rather than hidden: it is the
+// difference between "a file you save is searchable in seconds" and "up to
+// five minutes", and a user who thinks they have the first while they have
+// the second has no way to tell from anywhere else. Running-but-silent is
+// worth calling out too — a watcher that has never delivered an event is
+// usually a missing Full Disk Access grant, not a quiet machine.
+func watchLine(watch *server.WatchStatus, now time.Time) string {
+	if watch == nil {
+		return ""
+	}
+	if !watch.Running {
+		reason := watch.Reason
+		if reason == "" {
+			reason = "no reason given"
+		}
+		return "off — " + search.Preview(reason, maxProseRunes) + " (relying on the periodic scan)"
+	}
+
+	noun := "paths"
+	if watch.Roots == 1 {
+		noun = "path"
+	}
+	line := fmt.Sprintf("%s %s watched", count(watch.Roots), noun)
+	if watch.LastEvent == nil {
+		return line + " — no changes seen yet"
+	}
+	line += fmt.Sprintf(", last change %s", ago(*watch.LastEvent, now))
+	if watch.Reconciled > 0 || watch.Deleted > 0 {
+		line += fmt.Sprintf(" · %s queued · %s removed", count(watch.Reconciled), count(watch.Deleted))
+	}
+	if watch.Rescans > 0 {
+		// Rare, and it explains a full walk the user did not schedule.
+		line += fmt.Sprintf(" · %s full rescans (events were lost)", count(watch.Rescans))
+	}
+	return line
 }
 
 // writeUnreadableSection lists the paths the last scan could not read. Its own

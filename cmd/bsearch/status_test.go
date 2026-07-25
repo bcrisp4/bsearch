@@ -96,6 +96,70 @@ func TestStatusRendersAHealthyDaemon(t *testing.T) {
 	}
 }
 
+// The watcher is the difference between "searchable in seconds" and
+// "searchable in five minutes", so its state is on the report either way —
+// running, off with a reason, or subscribed but never told anything.
+func TestStatusRendersTheWatcher(t *testing.T) {
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+	event := now.Add(-30 * time.Second)
+
+	for name, tc := range map[string]struct {
+		watch *server.WatchStatus
+		want  string
+	}{
+		"running": {
+			watch: &server.WatchStatus{
+				Running: true, Roots: 1, LastEvent: &event, Reconciled: 12, Deleted: 3,
+			},
+			want: "1 path watched, last change 30s ago · 12 queued · 3 removed",
+		},
+		"running but silent": {
+			watch: &server.WatchStatus{Running: true, Roots: 2},
+			want:  "2 paths watched — no changes seen yet",
+		},
+		"lost events": {
+			watch: &server.WatchStatus{
+				Running: true, Roots: 1, LastEvent: &event, Rescans: 2,
+			},
+			want: "2 full rescans (events were lost)",
+		},
+		"off": {
+			watch: &server.WatchStatus{
+				Reason: "filesystem watching is only supported on macOS",
+			},
+			want: "off — filesystem watching is only supported on macOS (relying on the periodic scan)",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp := server.StatusResponse{
+				Version: "v0.2.0", PID: 1,
+				Index:    server.IndexStatus{Ready: true},
+				Indexing: &server.IndexingStatus{Running: true, Watch: tc.watch},
+			}
+			var out strings.Builder
+			writeStatusHuman(&out, resp, "/home", now)
+			if got := out.String(); !strings.Contains(got, tc.want) {
+				t.Errorf("report is missing %q:\n%s", tc.want, got)
+			}
+		})
+	}
+}
+
+// An older daemon does not report a watcher at all, and the line must then
+// be absent rather than invented.
+func TestStatusOmitsTheWatcherWhenUnreported(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Index:    server.IndexStatus{Ready: true},
+		Indexing: &server.IndexingStatus{Running: true},
+	}
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); strings.Contains(got, "watching") {
+		t.Errorf("report claims something about watching:\n%s", got)
+	}
+}
+
 // The two questions status exists to answer are "is anything indexed" and "is
 // anything indexing". They fail independently and must be reported
 // independently.
