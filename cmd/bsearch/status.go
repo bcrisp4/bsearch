@@ -94,7 +94,15 @@ func writeStatusHuman(out io.Writer, resp server.StatusResponse, home string, no
 		resp.Version, resp.PID, humanDuration(time.Duration(resp.UptimeS)*time.Second))
 	dbLine := stripControl(tildePath(home, resp.DBPath))
 	if d := resp.Index.Disk; d != nil {
-		dbLine += "  (" + humanBytes(d.TotalBytes) + ")"
+		// The WAL is called out separately when it has grown, because it
+		// means something else than a large database: a reader holding a
+		// snapshot open, or a checkpoint that has not run. Folding it into
+		// one total would hide the one number that is a symptom.
+		dbLine += "  (" + humanBytes(d.TotalBytes)
+		if d.WALBytes > 0 {
+			dbLine += ", " + humanBytes(d.WALBytes) + " WAL"
+		}
+		dbLine += ")"
 	}
 	writeFields(out, []field{
 		{"socket", stripControl(tildePath(home, resp.Socket))},
@@ -232,7 +240,11 @@ func scanTrouble(indexing *server.IndexingStatus) string {
 	if indexing.ScanErrors == 0 {
 		return ""
 	}
-	trouble := fmt.Sprintf(" — %s path errors", count(indexing.ScanErrors))
+	noun := "path errors"
+	if indexing.ScanErrors == 1 {
+		noun = "path error"
+	}
+	trouble := fmt.Sprintf(" — %s %s", count(indexing.ScanErrors), noun)
 	if indexing.ScanReachedNothing {
 		trouble += ", reached no files"
 	}
@@ -246,7 +258,9 @@ func writeFailuresSection(out io.Writer, index server.IndexStatus, home string) 
 	if len(index.Failures) == 0 {
 		return
 	}
-	fmt.Fprintf(out, "\nFailures (%s)\n", count(index.Documents[string(domain.DocStateFailed)]))
+	failed := index.Documents[string(domain.DocStateFailed)]
+	fmt.Fprintf(out, "\nFailures (%s)\n", count(failed))
+	listed := 0
 	for _, f := range index.Failures {
 		reason := f.Reason
 		if reason == "" {
@@ -256,6 +270,14 @@ func writeFailuresSection(out io.Writer, index server.IndexStatus, home string) 
 		if f.ExamplePath != "" {
 			fmt.Fprintf(out, "     %s\n", stripControl(tildePath(home, f.ExamplePath)))
 		}
+		listed += f.Documents
+	}
+	// The daemon reports only the largest few groups, so on a corpus that
+	// failed in many ways the list accounts for less than the heading. Saying
+	// so is the difference between a truncated list and a list that appears
+	// to disagree with its own total.
+	if more := failed - listed; more > 0 {
+		fmt.Fprintf(out, "  … %s more in reasons not shown\n", count(more))
 	}
 }
 
@@ -319,15 +341,21 @@ func humanDuration(d time.Duration) string {
 		{time.Second, "s"},
 	}
 	var parts []string
-	for i, u := range units {
+	for _, u := range units {
 		n := d / u.size
-		if n == 0 && len(parts) == 0 {
-			continue
+		if n == 0 {
+			// Leading zeroes are not the answer; a zero *second* unit means
+			// the first one was the whole answer — "2h", never "2h 0m", and
+			// never "1d 0h" for a day and a half hour.
+			if len(parts) == 0 {
+				continue
+			}
+			break
 		}
 		d -= n * u.size
 		parts = append(parts, strconv.FormatInt(int64(n), 10)+u.name)
-		// Two units, and only if the second is non-zero.
-		if len(parts) == 2 || i == len(units)-1 || d < u.size/60 {
+		// Two units at most.
+		if len(parts) == 2 {
 			break
 		}
 	}

@@ -189,6 +189,68 @@ func TestStatusRendersFailureGroups(t *testing.T) {
 	}
 }
 
+// A grown WAL is a symptom of its own — a reader holding a snapshot open, or
+// a checkpoint that has not run — so it must not disappear into the database
+// figure in the command meant to diagnose it.
+func TestStatusCallsOutAGrownWAL(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1, DBPath: "/home/data/bsearch.db",
+		Index: server.IndexStatus{
+			Disk: &server.DiskUsage{DBBytes: 4096, WALBytes: 98912, TotalBytes: 103008},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); !strings.Contains(got, "(101 KiB, 96.6 KiB WAL)") {
+		t.Errorf("report does not call out the WAL:\n%s", got)
+	}
+}
+
+// The daemon reports only the largest few groups. Without a truncation marker
+// the list reads as disagreeing with the total above it.
+func TestStatusMarksTruncatedFailureGroups(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Index: server.IndexStatus{
+			Documents: map[string]int{"failed": 50},
+			Failures: []server.FailureGroup{
+				{Reason: "not valid UTF-8", Documents: 20},
+				{Reason: "too large", Documents: 5},
+			},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	got := out.String()
+	if !strings.Contains(got, "Failures (50)") {
+		t.Errorf("heading does not report the whole total:\n%s", got)
+	}
+	if !strings.Contains(got, "… 25 more") {
+		t.Errorf("report does not mark the groups it left out:\n%s", got)
+	}
+}
+
+// One unreadable directory is one path error.
+func TestStatusSingularisesASinglePathError(t *testing.T) {
+	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+	scan := now.Add(-time.Minute)
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Indexing: &server.IndexingStatus{
+			Running: true, LastScan: &scan, ScanErrors: 1,
+			PathErrors: []server.PathError{{Path: "/home/Documents", Error: "operation not permitted"}},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", now)
+	if got := out.String(); !strings.Contains(got, "1 path error,") && !strings.Contains(got, "1 path error\n") {
+		t.Errorf("report says %q:\n%s", "1 path errors", got)
+	}
+}
+
 // A path or a reason is untrusted display text — macOS filenames may hold any
 // byte but NUL and '/', and a failure reason can quote a document.
 func TestStatusStripsControlCharactersFromUntrustedText(t *testing.T) {
@@ -293,6 +355,10 @@ func TestHumanDuration(t *testing.T) {
 		{90 * time.Second, "1m 30s"},
 		{2 * time.Hour, "2h"},
 		{90421 * time.Second, "1d 1h"},
+		// A remainder too small to fill the next unit down must not be
+		// rendered as a zero of it.
+		{88200 * time.Second, "1d"},
+		{7205 * time.Second, "2h"},
 	}
 	for _, c := range cases {
 		if got := humanDuration(c.in); got != c.want {
