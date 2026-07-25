@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/bcrisp4/bsearch/internal/adapters/openai"
 	"github.com/bcrisp4/bsearch/internal/adapters/sqlite"
@@ -110,7 +111,7 @@ func runServe(args []string, out io.Writer) error {
 	// daemon serving /v1/status, because a LaunchAgent that exits non-zero is
 	// a crash-loop with nothing able to explain itself, and "why is nothing
 	// being indexed" is exactly the question status exists to answer.
-	sched, closeIndexer := newScheduler(cfg, opts.Embedder, *dbPath, log)
+	sched, closeIndexer, indexingOff := newScheduler(cfg, opts.Embedder, *dbPath, log)
 	defer closeIndexer()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -141,10 +142,11 @@ func runServe(args []string, out io.Writer) error {
 	}
 
 	serveErr := server.New(server.Options{
-		Backend: back,
-		Socket:  *socketPath,
-		DBPath:  *dbPath,
-		Logger:  log,
+		Backend:  back,
+		Indexing: func() server.IndexingStatus { return indexingStatus(sched, indexingOff) },
+		Socket:   *socketPath,
+		DBPath:   *dbPath,
+		Logger:   log,
 	}).Serve(ctx, ln)
 
 	stopIndexing()
@@ -157,13 +159,18 @@ func runServe(args []string, out io.Writer) error {
 // the daemon's job when something is misconfigured is to keep answering
 // status, not to exit.
 //
+// Which is why the reason is returned as well as logged. "Why is nothing
+// being indexed" is the question status exists to answer, and a daemon that
+// answers it only in a log file it cannot point at has not answered it.
+//
 // The returned close function releases the writer database and must run after
-// the scheduler has stopped.
-func newScheduler(cfg *config.Config, embedder domain.Embedder, dbPath string, log *slog.Logger) (*scheduler.Scheduler, func()) {
+// the scheduler has stopped; the reason is empty when the scheduler was built.
+func newScheduler(cfg *config.Config, embedder domain.Embedder, dbPath string, log *slog.Logger) (*scheduler.Scheduler, func(), string) {
 	noop := func() {}
 	if embedder == nil {
-		// Already logged and reported through status by the caller.
-		return nil, noop
+		// The caller has already logged this and put the fuller explanation
+		// in the index half of status; this is the indexing half's echo of it.
+		return nil, noop, "no embedding model is configured"
 	}
 
 	// Open, not OpenExisting: the daemon owns the writer role now, so it
@@ -172,7 +179,7 @@ func newScheduler(cfg *config.Config, embedder domain.Embedder, dbPath string, l
 	db, err := sqlite.Open(dbPath)
 	if err != nil {
 		log.Error("indexing disabled: cannot open the index for writing", "db", dbPath, "error", err)
-		return nil, noop
+		return nil, noop, "the index could not be opened for writing: " + err.Error()
 	}
 	closeDB := func() {
 		if err := db.Close(); err != nil {
@@ -193,7 +200,7 @@ func newScheduler(cfg *config.Config, embedder domain.Embedder, dbPath string, l
 	if err != nil {
 		log.Error("indexing disabled", "error", err)
 		closeDB()
-		return nil, noop
+		return nil, noop, "the indexing pipeline could not be built: " + err.Error()
 	}
 
 	sched, err := scheduler.New(scheduler.Options{
@@ -213,9 +220,57 @@ func newScheduler(cfg *config.Config, embedder domain.Embedder, dbPath string, l
 	if err != nil {
 		log.Error("indexing disabled", "error", err)
 		closeDB()
-		return nil, noop
+		return nil, noop, "the indexing scheduler could not be built: " + err.Error()
 	}
-	return sched, closeDB
+	return sched, closeDB, ""
+}
+
+// indexingStatus maps the scheduler's snapshot onto the wire type. It lives
+// here rather than in internal/server so the transport keeps knowing nothing
+// about the indexing side, exactly as it knows nothing about storage.
+//
+// A nil scheduler is not an error state to hide: it is the answer to "why is
+// nothing being indexed", so it is reported with the reason that produced it.
+func indexingStatus(sched *scheduler.Scheduler, offReason string) server.IndexingStatus {
+	if sched == nil {
+		if offReason == "" {
+			offReason = "indexing is not running"
+		}
+		return server.IndexingStatus{Running: false, Reason: offReason}
+	}
+	snap := sched.Snapshot()
+	status := server.IndexingStatus{
+		Running:            true,
+		Gate:               snap.Gate,
+		Deferring:          snap.Deferring,
+		LastError:          snap.LastError,
+		LastScan:           optionalTime(snap.LastScan),
+		LastCycle:          optionalTime(snap.LastCycle),
+		LastProgress:       optionalTime(snap.LastProgress),
+		ScanErrors:         snap.ScanErrs,
+		ScanReachedNothing: snap.ScanReachedNothing,
+		Totals: server.IndexingTotals{
+			Indexed: snap.Indexed,
+			Failed:  snap.Failed,
+			Skipped: snap.Skipped,
+			Retried: snap.Retried,
+			Swept:   snap.Swept,
+		},
+	}
+	for _, pe := range snap.PathErrors {
+		status.PathErrors = append(status.PathErrors, server.PathError{Path: pe.Path, Error: pe.Err})
+	}
+	return status
+}
+
+// optionalTime reports a timestamp only once it has happened. The zero Time
+// marshals to a date in year 1, which reads as an answer rather than as the
+// absence of one.
+func optionalTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 func parseLogLevel(name string) (slog.Level, error) {

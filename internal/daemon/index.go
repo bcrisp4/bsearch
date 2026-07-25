@@ -22,6 +22,11 @@ import (
 // handful of searches a day should not hold a page cache open between them.
 const idleConnTimeout = 5 * time.Minute
 
+// maxFailureGroups bounds the failure reasons reported by status. A corpus
+// fails in a handful of ways; listing the long tail of one-offs would bury
+// the reason that accounts for most of them.
+const maxFailureGroups = 5
+
 // Options configures a Daemon.
 type Options struct {
 	// DBPath is the index database. It need not exist yet.
@@ -157,13 +162,36 @@ func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
 	}
 	defer h.release()
 
-	status := server.IndexStatus{Documents: map[string]int{}}
+	status := server.IndexStatus{Documents: map[string]int{}, Disk: diskUsage(d.dbPath)}
 	counts, err := h.store.CountsByState(ctx)
 	if err != nil {
 		return server.IndexStatus{}, err
 	}
 	for state, n := range counts {
 		status.Documents[string(state)] = n
+	}
+
+	depth, err := h.store.QueueDepth(ctx, time.Now())
+	if err != nil {
+		return server.IndexStatus{}, err
+	}
+	status.Queue = &server.QueueStatus{Pending: depth.Pending, Retrying: depth.Retrying}
+
+	// Only queried when the counts say there is something to report: the
+	// common case is a corpus with no failures at all, and status runs on
+	// every `bsearch status`.
+	if counts[domain.DocStateFailed] > 0 {
+		groups, err := h.store.FailureReasons(ctx, maxFailureGroups)
+		if err != nil {
+			return server.IndexStatus{}, err
+		}
+		for _, g := range groups {
+			status.Failures = append(status.Failures, server.FailureGroup{
+				Reason:      g.Reason,
+				Documents:   g.Documents,
+				ExamplePath: g.ExamplePath,
+			})
+		}
 	}
 
 	indexed, dims, err := h.store.CurrentVecSpec(ctx)
@@ -277,6 +305,30 @@ func (d *Daemon) retireCurrent() error {
 	err := d.current.retire()
 	d.current = nil
 	return err
+}
+
+// diskUsage measures what the index costs on disk (DESIGN.md: footprint is
+// reported in status). The sidecars are separate entries rather than a single
+// total because they mean different things: a database that grew is a corpus
+// that grew, where a WAL that grew is a checkpoint that has not happened.
+//
+// A stat failure counts as zero rather than as an error: a footprint is a
+// nice-to-know, and refusing to answer status because one file could not be
+// statted would trade the whole document for one number. The `-shm` file is
+// left out entirely — it is a shared-memory index sized by SQLite, not
+// stored data, and counting it would inflate the number a user compares
+// against their disk.
+func diskUsage(dbPath string) *server.DiskUsage {
+	size := func(path string) int64 {
+		fi, err := os.Stat(path)
+		if err != nil {
+			return 0
+		}
+		return fi.Size()
+	}
+	usage := server.DiskUsage{DBBytes: size(dbPath), WALBytes: size(dbPath + "-wal")}
+	usage.TotalBytes = usage.DBBytes + usage.WALBytes
+	return &usage
 }
 
 func (d *Daemon) unavailableReason() string {

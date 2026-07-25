@@ -64,10 +64,18 @@ func (f *fakeBackend) request() search.Request {
 // end-to-end in the command's tests.
 func newTestServer(t *testing.T, backend *fakeBackend) *httptest.Server {
 	t.Helper()
+	return newTestServerWithIndexing(t, backend, nil)
+}
+
+// newTestServerWithIndexing is newTestServer with an indexing reporter, for
+// the status tests that care about the background loop's half of the payload.
+func newTestServerWithIndexing(t *testing.T, backend *fakeBackend, indexing func() server.IndexingStatus) *httptest.Server {
+	t.Helper()
 	srv := server.New(server.Options{
-		Backend: backend,
-		Socket:  "/tmp/test.sock",
-		DBPath:  "/tmp/test.db",
+		Backend:  backend,
+		Indexing: indexing,
+		Socket:   "/tmp/test.sock",
+		DBPath:   "/tmp/test.db",
 		// Discard: the request log is asserted separately.
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
@@ -323,6 +331,130 @@ func TestStatusAnswersWhenNothingIsIndexed(t *testing.T) {
 	}
 	if out.Index.Reason == "" {
 		t.Error("index.reason is empty; want it to say why")
+	}
+}
+
+// The queue, failure and footprint fields the CLI renders have to survive the
+// round trip; a status that reports counts but not the backlog cannot tell a
+// draining queue from a stuck one.
+func TestStatusReportsQueueFailuresAndFootprint(t *testing.T) {
+	ts := newTestServer(t, &fakeBackend{status: server.IndexStatus{
+		Ready:     true,
+		Documents: map[string]int{"indexed": 192, "failed": 2},
+		Queue:     &server.QueueStatus{Pending: 37, Retrying: 2},
+		Failures: []server.FailureGroup{
+			{Reason: "not valid UTF-8", Documents: 2, ExamplePath: "/tmp/legacy.txt"},
+		},
+		Disk: &server.DiskUsage{DBBytes: 400, WALBytes: 12, TotalBytes: 412},
+	}})
+
+	rep := get(t, ts, "/v1/status")
+	if rep.status != http.StatusOK {
+		t.Fatalf("status = %d (%s), want 200", rep.status, rep.body)
+	}
+	var out struct {
+		Index server.IndexStatus `json:"index"`
+	}
+	if err := json.Unmarshal(rep.body, &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Index.Queue == nil || *out.Index.Queue != (server.QueueStatus{Pending: 37, Retrying: 2}) {
+		t.Errorf("queue = %+v, want the backend's backlog", out.Index.Queue)
+	}
+	if len(out.Index.Failures) != 1 || out.Index.Failures[0].Documents != 2 {
+		t.Errorf("failures = %+v, want the backend's one group", out.Index.Failures)
+	}
+	if out.Index.Disk == nil || out.Index.Disk.TotalBytes != 412 {
+		t.Errorf("disk = %+v, want the backend's footprint", out.Index.Disk)
+	}
+}
+
+func TestStatusReportsIndexingActivity(t *testing.T) {
+	scanned := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	ts := newTestServerWithIndexing(t, &fakeBackend{}, func() server.IndexingStatus {
+		return server.IndexingStatus{
+			Running:            true,
+			Gate:               "deferred: on battery",
+			Deferring:          true,
+			LastScan:           &scanned,
+			ScanErrors:         2,
+			ScanReachedNothing: true,
+			PathErrors:         []server.PathError{{Path: "/Users/ben/Documents", Error: "operation not permitted"}},
+			Totals:             server.IndexingTotals{Indexed: 12, Retried: 1},
+		}
+	})
+
+	rep := get(t, ts, "/v1/status")
+	if rep.status != http.StatusOK {
+		t.Fatalf("status = %d (%s), want 200", rep.status, rep.body)
+	}
+	var out struct {
+		Indexing *server.IndexingStatus `json:"indexing"`
+	}
+	if err := json.Unmarshal(rep.body, &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Indexing == nil {
+		t.Fatalf("no indexing half in %s", rep.body)
+	}
+	if out.Indexing.Gate != "deferred: on battery" || !out.Indexing.Deferring {
+		t.Errorf("indexing = %+v, want the gate reported verbatim", out.Indexing)
+	}
+	if out.Indexing.LastScan == nil || !out.Indexing.LastScan.Equal(scanned) {
+		t.Errorf("last_scan = %v, want %v", out.Indexing.LastScan, scanned)
+	}
+	if len(out.Indexing.PathErrors) != 1 || !out.Indexing.ScanReachedNothing {
+		t.Errorf("indexing = %+v, want the scan's path errors; a count alone is not a diagnosis", out.Indexing)
+	}
+	if out.Indexing.Totals.Indexed != 12 {
+		t.Errorf("totals = %+v, want this process's counters", out.Indexing.Totals)
+	}
+}
+
+// A timestamp that has not happened must be absent, not the zero Time: year 1
+// reads as an answer rather than as the absence of one.
+func TestStatusOmitsTimestampsThatHaveNotHappened(t *testing.T) {
+	ts := newTestServerWithIndexing(t, &fakeBackend{}, func() server.IndexingStatus {
+		return server.IndexingStatus{Running: true}
+	})
+
+	rep := get(t, ts, "/v1/status")
+	for _, field := range []string{"last_scan", "last_cycle", "last_progress"} {
+		if strings.Contains(string(rep.body), field) {
+			t.Errorf("body contains %q before it has happened: %s", field, rep.body)
+		}
+	}
+}
+
+// "Nothing is indexed" and "nothing is indexing" are different problems. A
+// daemon whose scheduler never started has to say so where the user is
+// looking, not only in its log.
+func TestStatusReportsIndexingThatIsNotRunning(t *testing.T) {
+	ts := newTestServerWithIndexing(t, &fakeBackend{}, func() server.IndexingStatus {
+		return server.IndexingStatus{Running: false, Reason: "no embedding model is configured"}
+	})
+
+	rep := get(t, ts, "/v1/status")
+	var out struct {
+		Indexing *server.IndexingStatus `json:"indexing"`
+	}
+	if err := json.Unmarshal(rep.body, &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Indexing == nil || out.Indexing.Running {
+		t.Fatalf("indexing = %+v, want running=false", out.Indexing)
+	}
+	if out.Indexing.Reason != "no embedding model is configured" {
+		t.Errorf("reason = %q, want the reason indexing is off", out.Indexing.Reason)
+	}
+}
+
+func TestStatusOmitsIndexingWhenThereIsNone(t *testing.T) {
+	ts := newTestServer(t, &fakeBackend{})
+
+	rep := get(t, ts, "/v1/status")
+	if strings.Contains(string(rep.body), "indexing") {
+		t.Errorf("body mentions indexing with no reporter wired: %s", rep.body)
 	}
 }
 

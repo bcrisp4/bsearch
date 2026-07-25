@@ -155,6 +155,31 @@ type Document struct {
 	LastError string
 }
 
+// QueueDepth is the dispatchable backlog: documents the scheduler would work
+// on now, and documents waiting out a retry backoff. Reported by `bsearch
+// status`, where the split is the point — a queue draining a backlog and a
+// queue whose every remaining document is failing have the same total.
+type QueueDepth struct {
+	// Pending is non-terminal documents due at the time asked about.
+	Pending int
+	// Retrying is non-terminal documents deferred by backoff.
+	Retrying int
+}
+
+// FailureGroup is one reason documents were given up on: how many share it,
+// and one path to look at. `bsearch status` reports the largest few rather
+// than every failed document — a corpus fails in a handful of ways, and the
+// reason plus one example is what makes each of them actionable.
+type FailureGroup struct {
+	// Reason is the recorded last_error, verbatim. Untrusted display text:
+	// it may quote a parser's message about a file's contents.
+	Reason string
+	// Documents is how many failed documents share this reason.
+	Documents int
+	// ExamplePath is one of them, so the reason can be reproduced.
+	ExamplePath string
+}
+
 // Chunk is one embeddable unit of a document's converted markdown
 // (DESIGN.md: Chunking). Byte offsets index into the normalized markdown
 // (the UTF-8 output of chunker.Normalize — BOM stripped, UTF-16

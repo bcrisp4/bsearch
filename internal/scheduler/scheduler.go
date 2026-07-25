@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 	"sync"
 	"time"
 
@@ -78,7 +79,7 @@ const (
 )
 
 // Gate reasons. These are the user-facing explanations for a cycle that did
-// no work, and `bsearch status` renders them verbatim (#16). A stalled queue
+// no work, and `bsearch status` renders them verbatim. A stalled queue
 // must always be distinguishable from a deferred one.
 const (
 	GateNone      = ""
@@ -150,7 +151,16 @@ type Options struct {
 	Rand func(n int64) int64
 }
 
-// Snapshot is what the scheduler is doing, for `bsearch status` (#16).
+// PathError is one path the last scan could not read, as reported to
+// `bsearch status`. The error is flattened to a string so a Snapshot is an
+// immutable value that a status handler can hold onto while the next scan
+// runs.
+type PathError struct {
+	Path string
+	Err  string
+}
+
+// Snapshot is what the scheduler is doing, as `bsearch status` reports it.
 // Counters are cumulative since start; timestamps are zero until they happen.
 type Snapshot struct {
 	// Gate says why the last cycle did no work, in the user's terms. Empty
@@ -172,6 +182,11 @@ type Snapshot struct {
 	Retried  int // transient failures rescheduled since start
 	Swept    int // documents re-queued by a stale sweep since start
 	ScanErrs int // per-path problems in the last scan (TCC, unreadable)
+	// PathErrors is a sample of those problems — the first few, capped at
+	// maxLoggedPathErrors. A count alone says something is unreadable without
+	// saying what, and "~/Documents: operation not permitted" is the whole
+	// diagnosis (issue #14 turns it into remediation).
+	PathErrors []PathError
 	// ScanReachedNothing means the last scan hit errors and reached no files
 	// at all — the signature of a missing Full Disk Access grant, and the one
 	// scan outcome that leaves the daemon looking healthy while indexing
@@ -272,10 +287,17 @@ func (s *Scheduler) Notify() {
 
 // Snapshot reports what the scheduler is doing. Safe for concurrent use —
 // the HTTP status handler calls it while a cycle is running.
+//
+// PathErrors is copied rather than shared. Returning the struct by value
+// copies the slice header, not the backing array, so the caller would
+// otherwise be reading the same memory the next scan overwrites — a data race
+// on the one field a user reads when something is already wrong.
 func (s *Scheduler) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.snap
+	snap := s.snap
+	snap.PathErrors = slices.Clone(s.snap.PathErrors)
+	return snap
 }
 
 // Run drives the loop until ctx is cancelled, which is the only way it ends;
@@ -382,6 +404,9 @@ func (s *Scheduler) scan(ctx context.Context) {
 		return
 	}
 
+	// The same cap serves the log and status: enough paths to recognise the
+	// pattern, few enough that neither turns into a haystack.
+	var sample []PathError
 	for i, pe := range res.PathErrors {
 		if i == maxLoggedPathErrors {
 			s.log.Warn("further scan path errors suppressed",
@@ -389,6 +414,7 @@ func (s *Scheduler) scan(ctx context.Context) {
 			break
 		}
 		s.log.Warn("scan could not read a path", "path", pe.Path, "error", pe.Err)
+		sample = append(sample, PathError{Path: pe.Path, Err: pe.Err.Error()})
 	}
 	reached := res.Discovered + res.Unchanged + res.Renamed + res.Dataless
 	if len(res.PathErrors) > 0 && reached == 0 {
@@ -398,7 +424,7 @@ func (s *Scheduler) scan(ctx context.Context) {
 		// outcome that leaves the daemon looking healthy while indexing
 		// nothing at all. The removed one-shot command exited non-zero here;
 		// a daemon cannot, so it says so at Error and keeps the reason where
-		// `bsearch status` (#16) will find it (CLAUDE.md: EPERM on scan is
+		// `bsearch status` will find it (CLAUDE.md: EPERM on scan is
 		// first-class state, never a silent skip).
 		s.log.Error("scan reached no files at all — check Full Disk Access for bsearch in System Settings",
 			"path_errors", len(res.PathErrors))
@@ -415,6 +441,7 @@ func (s *Scheduler) scan(ctx context.Context) {
 	s.mark(func(snap *Snapshot) {
 		snap.LastScan = s.now()
 		snap.ScanErrs = len(res.PathErrors)
+		snap.PathErrors = sample
 		snap.ScanReachedNothing = len(res.PathErrors) > 0 && reached == 0
 	})
 }

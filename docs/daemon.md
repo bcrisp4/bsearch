@@ -75,10 +75,58 @@ why.
 Configuration is read once, at startup. After editing `config.toml`, restart
 the daemon.
 
+## Checking on it
+
+`bsearch status` is the answer to "is it working, and if not, why not":
+
+```console
+$ bsearch status
+bsearch v0.2.0 — running (pid 4312, up 1d 1h)
+  socket  ~/Library/Application Support/bsearch/bsearch.sock
+  db      ~/Library/Application Support/bsearch/bsearch.db  (412 MiB)
+
+Index
+  ready      yes
+  model      text-embedding-embeddinggemma-300m (768d)
+  documents  1,204 indexed · 2 failed · 0 deleted
+
+Queue
+  pending   37
+  retrying  2
+  states    discovered 35 · chunked 2
+
+Indexing
+  gate           idle — nothing to index
+  last scan      2m ago
+  last progress  4m ago
+  last cycle     1m 30s ago
+  since start    1,204 indexed · 2 failed · 0 skipped · 0 retried
+
+Failures (2)
+  2  file is not valid UTF-8
+     ~/Documents/notes/legacy.txt
+```
+
+The two halves fail independently, which is the point. **Index** is what the
+database holds; **Indexing** is what the background loop is doing. A corpus
+that is not being indexed says so under *gate* — "embedding endpoint
+unreachable", "deferred: on battery", "files could not be read — check Full
+Disk Access" — and *last progress* against *last cycle* is what separates a
+queue that is slow from one that is stuck. When the loop could not start at
+all (no embedding model, an index that cannot be opened for writing) the
+section reads `not running — <reason>` instead.
+
+Unreadable paths get their own section when a scan hits them, with a sample of
+the offending directories; on macOS this is almost always a missing Full Disk
+Access grant (issue #14 covers the onboarding for it).
+
+`bsearch status --json` emits the same document as `GET /v1/status`, verbatim,
+for scripts. The command exits 0 for any answer the daemon gives, however
+unhappy — a non-zero exit means the daemon could not be reached at all.
+
 ## Talking to it directly
 
-There is no `bsearch status` command yet (issue #16), so `curl` is the way to
-read the daemon's state:
+`curl` reads the same endpoints without the CLI:
 
 ```bash
 SOCK=~/Library/Application\ Support/bsearch/bsearch.sock
@@ -128,5 +176,7 @@ One caveat worth knowing before you rely on it: a LaunchAgent gets no consent
 dialog for TCC-gated directories (`~/Documents`, `~/Desktop`, `~/Downloads`,
 iCloud Drive, most of `~/Library`) — it gets silent `EPERM`, so the binary
 needs a Full Disk Access grant in System Settings. Without it the daemon
-indexes whatever it can reach and logs a warning per unreadable path. Surfacing
-that in `bsearch status` is issue #14.
+indexes whatever it can reach, logs a warning per unreadable path, and reports
+the count and a sample of those paths in `bsearch status`. Turning that into
+onboarding — detecting the missing grant and saying what to click — is issue
+#14.

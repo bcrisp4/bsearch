@@ -14,10 +14,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"time"
 
-	"github.com/bcrisp4/bsearch/internal/buildinfo"
 	"github.com/bcrisp4/bsearch/internal/search"
 )
 
@@ -65,32 +63,6 @@ type Backend interface {
 	Status(ctx context.Context) (IndexStatus, error)
 }
 
-// IndexStatus is the index half of the status payload. Ready, model and dims
-// describe the vector generation search would use; Documents is the catalog
-// breakdown, present whenever the database can be read at all — a database
-// full of discovered-but-unindexed rows is exactly when the counts matter
-// most, so they do not depend on Ready.
-//
-// Issue #16 extends this with failure reasons, timestamps, gate reasons and
-// disk footprint; the additions are additive by design.
-type IndexStatus struct {
-	Ready     bool           `json:"ready"`
-	Reason    string         `json:"reason,omitempty"`
-	Model     string         `json:"model,omitempty"`
-	Dims      int            `json:"dims,omitempty"`
-	Documents map[string]int `json:"documents,omitempty"`
-}
-
-// StatusResponse is the GET /v1/status payload.
-type StatusResponse struct {
-	Version string      `json:"version"`
-	PID     int         `json:"pid"`
-	UptimeS int64       `json:"uptime_s"`
-	Socket  string      `json:"socket"`
-	DBPath  string      `json:"db_path"`
-	Index   IndexStatus `json:"index"`
-}
-
 // Options configures a Server.
 type Options struct {
 	Backend Backend
@@ -98,6 +70,14 @@ type Options struct {
 	// the daemon can see which files it is actually using.
 	Socket string
 	DBPath string
+	// Indexing reports the background indexing loop's state. Nil means this
+	// daemon has no indexing side to report on, and the field is omitted.
+	//
+	// A function rather than a port: it reads an in-memory snapshot, so it
+	// cannot fail and has nothing to cancel. Taking the mapping as a closure
+	// is also what keeps the transport from importing the scheduler — the
+	// same separation that keeps it free of storage.
+	Indexing func() IndexingStatus
 	// Logger receives operational events only — never query text or
 	// document content, at any level (DESIGN.md: Privacy).
 	Logger *slog.Logger
@@ -109,11 +89,12 @@ type Options struct {
 
 // Server is the daemon's HTTP transport.
 type Server struct {
-	backend Backend
-	socket  string
-	dbPath  string
-	log     *slog.Logger
-	started time.Time
+	backend  Backend
+	indexing func() IndexingStatus
+	socket   string
+	dbPath   string
+	log      *slog.Logger
+	started  time.Time
 	// slots bounds concurrent searches. A buffered channel rather than a
 	// semaphore type: the zero-dependency version of the same thing.
 	slots chan struct{}
@@ -134,12 +115,13 @@ func New(opts Options) *Server {
 		started = time.Now()
 	}
 	return &Server{
-		backend: opts.Backend,
-		socket:  opts.Socket,
-		dbPath:  opts.DBPath,
-		log:     log,
-		started: started,
-		slots:   make(chan struct{}, inFlight),
+		backend:  opts.Backend,
+		indexing: opts.Indexing,
+		socket:   opts.Socket,
+		dbPath:   opts.DBPath,
+		log:      log,
+		started:  started,
+		slots:    make(chan struct{}, inFlight),
 	}
 }
 
@@ -212,33 +194,6 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	}
 	<-serveErr // Serve always returns once the listener is closed.
 	return nil
-}
-
-// handleStatus answers even when nothing works: a status endpoint that fails
-// when the index is broken withholds exactly the information being asked for
-// (DESIGN.md: a stalled queue must always be distinguishable from a deferred
-// one).
-func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	// Bounded like any other request: reading status touches the database,
-	// and on an unresponsive mount an unbounded handler would blow past the
-	// write timeout and hand the client a dead connection instead of the
-	// document this endpoint promises to always produce.
-	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
-	defer cancel()
-
-	index, err := s.backend.Status(ctx)
-	if err != nil {
-		s.log.Warn("status", "error", err)
-		index = IndexStatus{Ready: false, Reason: err.Error()}
-	}
-	writeJSON(w, s.log, StatusResponse{
-		Version: buildinfo.Version,
-		PID:     os.Getpid(),
-		UptimeS: int64(time.Since(s.started).Seconds()),
-		Socket:  s.socket,
-		DBPath:  s.dbPath,
-		Index:   index,
-	})
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {

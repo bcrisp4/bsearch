@@ -13,6 +13,25 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- **New `bsearch status` command: what the daemon is doing, and why it isn't.**
+  It reports the index — ready or not and why, the embedding model, per-state
+  document counts, and what the index costs on disk — alongside the
+  background indexing loop: what it is waiting on ("embedding endpoint
+  unreachable", "deferred: on battery", "files could not be read — check Full
+  Disk Access"), when it last scanned and last made progress, and what it has
+  got through since it started.
+
+  The two are reported separately on purpose, because they break separately:
+  "nothing is indexed" and "nothing is indexing" have different fixes, and a
+  daemon whose indexing never started now says so instead of looking idle.
+  Documents that were given up on are listed by reason, largest group first,
+  with a path to look at; directories that could not be read are listed too,
+  which on macOS usually means the binary needs Full Disk Access.
+
+  `bsearch status --json` emits the daemon's `GET /v1/status` document
+  verbatim for scripts. The command exits 0 for any answer the daemon gives,
+  however unhappy — a non-zero exit means the daemon could not be reached.
+
 - **The daemon now indexes on its own.** `bsearch serve` walks your configured
   paths, indexes what it finds, and keeps up with new and changed files — no
   command to run and nothing to remember. Save a note and it is searchable a
@@ -37,9 +56,9 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   an HTTP+JSON API on a unix socket at
   `~/Library/Application Support/bsearch/bsearch.sock` (mode 0600, so only
   your account can reach it — there is no authentication in v1 and none is
-  needed). Endpoints are `POST /v1/search` and `GET /v1/status`; there is no
-  `bsearch status` command yet, so `curl --unix-socket` is how you read the
-  daemon's state. See [docs/daemon.md](docs/daemon.md).
+  needed). Endpoints are `POST /v1/search` and `GET /v1/status`, and
+  `bsearch status` is the readable view of the latter. See
+  [docs/daemon.md](docs/daemon.md).
 
   The daemon starts whether or not you have an index: with none it reports
   `index.ready: false` and why, and picks up an index created afterwards
