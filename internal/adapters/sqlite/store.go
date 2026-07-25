@@ -203,6 +203,39 @@ func (s *Store) ListIndexable(ctx context.Context) ([]domain.Document, error) {
 			" FROM documents WHERE state != 'deleted' ORDER BY path")
 }
 
+// CountsByState returns the number of catalog rows in each document state.
+// Every state in domain.DocStates is present, zero included: a reporting
+// consumer must never have to tell "no documents here" apart from "this
+// build didn't know about the state" (DESIGN.md: status is observable).
+// A state in the database that this build doesn't know is still reported —
+// dropping it would hide exactly the drift worth seeing.
+func (s *Store) CountsByState(ctx context.Context) (map[domain.DocState]int, error) {
+	counts := make(map[domain.DocState]int, len(domain.DocStates))
+	for _, state := range domain.DocStates {
+		counts[state] = 0
+	}
+
+	rows, err := s.db.Reader().QueryContext(ctx,
+		"SELECT state, count(*) FROM documents GROUP BY state")
+	if err != nil {
+		return nil, fmt.Errorf("count documents by state: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
+
+	for rows.Next() {
+		var state string
+		var n int
+		if err := rows.Scan(&state, &n); err != nil {
+			return nil, fmt.Errorf("count documents by state: %w", err)
+		}
+		counts[domain.DocState(state)] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("count documents by state: %w", err)
+	}
+	return counts, nil
+}
+
 // UpdateDocumentState flips state (and updated_at) only. Unknown docID is a
 // loud error — the caller just processed the row.
 func (s *Store) UpdateDocumentState(ctx context.Context, docID string, state domain.DocState) error {

@@ -17,6 +17,21 @@ const (
 	DocStateDeleted    DocState = "deleted"
 )
 
+// DocStates is every state, in pipeline order. Reporting surfaces enumerate
+// it so a state with no documents is reported as an explicit zero rather than
+// omitted — a consumer must never have to distinguish "absent" from "none"
+// (DESIGN.md: status is observable). Keep in sync with the CHECK constraint
+// on documents.state.
+var DocStates = []DocState{
+	DocStateDiscovered,
+	DocStateConverted,
+	DocStateChunked,
+	DocStateEmbedded,
+	DocStateIndexed,
+	DocStateFailed,
+	DocStateDeleted,
+}
+
 // StageVersions keys. These are persisted schema (the stage_versions
 // column): every reader and writer must use the constants, never literals —
 // a typo'd key compiles, reads as "", and makes every document look stale.
