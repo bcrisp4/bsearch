@@ -57,6 +57,90 @@ type daemonFixture struct {
 	socketPath string
 	lockPath   string
 	cfgPath    string
+
+	done    chan error
+	wg      *sync.WaitGroup
+	stopped bool
+}
+
+// stop shuts the daemon down and waits for it. Idempotent, so a test can stop
+// a daemon early — restarting one against the same database is the only way
+// to exercise what a configuration change does — and the cleanup still runs.
+//
+// Only one daemon may be running at a time: shutdown signals this process, so
+// a second daemon would be caught by the same signal. That is a property of
+// running the daemon in-process (issue #54), not of the daemon.
+func (f *daemonFixture) stop(t *testing.T) {
+	t.Helper()
+	if f.stopped {
+		return
+	}
+	f.stopped = true
+	// SIGTERM is the shutdown path launchd uses; exercise that one.
+	if err := signalSelf(); err != nil {
+		t.Errorf("signal self: %v", err)
+	}
+	select {
+	case err := <-f.done:
+		if err != nil {
+			t.Errorf("serve returned %v, want a clean shutdown", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Error("serve did not shut down")
+	}
+	f.wg.Wait()
+}
+
+// waitForIndexed blocks until the daemon has indexed at least n documents by
+// itself. Nothing runs an indexing command — that the daemon gets there on
+// its own is the property under test.
+func (f *daemonFixture) waitForIndexed(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		status, body := f.get(t, "/v1/status")
+		if status == http.StatusOK {
+			var out struct {
+				Index struct {
+					Documents map[string]int `json:"documents"`
+				} `json:"index"`
+			}
+			if err := json.Unmarshal(body, &out); err == nil {
+				if out.Index.Documents["indexed"] >= n {
+					return
+				}
+			}
+			last = string(body)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("daemon did not index %d documents on its own; last status was %s", n, last)
+}
+
+// waitForReady blocks until the daemon reports a usable index. Distinct from
+// waitForIndexed: an empty corpus becomes ready without ever indexing
+// anything.
+func (f *daemonFixture) waitForReady(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		status, body := f.get(t, "/v1/status")
+		if status == http.StatusOK {
+			var out struct {
+				Index struct {
+					Ready bool `json:"ready"`
+				} `json:"index"`
+			}
+			if err := json.Unmarshal(body, &out); err == nil && out.Index.Ready {
+				return
+			}
+			last = string(body)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("daemon never became ready; last status was %s", last)
 }
 
 // TestMain keeps SIGTERM from killing the test binary. The daemon tests signal
@@ -73,11 +157,26 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// startDaemon runs a daemon over a one-document corpus with nothing indexed.
+// startDaemon runs a daemon over a one-document corpus. The daemon indexes it
+// by itself; a test that needs that to have happened calls waitForIndexed.
 func startDaemon(t *testing.T) *daemonFixture {
 	t.Helper()
 	dir := t.TempDir()
 	corpus := writeTestCorpus(t, dir, map[string]string{"alpha.md": "# Alpha\n\nalpha document body\n"})
+	srv := fakeEmbeddingsServer(t, contentVec)
+	return startDaemonWith(t, writeTestConfig(t, dir, corpus, srv.URL), filepath.Join(dir, "data", "bsearch.db"))
+}
+
+// startDaemonOverAnEmptyCorpus runs a daemon with nothing to index, which is
+// the only way to observe a running daemon that has no vectors now that
+// indexing is not something the user triggers.
+func startDaemonOverAnEmptyCorpus(t *testing.T) *daemonFixture {
+	t.Helper()
+	dir := t.TempDir()
+	corpus := filepath.Join(dir, "corpus")
+	if err := os.MkdirAll(corpus, 0o700); err != nil {
+		t.Fatalf("make empty corpus: %v", err)
+	}
 	srv := fakeEmbeddingsServer(t, contentVec)
 	return startDaemonWith(t, writeTestConfig(t, dir, corpus, srv.URL), filepath.Join(dir, "data", "bsearch.db"))
 }
@@ -103,25 +202,16 @@ func startDaemonWith(t *testing.T, cfgPath, dbPath string) *daemonFixture {
 		defer wg.Done()
 		done <- run(full, io.Discard)
 	}()
-	t.Cleanup(func() {
-		// SIGTERM is the shutdown path launchd uses; exercise that one.
-		if err := signalSelf(); err != nil {
-			t.Errorf("signal self: %v", err)
-		}
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("serve returned %v, want a clean shutdown", err)
-			}
-		case <-time.After(20 * time.Second):
-			t.Error("serve did not shut down")
-		}
-		wg.Wait()
-	})
 
 	client := socketClient(socketPath)
+	f := &daemonFixture{
+		client: client, dbPath: dbPath, socketPath: socketPath,
+		lockPath: lockPath, cfgPath: cfgPath, done: done, wg: &wg,
+	}
+	t.Cleanup(func() { f.stop(t) })
+
 	waitForDaemon(t, client)
-	return &daemonFixture{client: client, dbPath: dbPath, socketPath: socketPath, lockPath: lockPath, cfgPath: cfgPath}
+	return f
 }
 
 // waitForDaemon blocks until /v1/status answers.
@@ -180,8 +270,14 @@ func TestServeSocketPermissions(t *testing.T) {
 	}
 }
 
-func TestServeStatusBeforeAnythingIsIndexed(t *testing.T) {
-	f := startDaemon(t)
+// An empty corpus is ready, not broken. The daemon proves the embedding
+// endpoint works and establishes the vector space on its first cycle, so
+// "ready with nothing in it" is an accurate description of a machine with no
+// documents — and it is what lets a dims change on the inference server be
+// noticed and repaired later, which needs a probe to detect at all.
+func TestServeOverAnEmptyCorpusIsReadyAndEmpty(t *testing.T) {
+	f := startDaemonOverAnEmptyCorpus(t)
+	f.waitForReady(t)
 
 	status, body := f.get(t, "/v1/status")
 	if status != http.StatusOK {
@@ -191,8 +287,9 @@ func TestServeStatusBeforeAnythingIsIndexed(t *testing.T) {
 		Version string `json:"version"`
 		PID     int    `json:"pid"`
 		Index   struct {
-			Ready  bool   `json:"ready"`
-			Reason string `json:"reason"`
+			Ready     bool           `json:"ready"`
+			Reason    string         `json:"reason"`
+			Documents map[string]int `json:"documents"`
 		} `json:"index"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
@@ -201,30 +298,23 @@ func TestServeStatusBeforeAnythingIsIndexed(t *testing.T) {
 	if out.Version == "" || out.PID == 0 {
 		t.Errorf("status = %+v, want version and pid", out)
 	}
-	if out.Index.Ready || out.Index.Reason == "" {
-		t.Errorf("index = %+v, want not-ready with a reason", out.Index)
+	if out.Index.Documents["indexed"] != 0 {
+		t.Errorf("documents = %v, want nothing indexed", out.Index.Documents)
 	}
-	// Starting the daemon must not manufacture an empty index.
-	if _, err := os.Stat(f.dbPath); !os.IsNotExist(err) {
-		t.Errorf("serve created %s (stat err %v); a reader must not", f.dbPath, err)
+	// The daemon owns the writer role, so it creates and migrates the
+	// database itself (ADR 0012) — there is no longer anything else that
+	// could.
+	if _, err := os.Stat(f.dbPath); err != nil {
+		t.Errorf("serve did not create %s (stat err %v)", f.dbPath, err)
 	}
 }
 
-func TestServeSearchBecomesAvailableAfterIndexing(t *testing.T) {
+// The headline of this change: nothing is run, and the corpus gets indexed.
+func TestServeIndexesTheCorpusWithoutAnyCommand(t *testing.T) {
 	f := startDaemon(t)
+	f.waitForIndexed(t, 1)
 
 	status, body := f.post(t, "/v1/search", `{"query":"alpha"}`)
-	if status != http.StatusServiceUnavailable {
-		t.Fatalf("search before indexing: status = %d (%s), want 503", status, body)
-	}
-
-	// Index in-process, exactly as a user would in another terminal.
-	if err := run([]string{"index", "--config", f.cfgPath, "--db", f.dbPath}, io.Discard); err != nil {
-		t.Fatalf("index: %v", err)
-	}
-
-	// The daemon must notice without a restart.
-	status, body = f.post(t, "/v1/search", `{"query":"alpha"}`)
 	if status != http.StatusOK {
 		t.Fatalf("search after indexing: status = %d (%s), want 200", status, body)
 	}

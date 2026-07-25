@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // DocState is a document's position in the indexing pipeline (DESIGN.md:
 // Indexing pipeline and queue). Terminal states are failed and deleted;
@@ -30,6 +33,63 @@ var DocStates = []DocState{
 	DocStateIndexed,
 	DocStateFailed,
 	DocStateDeleted,
+}
+
+// TerminalDocStates are the states the scheduler never dispatches. They are
+// the negative half of the dispatch predicate, named once here so the queue's
+// SQL, the partial claim index, and Terminal cannot drift apart.
+//
+// Terminal means "not queue work", not "never changes again": a file change
+// resets an indexed or failed row (UpsertDocument clears the retry columns),
+// a config change sweeps stale rows back to discovered, and purging deleted
+// rows is its own path (DESIGN.md: Dispatch).
+var TerminalDocStates = []DocState{
+	DocStateIndexed,
+	DocStateFailed,
+	DocStateDeleted,
+}
+
+// Terminal reports whether s is a state the scheduler skips.
+func (s DocState) Terminal() bool {
+	return slices.Contains(TerminalDocStates, s)
+}
+
+// docTransitions is the state machine: which states a document may move to
+// from each state.
+//
+// It documents and asserts the pipeline's shape; it does not enforce it. No
+// writer consults ValidTransition — UpsertDocument, UpdateDocumentState and
+// MarkFailed will each persist any state from any state — so this is a
+// specification the tests hold the code to, not a runtime guard. Making it a
+// real invariant means checking it in every writer, which is worth doing when
+// there are enough writers to lose track of; today there are three.
+//
+// The v1 pipeline walks discovered → chunked → indexed. DocStateConverted and
+// DocStateEmbedded are declared, accepted by the schema's CHECK constraint,
+// and unreachable: conversion needs the bscribe adapter (#21) and there is no
+// point writing an embedded row between the vector write and the indexed flip
+// while summaries are a fill-later field rather than a gate. Their edges are
+// recorded now so the ladder is legible when those stages land.
+var docTransitions = map[DocState][]DocState{
+	DocStateDiscovered: {DocStateConverted, DocStateChunked, DocStateFailed, DocStateDeleted},
+	DocStateConverted:  {DocStateChunked, DocStateFailed, DocStateDeleted},
+	DocStateChunked:    {DocStateEmbedded, DocStateIndexed, DocStateFailed, DocStateDeleted},
+	DocStateEmbedded:   {DocStateIndexed, DocStateFailed, DocStateDeleted},
+	// Terminal states re-enter the pipeline only at discovered: a file change
+	// or a stale sweep resets them, never a direct hop to a mid-pipeline state.
+	DocStateIndexed: {DocStateDiscovered, DocStateFailed, DocStateDeleted},
+	DocStateFailed:  {DocStateDiscovered, DocStateDeleted},
+	DocStateDeleted: {DocStateDiscovered},
+}
+
+// ValidTransition reports whether from → to is an edge of the pipeline state
+// machine. A self-transition is always valid: every stage is an idempotent
+// upsert, so redoing one after a crash must not look like an illegal move.
+func ValidTransition(from, to DocState) bool {
+	if from == to {
+		return true
+	}
+	return slices.Contains(docTransitions[from], to)
 }
 
 // StageVersions keys. These are persisted schema (the stage_versions
@@ -79,6 +139,20 @@ type Document struct {
 	// (DESIGN.md: Pipeline metadata and model migration). Nil = none
 	// recorded yet.
 	StageVersions map[string]string
+
+	// Attempts counts failed tries since the last reset. Only transient
+	// failures met while the external service was healthy increment it — an
+	// outage must never burn a healthy document (DESIGN.md: health gates).
+	// UpsertDocument zeroes it, so a file change gives a fresh budget.
+	Attempts int
+	// NextRetryAt is when the scheduler may dispatch this document again.
+	// Zero means "as soon as it comes up", which is the normal case: backoff
+	// is the exception, not the rule.
+	NextRetryAt time.Time
+	// LastError is why the last attempt failed, in the user's terms. Kept
+	// after a retry succeeds until the next write clears it — a document
+	// that took three goes is worth being able to notice.
+	LastError string
 }
 
 // Chunk is one embeddable unit of a document's converted markdown

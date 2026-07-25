@@ -68,6 +68,28 @@ CREATE TABLE meta (
 	value TEXT NOT NULL
 ) STRICT;
 `,
+	// v2: the claim index the scheduler actually uses (ADR 0011). v1's
+	// idx_documents_dispatch (state, next_retry_at) was never read: it leads
+	// on state, which the dispatch predicate only ever negates, and it carries
+	// every terminal row — so its size tracks the corpus while the work it
+	// serves tracks the backlog.
+	//
+	// The partial index inverts both. Terminal rows are absent from the
+	// B-tree entirely, so claim cost is bounded by the working set rather
+	// than by history, and inserting a row into a terminal state costs no
+	// index maintenance on the hot path. updated_at leads because it is what
+	// the claim orders by: forwards for the aging slice, backwards for the
+	// recency slice, one index serving both.
+	//
+	// The WHERE clause duplicates domain.TerminalDocStates. SQLite requires a
+	// literal here, so the two are kept honest by a test rather than by
+	// construction.
+	`
+DROP INDEX idx_documents_dispatch;
+
+CREATE INDEX idx_documents_queue ON documents (updated_at)
+	WHERE state NOT IN ('indexed', 'failed', 'deleted');
+`,
 }
 
 // schemaVersion is the schema this build writes and reads: the highest
@@ -83,11 +105,11 @@ func checkSchema(reader *sql.DB) error {
 	var current int
 	if err := reader.QueryRow(
 		"SELECT coalesce(max(version), 0) FROM schema_migrations").Scan(&current); err != nil {
-		return fmt.Errorf("read schema version (not a bsearch index?): %w", err)
+		return fmt.Errorf("read schema version (not a bsearch index database?): %w", err)
 	}
 	switch {
 	case current < schemaVersion:
-		return fmt.Errorf("index schema is version %d but this build expects %d — run 'bsearch index' to migrate it",
+		return fmt.Errorf("index schema is version %d but this build expects %d — restart the bsearch daemon, which migrates the index at startup",
 			current, schemaVersion)
 	case current > schemaVersion:
 		return fmt.Errorf("index schema is version %d, newer than this build supports (%d) — upgrade bsearch",

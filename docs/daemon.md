@@ -1,14 +1,43 @@
 # Running the daemon
 
-`bsearch serve` runs the daemon: an HTTP+JSON API over a unix socket. Since
-`bsearch search` is a client of that socket
-([ADR 0010](adr/0010-cli-as-socket-only-client.md)), the daemon has to be
-running before you can search.
+`bsearch serve` runs the daemon: an HTTP+JSON API over a unix socket, plus the
+background indexing that keeps the index current. Since `bsearch search` is a
+client of that socket ([ADR 0010](adr/0010-cli-as-socket-only-client.md)), the
+daemon has to be running before you can search.
 
-Indexing is still the separate one-shot `bsearch index`. The daemon does not
-index yet — the scheduler and the filesystem watcher land with issues #12 and
-#13, and until they do, "always fresh" means "as fresh as your last
-`bsearch index`".
+There is no indexing command. The daemon is the only thing that writes the
+index ([ADR 0012](adr/0012-daemon-owns-the-index-writer.md)): it creates the
+database, walks your configured paths, and indexes what it finds. Save a note
+and it is searchable a few minutes later, with nothing to run.
+
+Discovery is still a periodic walk, so "a few minutes" means up to one scan
+interval; FSEvents-driven freshness lands with issue #13.
+
+## How indexing behaves
+
+| | |
+|---|---|
+| Filesystem scan | every 5 minutes |
+| Indexing cycle | `[power].ac.index_interval` (default 5 minutes) |
+| Documents per batch | 32, re-reading the queue between batches so a file you just saved does not wait behind a backlog |
+| Retries | 5 attempts, backing off from 30 seconds to 15 minutes with jitter |
+
+Two behaviours are worth knowing about, both from
+[ADR 0011](adr/0011-indexing-queue-dispatch-and-retry.md):
+
+**A stopped inference server costs you nothing.** Before each batch the daemon
+checks the embedding endpoint is up, and checks again before blaming any
+document for a failure. Leave LM Studio closed for a week and nothing is
+marked failed — indexing resumes on its own when it is back.
+
+**Changing the embedding model re-embeds everything, automatically.** Edit
+`inference.embedding_model`, restart the daemon, and it notices the corpus was
+built by a superseded model and works through it again. Searches in the
+meantime run against the new, still-filling index, so results are thin until
+it catches up.
+
+The `[power].battery` policy is parsed but not yet reachable: macOS power-state
+detection lands with M7, so the daemon currently always uses the AC policy.
 
 ## Starting it
 
@@ -32,12 +61,16 @@ The lock is held by the kernel, so a daemon killed with `SIGKILL` releases it
 without leaving anything to clean up — the next start reclaims the leftover
 socket by itself.
 
-The daemon does not need an index to start. With none, it serves
-`/v1/status` with `index.ready: false` and answers searches with `503`; run
-`bsearch index` and it picks the new index up on the next request, with no
-restart. It also starts without `inference.embedding_model` configured, so a
-misconfigured install can still be diagnosed through `/v1/status` — the
-alternative is a LaunchAgent that crash-loops with nothing able to say why.
+The daemon does not need an index to start — it builds one. Until the first
+documents are embedded it serves `/v1/status` with `index.ready: false` and
+answers searches with `503`, then starts answering as soon as there is
+something to search, with no restart.
+
+It also starts when things are misconfigured: without
+`inference.embedding_model`, or when the index cannot be opened for writing.
+Indexing is disabled and the reason goes to the log and `/v1/status`, because
+the alternative is a LaunchAgent that crash-loops with nothing able to say
+why.
 
 Configuration is read once, at startup. After editing `config.toml`, restart
 the daemon.
@@ -91,9 +124,9 @@ with issue #15. Until then, this plist works if you write it to
 </plist>
 ```
 
-Two caveats worth knowing before you rely on it. A LaunchAgent gets no
-consent dialog for TCC-gated directories (`~/Documents`, `~/Desktop`,
-`~/Downloads`, iCloud Drive, most of `~/Library`) — it gets silent `EPERM`,
-so the binary needs a Full Disk Access grant in System Settings. Detecting
-and reporting that is issue #14. And since the daemon doesn't index yet,
-running it at login mainly buys you a socket that is always there.
+One caveat worth knowing before you rely on it: a LaunchAgent gets no consent
+dialog for TCC-gated directories (`~/Documents`, `~/Desktop`, `~/Downloads`,
+iCloud Drive, most of `~/Library`) — it gets silent `EPERM`, so the binary
+needs a Full Disk Access grant in System Settings. Without it the daemon
+indexes whatever it can reach and logs a warning per unreadable path. Surfacing
+that in `bsearch status` is issue #14.

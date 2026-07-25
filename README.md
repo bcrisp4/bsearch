@@ -19,16 +19,17 @@ Built with Go, SQLite (+ sqlite-vec + FTS5), and boring technology on purpose.
 ## Status
 
 Early. Markdown indexing and semantic search work end to end, served by a
-daemon over a unix socket:
+daemon that indexes in the background over a unix socket:
 
 ```sh
-bsearch index                        # index the paths in your config
-bsearch serve &                      # start the daemon (search is a client of it)
-bsearch search "heat pump quote"
+bsearch serve &                      # start the daemon; it indexes your configured paths
+bsearch search "heat pump quote"     # search is a client of the daemon
 ```
 
-Keyword/hybrid search, summaries, MCP, and automatic re-indexing are not built
-yet. Running the daemon is documented in [docs/daemon.md](docs/daemon.md); the
+There is no indexing command — the daemon finds new and changed files by
+itself, and re-embeds the corpus if you change the embedding model.
+Keyword/hybrid search, summaries, MCP, and filesystem-event-driven freshness
+are not built yet. Running the daemon is documented in [docs/daemon.md](docs/daemon.md); the
 full design — decisions, rationale, and rejected alternatives — is in
 [DESIGN.md](DESIGN.md). Work is tracked in GitHub milestones M1–M7.
 

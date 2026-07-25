@@ -84,15 +84,42 @@ func TestRunSearchWithoutADaemon(t *testing.T) {
 	}
 }
 
-func TestRunSearchAgainstAnEmptyIndex(t *testing.T) {
-	f := startDaemon(t)
+// Searching a corpus with no documents in it is not an error: there is
+// nothing to find, and saying so is the honest answer. It used to be an error
+// telling the user to run an indexing command, which no longer exists.
+func TestRunSearchOverAnEmptyCorpus(t *testing.T) {
+	f := startDaemonOverAnEmptyCorpus(t)
+	f.waitForReady(t)
+
+	var out strings.Builder
+	if err := run([]string{"search", "--socket", f.socketPath, "alpha"}, &out); err != nil {
+		t.Fatalf("run(search) over an empty corpus = %v, want no error", err)
+	}
+	if got := out.String(); !strings.Contains(got, "no results") {
+		t.Errorf("run(search) printed %q, want it to say there are no results", got)
+	}
+}
+
+// Before the daemon has had a chance to build anything, search must explain
+// itself in the daemon's own prose — never a raw error envelope.
+func TestRunSearchBeforeTheIndexExists(t *testing.T) {
+	dir := t.TempDir()
+	corpus := writeTestCorpus(t, dir, map[string]string{"alpha.md": "# Alpha\n\nalpha\n"})
+	// No inference endpoint is reachable, so the daemon never gets as far as
+	// creating a vector table — the state a user hits when their inference
+	// server is not running yet.
+	cfgPath := writeTestConfig(t, dir, corpus, "http://127.0.0.1:1")
+	f := startDaemonWith(t, cfgPath, filepath.Join(dir, "data", "bsearch.db"))
 
 	var out strings.Builder
 	err := run([]string{"search", "--socket", f.socketPath, "alpha"}, &out)
-	if err == nil || !strings.Contains(err.Error(), "bsearch index") {
-		t.Fatalf("run(search) with nothing indexed = %v, want a run-index error", err)
+	if err == nil {
+		t.Fatal("run(search) with no vectors = nil, want an error")
 	}
-	// The daemon's prose reaches the user directly — never the envelope.
+	// The advice must not be a command to run: there is no longer one.
+	if strings.Contains(err.Error(), "bsearch index") {
+		t.Errorf("error %q still tells the user to run a removed command", err)
+	}
 	if strings.Contains(err.Error(), "{") {
 		t.Errorf("error %q looks like raw JSON", err)
 	}
@@ -112,10 +139,9 @@ func contentVec(_ int, input string) []float32 {
 	}
 }
 
-// indexedCorpus writes a two-document corpus, indexes it, and returns the
-// config and database paths. a.md has two alpha sections, so collapse has
-// something to collapse.
-func indexedCorpus(t *testing.T) (cfgPath, dbPath string) {
+// testCorpus writes a two-document corpus and returns the config and database
+// paths. a.md has two alpha sections, so collapse has something to collapse.
+func testCorpus(t *testing.T) (cfgPath, dbPath string) {
 	t.Helper()
 	srv := fakeEmbeddingsServer(t, contentVec)
 	dir := t.TempDir()
@@ -123,21 +149,18 @@ func indexedCorpus(t *testing.T) (cfgPath, dbPath string) {
 		"a.md": "# Alpha One\n\nalpha text here\n\n# Alpha Two\n\nmore alpha text\n",
 		"b.md": "# Beta\n\nbeta text\n",
 	})
-	cfgPath = writeTestConfig(t, dir, corpus, srv.URL)
-	dbPath = filepath.Join(dir, "data", "bsearch.db")
-
-	var out strings.Builder
-	if err := run([]string{"index", "--config", cfgPath, "--db", dbPath}, &out); err != nil {
-		t.Fatalf("index fixture: %v\noutput:\n%s", err, out.String())
-	}
-	return cfgPath, dbPath
+	return writeTestConfig(t, dir, corpus, srv.URL), filepath.Join(dir, "data", "bsearch.db")
 }
 
-// searchFixture indexes a corpus and serves it, returning the daemon.
+// searchFixture serves a corpus and waits for the daemon to index it. There
+// is no indexing step to run: the daemon getting there on its own is the
+// behaviour every test below is standing on.
 func searchFixture(t *testing.T) *daemonFixture {
 	t.Helper()
-	cfgPath, dbPath := indexedCorpus(t)
-	return startDaemonWith(t, cfgPath, dbPath)
+	cfgPath, dbPath := testCorpus(t)
+	f := startDaemonWith(t, cfgPath, dbPath)
+	f.waitForIndexed(t, 2)
+	return f
 }
 
 func TestRunSearchEndToEnd(t *testing.T) {
@@ -259,11 +282,22 @@ func hitsOnly(t *testing.T, body string) string {
 	return string(fields["hits"])
 }
 
-func TestRunSearchModelChanged(t *testing.T) {
-	cfgPath, dbPath := indexedCorpus(t)
+// Changing the embedding model used to mean running an indexing command; with
+// that command gone, the daemon has to notice the corpus was built by a
+// superseded model and re-embed it, or the index would silently stay in the
+// old vector space forever. This is the stale sweep, end to end.
+//
+// The mismatch *message*, which the user sees during the window before the
+// re-embed completes, is unit-tested in internal/search
+// (TestSearchModelMismatch, TestSearchDimsMismatch).
+func TestChangingTheModelReEmbedsTheCorpus(t *testing.T) {
+	cfgPath, dbPath := testCorpus(t)
 
-	// Point the daemon at a different model name (same fake server, same
-	// dims): searching would hit the wrong vector space — must fail loud.
+	first := startDaemonWith(t, cfgPath, dbPath)
+	first.waitForIndexed(t, 2)
+	// Only one daemon at a time: shutdown signals this process.
+	first.stop(t)
+
 	raw, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
@@ -276,40 +310,28 @@ func TestRunSearchModelChanged(t *testing.T) {
 	if err := os.WriteFile(changedPath, []byte(changed), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	f := startDaemonWith(t, changedPath, dbPath)
 
+	second := startDaemonWith(t, changedPath, dbPath)
+	second.waitForIndexed(t, 2)
+
+	// Searching must work again, against the new model's vectors.
 	var out strings.Builder
-	err = run([]string{"search", "--socket", f.socketPath, "alpha"}, &out)
-	if err == nil || !strings.Contains(err.Error(), "re-embed") {
-		t.Fatalf("run(search, model changed) = %v, want built-with-model error", err)
+	if err := run([]string{"search", "--socket", second.socketPath, "alpha"}, &out); err != nil {
+		t.Fatalf("search after the model change: %v\noutput:\n%s", err, out.String())
 	}
-	for _, model := range []string{"test-model", "other-model"} {
-		if !strings.Contains(err.Error(), model) {
-			t.Errorf("error %q missing %q", err.Error(), model)
-		}
+
+	_, body := second.get(t, "/v1/status")
+	var st struct {
+		Index struct {
+			Ready bool   `json:"ready"`
+			Model string `json:"model"`
+		} `json:"index"`
 	}
-}
-
-func TestRunSearchDimsChanged(t *testing.T) {
-	cfgPath, dbPath := indexedCorpus(t)
-
-	// Same model name, but the server now returns 4-dim vectors (the
-	// operator swapped the model behind the name). The identity pre-flight
-	// passes; the post-embed dims check must name the remedy.
-	srv := fakeEmbeddingsServer(t, func(int, string) []float32 {
-		return []float32{1, 0, 0, 0}
-	})
-	dir := filepath.Dir(cfgPath)
-	newCfg := writeTestConfig(t, dir, dir, srv.URL)
-	f := startDaemonWith(t, newCfg, dbPath)
-
-	var out strings.Builder
-	err := run([]string{"search", "--socket", f.socketPath, "alpha"}, &out)
-	if err == nil || !strings.Contains(err.Error(), "run 'bsearch index'") {
-		t.Fatalf("run(search, dims changed) = %v, want re-index error", err)
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatalf("decode status: %v (%s)", err, body)
 	}
-	if !strings.Contains(err.Error(), "dimensions") {
-		t.Errorf("error %q does not mention dimensions", err)
+	if !st.Index.Ready || st.Index.Model != "other-model" {
+		t.Errorf("index = %+v, want ready under other-model", st.Index)
 	}
 }
 

@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/bcrisp4/bsearch/internal/domain"
 )
 
-func TestOpenCreatesSchemaV1(t *testing.T) {
+func TestOpenCreatesCurrentSchema(t *testing.T) {
 	db := openTestDB(t)
 
 	rows, err := db.Reader().Query(
@@ -42,8 +43,8 @@ func TestOpenCreatesSchemaV1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema_migrations: %v", err)
 	}
-	if version != 1 {
-		t.Errorf("schema version = %d, want 1", version)
+	if version != schemaVersion {
+		t.Errorf("schema version = %d, want %d", version, schemaVersion)
 	}
 }
 
@@ -69,8 +70,40 @@ func TestOpenIsIdempotentAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema_migrations: %v", err)
 	}
-	if applied != 1 {
-		t.Errorf("applied migrations = %d, want 1 (reopen must not re-apply)", applied)
+	if applied != schemaVersion {
+		t.Errorf("applied migrations = %d, want %d (reopen must not re-apply)", applied, schemaVersion)
+	}
+}
+
+// The v2 partial index duplicates domain.TerminalDocStates as a SQL literal,
+// because SQLite needs a literal there and a migration is frozen once it
+// ships. If a state is ever added to the terminal set, the index and the
+// claim predicate silently stop agreeing — this is what notices.
+func TestPartialClaimIndexMatchesTerminalStates(t *testing.T) {
+	db := openTestDB(t)
+
+	var ddl string
+	err := db.Reader().QueryRow(
+		"SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_documents_queue'").Scan(&ddl)
+	if err != nil {
+		t.Fatalf("read idx_documents_queue: %v", err)
+	}
+	for _, state := range domain.TerminalDocStates {
+		if !strings.Contains(ddl, "'"+string(state)+"'") {
+			t.Errorf("idx_documents_queue does not exclude %q; DDL is %s", state, ddl)
+		}
+	}
+
+	// v1's index led on state, which the dispatch predicate only negates, and
+	// carried every terminal row. It is superseded, not merely unused.
+	var leftover int
+	if err := db.Reader().QueryRow(
+		"SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_documents_dispatch'",
+	).Scan(&leftover); err != nil {
+		t.Fatalf("check idx_documents_dispatch: %v", err)
+	}
+	if leftover != 0 {
+		t.Errorf("idx_documents_dispatch still exists after migration v2")
 	}
 }
 

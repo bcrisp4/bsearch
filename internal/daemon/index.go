@@ -169,7 +169,7 @@ func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
 	indexed, dims, err := h.store.CurrentVecSpec(ctx)
 	if err != nil {
 		if errors.Is(err, domain.ErrNoVecTable) {
-			status.Reason = "nothing embedded yet — run 'bsearch index'"
+			status.Reason = "nothing embedded yet — the daemon indexes in the background"
 			return status, nil
 		}
 		return server.IndexStatus{}, err
@@ -186,7 +186,7 @@ func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
 	configured := d.embedder.Spec()
 	configured.CeilingTokens = 0 // a chunking budget, not part of the vector space
 	if indexed != configured {
-		status.Reason = fmt.Sprintf("the index was built for model %q but the daemon is configured for %q — run 'bsearch index' to re-embed, or restart the daemon if you changed its config",
+		status.Reason = fmt.Sprintf("the index was built for model %q but the daemon is configured for %q — restart the daemon, which re-embeds the corpus in the background under the configured model",
 			indexed.Model, configured.Model)
 		return status, nil
 	}
@@ -209,12 +209,14 @@ func (d *Daemon) Close() error {
 
 // acquire returns a store over the current index, opening it if needed.
 //
-// Two behaviours matter more than they look. Failures are never cached: a
-// daemon started before the first `bsearch index` has to start working when
-// the index appears, without a restart. And the file is re-checked every
-// time: `bsearch index` runs in another process, so a drop-and-reindex
-// replaces the inode underneath us, and a cached handle would go on serving
-// an unlinked file with no error to give it away.
+// Two behaviours matter more than they look. Failures are never cached: the
+// query path opens the database read-only and never creates it, so a daemon
+// whose scheduler has not yet built the index has to start working the moment
+// it appears, without a restart. And the file is re-checked every time,
+// because a drop-and-reindex replaces the inode rather than the contents —
+// `bsearch reindex` (#24) and a user restoring a backup both do it — and a
+// cached handle would go on serving an unlinked file with no error to give it
+// away.
 func (d *Daemon) acquire(ctx context.Context) (*handle, error) {
 	select {
 	case d.gate <- struct{}{}:
@@ -230,7 +232,7 @@ func (d *Daemon) acquire(ctx context.Context) (*handle, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			_ = d.retireCurrent()
-			return nil, fmt.Errorf("%w: no index database at %s — run 'bsearch index' first", search.ErrNotIndexed, d.dbPath)
+			return nil, fmt.Errorf("%w: no index database at %s yet — the daemon creates it once an embedding model is configured", search.ErrNotIndexed, d.dbPath)
 		}
 		return nil, fmt.Errorf("check index: %w", err)
 	}

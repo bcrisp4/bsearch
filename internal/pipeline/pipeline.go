@@ -68,6 +68,38 @@ type Summary struct {
 	Warnings int // oversized-atomic-block chunk warnings
 }
 
+// Outcome classifies what happened to one document. The distinction that
+// matters is who is at fault, because that decides who pays: only Failed
+// reflects the document's own content, so only Failed is allowed to be
+// terminal. Skipped and Transient are the environment's fault and must leave
+// the document's budget alone (DESIGN.md: health gates).
+type Outcome int
+
+const (
+	// OutcomeIndexed: chunked, embedded, stored, state=indexed.
+	OutcomeIndexed Outcome = iota
+	// OutcomeFailed: the content cannot be indexed and re-trying it
+	// unchanged would fail identically. Already recorded as state=failed.
+	OutcomeFailed
+	// OutcomeSkipped: unreadable right now — vanished between scan and
+	// pipeline, or permission denied (TCC). The row is untouched.
+	OutcomeSkipped
+	// OutcomeTransient: an external service failed. Nothing is recorded;
+	// the caller decides between retrying with backoff and treating it as
+	// an outage, which is a judgement only the caller can make.
+	OutcomeTransient
+)
+
+// Result is one document's outcome and, when there is one, the cause.
+type Result struct {
+	Outcome Outcome
+	// Err is why, for every outcome except Indexed. It is not a failure of
+	// the call — ProcessDocument's own error return is.
+	Err error
+	// Warnings counts oversized-atomic-block chunk warnings.
+	Warnings int
+}
+
 // Run processes docs (typically DocumentStore.ListIndexable output): stale
 // or unfinished documents are read, chunked, embedded, and stored; documents
 // already indexed with current stage versions are skipped, as are documents
@@ -112,31 +144,15 @@ func (ix *Indexer) Run(ctx context.Context, docs []domain.Document) (Summary, er
 		return sum, nil
 	}
 
-	// Fail fast before touching any document: one tiny query embedding
-	// proves the endpoint is up and serving the configured model, and its
-	// length is the dimension count vec0 fixes at CREATE.
-	probe, err := ix.opts.Embedder.EmbedQuery(ctx, "bsearch dimension probe")
+	dims, err := ix.Prepare(ctx)
 	if err != nil {
-		return sum, fmt.Errorf("embedding endpoint check failed (is the inference server running and serving %q?): %w",
-			ix.spec.Model, err)
-	}
-	if len(probe) == 0 {
-		return sum, fmt.Errorf("embedding endpoint returned a zero-dimension vector for model %q", ix.spec.Model)
-	}
-	dims := len(probe)
-	if err := ix.opts.Vectors.EnsureVecTable(ctx, ix.spec, dims); err != nil {
 		return sum, err
 	}
 
 	// Second pass: the vector-table generation identity includes dims, so a
 	// server-side dims change under an unchanged model name would otherwise
 	// strand "up to date" documents outside the generation search now uses.
-	sv := map[string]string{
-		domain.StageChunker:       chunker.Version,
-		domain.StageEmbedding:     ix.fp,
-		domain.StageEmbeddingDims: strconv.Itoa(dims),
-		domain.StageVecMetric:     domain.VectorMetric,
-	}
+	sv := ix.StageVersions(dims)
 	for _, doc := range current {
 		if doc.StageVersions[domain.StageEmbeddingDims] != sv[domain.StageEmbeddingDims] {
 			work = append(work, doc)
@@ -149,11 +165,63 @@ func (ix *Indexer) Run(ctx context.Context, docs []domain.Document) (Summary, er
 		if err := ctx.Err(); err != nil {
 			return sum, err
 		}
-		if err := ix.processDoc(ctx, doc, sv, &sum); err != nil {
+		res, err := ix.ProcessDocument(ctx, doc, sv)
+		if err != nil {
 			return sum, err
+		}
+		sum.Warnings += res.Warnings
+		switch res.Outcome {
+		case OutcomeIndexed:
+			sum.Indexed++
+		case OutcomeFailed:
+			sum.Failed++
+		case OutcomeSkipped:
+			sum.Skipped++
+		case OutcomeTransient:
+			// One-shot has nowhere to put a retry, so endpoint trouble ends
+			// the run. The document stays chunked and resumes next time;
+			// nothing is burned. The daemon's scheduler is what turns this
+			// same outcome into backoff instead of an exit.
+			return sum, res.Err
 		}
 	}
 	return sum, nil
+}
+
+// Prepare proves the embedding endpoint is up and serving the configured
+// model, and returns the dimension count vec0 fixes at CREATE. It creates the
+// vector table for spec+dims if there isn't one.
+//
+// One tiny query embedding does both jobs, which is why the daemon's health
+// gate is this call rather than a separate endpoint: a probe that exercises a
+// different code path than the work is a probe that can pass while the work
+// fails.
+func (ix *Indexer) Prepare(ctx context.Context) (int, error) {
+	probe, err := ix.opts.Embedder.EmbedQuery(ctx, "bsearch dimension probe")
+	if err != nil {
+		return 0, fmt.Errorf("embedding endpoint check failed (is the inference server running and serving %q?): %w",
+			ix.spec.Model, err)
+	}
+	if len(probe) == 0 {
+		return 0, fmt.Errorf("embedding endpoint returned a zero-dimension vector for model %q", ix.spec.Model)
+	}
+	dims := len(probe)
+	if err := ix.opts.Vectors.EnsureVecTable(ctx, ix.spec, dims); err != nil {
+		return 0, err
+	}
+	return dims, nil
+}
+
+// StageVersions is what documents processed right now are stamped with, and
+// therefore also what a staleness check compares against (DESIGN.md: Pipeline
+// metadata and model migration). dims comes from Prepare.
+func (ix *Indexer) StageVersions(dims int) map[string]string {
+	return map[string]string{
+		domain.StageChunker:       chunker.Version,
+		domain.StageEmbedding:     ix.fp,
+		domain.StageEmbeddingDims: strconv.Itoa(dims),
+		domain.StageVecMetric:     domain.VectorMetric,
+	}
 }
 
 // versionsCurrent reports whether doc's derived data was produced by this
@@ -167,10 +235,16 @@ func (ix *Indexer) versionsCurrent(doc domain.Document) bool {
 		doc.StageVersions[domain.StageVecMetric] == domain.VectorMetric
 }
 
-// processDoc runs one document through read → chunk → embed → store. A
-// non-nil return aborts the whole run; per-document permanent failures are
-// recorded via fail and return nil.
-func (ix *Indexer) processDoc(ctx context.Context, doc domain.Document, sv map[string]string, sum *Summary) error {
+// ProcessDocument runs one document through read → chunk → embed → store and
+// classifies what happened. sv comes from StageVersions.
+//
+// The returned error is reserved for failures of the machinery itself — a
+// store write that didn't land, a cancelled context — and every caller should
+// treat it as fatal. Everything that is a fact about this one document, up to
+// and including "the embedding server is down", arrives as a Result, because
+// only the caller knows whether the right response is to stop, to retry
+// later, or to move on to the next document.
+func (ix *Indexer) ProcessDocument(ctx context.Context, doc domain.Document, sv map[string]string) (Result, error) {
 	// Merge, don't replace: stage keys owned by other stages (converter,
 	// summarizer — later milestones) must survive a re-index, or partial
 	// rebuild decisions lose their inputs.
@@ -189,24 +263,23 @@ func (ix *Indexer) processDoc(ctx context.Context, doc domain.Document, sv map[s
 		// the scan, or reading is denied (TCC). Leave the document alone —
 		// it retries next run, and granting access or restoring the file
 		// needs no content change to take effect.
-		sum.Skipped++
 		if errors.Is(err, fs.ErrNotExist) {
 			fmt.Fprintf(ix.opts.Progress, "skipped %s: file no longer exists\n", doc.Path)
 		} else {
 			fmt.Fprintf(ix.opts.Progress, "skipped %s: %v (will retry next run)\n", doc.Path, err)
 		}
-		return nil
+		return Result{Outcome: OutcomeSkipped, Err: err}, nil
 	}
 	text, err := chunker.Normalize(raw)
 	if err != nil {
 		// Undecodable — permanent until the file changes (DESIGN.md:
 		// Chunking/Encoding).
-		return ix.fail(ctx, doc, sum, fmt.Sprintf("normalize: %v", err))
+		return ix.fail(ctx, doc, fmt.Sprintf("normalize: %v", err))
 	}
 
 	res := chunker.Chunk(doc.ID, text, ix.spec.CeilingTokens)
+	out := Result{Outcome: OutcomeIndexed, Warnings: len(res.Warnings)}
 	for _, w := range res.Warnings {
-		sum.Warnings++
 		// Path, ordinal, and reason only — the heading path is document
 		// content and must stay out of default output (DESIGN.md: Privacy).
 		fmt.Fprintf(ix.opts.Progress, "warning: %s: %s (chunk %d)\n", doc.Path, w.Reason, w.Ordinal)
@@ -217,49 +290,59 @@ func (ix *Indexer) processDoc(ctx context.Context, doc domain.Document, sv map[s
 	doc.State = domain.DocStateChunked
 	chunkIDs, err := ix.opts.Store.UpsertDocument(ctx, doc, res.Chunks)
 	if err != nil {
-		return fmt.Errorf("store %s: %w", doc.Path, err)
+		return Result{}, fmt.Errorf("store %s: %w", doc.Path, err)
 	}
 
 	if len(res.Chunks) > 0 {
 		vectors, err := ix.opts.Embedder.EmbedPassages(ctx, res.Chunks)
 		if err != nil {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return Result{}, ctx.Err()
 			}
 			if ix.opts.Transient(err) {
-				// Endpoint trouble, not the document's fault: abort, burn
-				// nothing — the doc resumes from chunked next run.
-				return fmt.Errorf("embed %s: %w", doc.Path, err)
+				// Endpoint trouble, not the document's fault. The chunks are
+				// already committed, so the document resumes from chunked
+				// whenever the caller comes back to it — nothing is burned
+				// and nothing is redone.
+				out.Outcome = OutcomeTransient
+				out.Err = fmt.Errorf("embed %s: %w", doc.Path, err)
+				return out, nil
 			}
-			return ix.fail(ctx, doc, sum, fmt.Sprintf("embed: %v", err))
+			return ix.failWith(ctx, doc, out, fmt.Sprintf("embed: %v", err))
 		}
 		if err := ix.opts.Vectors.UpsertVectors(ctx, chunkIDs, vectors); err != nil {
-			return fmt.Errorf("store vectors for %s: %w", doc.Path, err)
+			return Result{}, fmt.Errorf("store vectors for %s: %w", doc.Path, err)
 		}
 	}
 
 	if err := ix.opts.Store.UpdateDocumentState(ctx, doc.ID, domain.DocStateIndexed); err != nil {
-		return fmt.Errorf("finalize %s: %w", doc.Path, err)
+		return Result{}, fmt.Errorf("finalize %s: %w", doc.Path, err)
 	}
-	sum.Indexed++
 	fmt.Fprintf(ix.opts.Progress, "indexed %s (%d chunks)\n", doc.Path, len(res.Chunks))
-	return nil
+	return out, nil
 }
 
-// fail marks doc permanently failed and keeps the run going. The document
-// row is first upserted with the current stage versions (and its chunks
-// cleared — failed content must not serve stale chunks), so a later config
-// change is detectable as a fingerprint mismatch and re-attempts the doc.
-// Only a store error (or cancellation) aborts.
-func (ix *Indexer) fail(ctx context.Context, doc domain.Document, sum *Summary, reason string) error {
+// fail records a permanent failure for a document that has no Result in
+// flight yet.
+func (ix *Indexer) fail(ctx context.Context, doc domain.Document, reason string) (Result, error) {
+	return ix.failWith(ctx, doc, Result{}, reason)
+}
+
+// failWith marks doc permanently failed, preserving any warnings already
+// counted. The document row is first upserted with the current stage versions
+// (and its chunks cleared — failed content must not serve stale chunks), so a
+// later config change is detectable as a fingerprint mismatch and re-attempts
+// the doc. Only a store error (or cancellation) is returned as an error.
+func (ix *Indexer) failWith(ctx context.Context, doc domain.Document, out Result, reason string) (Result, error) {
 	doc.State = domain.DocStateFailed
 	if _, err := ix.opts.Store.UpsertDocument(ctx, doc, nil); err != nil {
-		return fmt.Errorf("record failure for %s: %w", doc.Path, err)
+		return Result{}, fmt.Errorf("record failure for %s: %w", doc.Path, err)
 	}
 	if err := ix.opts.Store.MarkFailed(ctx, doc.ID, reason); err != nil {
-		return err
+		return Result{}, err
 	}
-	sum.Failed++
 	fmt.Fprintf(ix.opts.Progress, "failed %s: %s\n", doc.Path, reason)
-	return nil
+	out.Outcome = OutcomeFailed
+	out.Err = errors.New(reason)
+	return out, nil
 }

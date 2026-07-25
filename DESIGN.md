@@ -208,13 +208,32 @@ The queue is a SQLite-backed state machine — no external queue infrastructure.
   (TCC) are recorded per path and surfaced in `status`, never silently
   skipped. Dataless iCloud files (Optimize Storage placeholders) are skipped,
   not materialized — indexing must never trigger cloud downloads.
-- **Dispatch:** a scheduler loop wakes on timer/notify and claims a batch in
-  one short `IMMEDIATE` transaction (`SELECT … WHERE state NOT IN ('indexed',
-  'failed', 'deleted') AND next_retry_at <= now LIMIT n`). Terminal states
-  never re-enter dispatch; purging `deleted` rows is a separate path. Claims
-  are tracked in memory — single daemon process, so no claimed-state
-  machinery; a crash mid-batch redoes in-flight items on restart, which is
-  safe because every stage is an idempotent upsert.
+- **Dispatch:** a scheduler loop wakes on timer/notify and reads a batch
+  (`SELECT … WHERE state NOT IN ('indexed', 'failed', 'deleted') AND
+  next_retry_at <= now LIMIT n`), served by a partial index that excludes
+  terminal rows so claim cost tracks the backlog rather than the corpus.
+  Terminal states never re-enter dispatch; purging `deleted` rows is a
+  separate path. **One indexing worker**, so there is no claim at all — not a
+  claimed state, and not the in-memory claim set this section originally
+  anticipated: nothing is reserved, so nothing has to be released. A crash
+  mid-batch redoes in-flight items on restart, which is safe because every
+  stage is an idempotent upsert (ADR 0011).
+- **Overrun policy — Prefer Old.** The interval timer is reset after a cycle
+  finishes rather than on an absolute schedule, so a trigger arriving during a
+  cycle is shed, not queued and not pre-empting. A cycle that runs long is
+  working, not hung, and a second concurrent drain would contend for the same
+  rows and the same inference server. Nothing is lost: the queue is durable
+  and the next cycle re-reads it.
+- **Stated limits (ADR 0011).** Batch 32 documents; 5 attempts; backoff base
+  30 s, cap 15 min; scan every 5 min, independent of the drain interval.
+  Queue **depth is deliberately unbounded** — the queue is the catalog, one
+  row per file, bounded by the corpus, with no submission path that can
+  inflate it.
+- **Staleness is swept, not waited for.** Dispatch skips terminal states, so a
+  corpus fully indexed under a superseded model looks like no work at all.
+  Once per process the scheduler moves documents whose `stage_versions`
+  predate current configuration back to `discovered` — which is what makes a
+  model or chunker change re-embed the corpus with no command run.
 - **Transactions never wrap network calls.** Convert/embed/summarize happen
   first; then a short batched write. An open write transaction must never wait
   on bscribe or an inference server (busy-timeout discipline).
@@ -227,9 +246,12 @@ The queue is a SQLite-backed state machine — no external queue infrastructure.
   converter, embedder, and summarizer, so a transient outage can never mark
   healthy documents `failed`.
 - **Retry:** transient failures with the service healthy → exponential backoff
-  via `next_retry_at`; attempts capped, then `failed` with reason. Permanent
-  failures (unparseable document) → `failed` immediately. A file change resets
-  `failed`.
+  via `next_retry_at`, using **full jitter** so a batch that fails together
+  does not return together; attempts capped, then `failed` with reason.
+  "With the service healthy" is enforced by re-probing after a transient
+  failure: a failed re-probe means the service went down mid-batch, so the
+  batch is deferred and no attempt is charged. Permanent failures (unparseable
+  document) → `failed` immediately. A file change resets `failed`.
 - **Power-aware gate:** the scheduler consults power state before dispatching
   heavy stages (convert/summarize/embed); on battery it lengthens intervals,
   shrinks batches, or defers entirely, per config. Cheap stages (catalog scan)
@@ -301,11 +323,12 @@ means re-embedding everything. The metadata buys:
   table fills in the background; atomic cutover when complete. No search
   downtime, no big-bang rebuild. (Different dimensions force a separate `vec0`
   table anyway — blue/green falls out naturally.) Note: migration transiently
-  doubles vector storage. *Implementation status: M1 cuts over immediately on
-  model change (search serves the new, initially empty generation until
-  re-embedding fills it — acceptable while reindex is a manual one-shot);
-  the staged fill + deferred cutover lands with `bsearch reindex` (issue
-  #24).*
+  doubles vector storage. *Implementation status: the daemon cuts over
+  immediately on model change — its stale sweep re-queues the corpus and
+  search serves the new, initially empty generation while re-embedding fills
+  it (ADR 0011). Self-healing, but with a search-quality dip for the duration;
+  the staged fill + deferred cutover that removes the dip lands with
+  `bsearch reindex` (issue #24).*
 - **Partial rebuilds:** chunker change → re-chunk + re-embed only affected
   docs; summarizer change → regenerate summaries only, vectors untouched.
 - **Auditability:** `bsearch status` reports exactly what's stale against
@@ -361,7 +384,7 @@ flowchart LR
 ### CLI
 
 ```
-bsearch serve                     # run daemon (launchd invokes this)
+bsearch serve                     # run daemon (launchd invokes this); indexes in the background
 bsearch search "heat pump quote" [--limit 10] [--level 4|16|64] [--mode hybrid|semantic|keyword] [--json]
 bsearch list [path-prefix] [--sort modified|path] [--level 4|16|64] [--limit 100]
 bsearch get <doc-id> [--level 4|16|64|full]
@@ -372,10 +395,13 @@ bsearch reindex [path]            # force re-index of path or everything
 Every subcommand except `serve` is a client of the daemon's socket, with no
 direct-database fallback — one query path, so there is one place that agrees
 about prefix templates and index identity
-([ADR 0010](docs/adr/0010-cli-as-socket-only-client.md)). `bsearch index`
-is the exception and the transitional one: it is a writer, and it disappears
-once the daemon owns discovery and the queue, leaving `reindex` as the way to
-force the work.
+([ADR 0010](docs/adr/0010-cli-as-socket-only-client.md)). There is no
+indexing command: the daemon owns discovery and the queue and is the only
+writer ([ADR 0012](docs/adr/0012-daemon-owns-the-index-writer.md)), creating
+and migrating the database itself. `reindex` is how a rebuild is forced —
+needed less often than expected, since a configuration change is swept and
+re-embedded automatically. (`bsearch eval` is not a client either, but it
+writes only its own per-corpus database, never the index.)
 
 ### HTTP API (unix socket, JSON)
 
@@ -642,7 +668,8 @@ Ordering philosophy: user-visible value first; scaffolding only when forced.
 M1 replaces lore's core function — already useful on day one.
 
 **M1 — Search my markdown.** One-shot `bsearch index` + `bsearch search` (no
-daemon). Scans configured paths, text/markdown only; chunks, embeds via LM
+daemon). *`bsearch index` was retired in M3 once the daemon took over the
+writer role (ADR 0012).* Scans configured paths, text/markdown only; chunks, embeds via LM
 Studio, stores in SQLite + sqlite-vec; semantic CLI search. Demo: semantic
 search over the Obsidian vault from the terminal. (No TCC issues: one-shot CLI
 inherits the terminal's grants.)

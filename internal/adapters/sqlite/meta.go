@@ -44,7 +44,16 @@ func getMeta(ctx context.Context, q queryer, key string) (value string, ok bool,
 // docColumns is the canonical documents column list, paired with docRow.
 // One definition so every query path (GetByPath, SearchVectors, future FTS)
 // hydrates identical domain.Documents.
-var docColumns = []string{"id", "path", "content_hash", "size", "mtime", "state", "stage_versions"}
+//
+// The retry columns are projected here rather than only on the queue path so
+// that "which document is this" has one answer. The hazard that buys is in
+// the other direction: UpsertDocument resets attempts, next_retry_at and
+// last_error by design (a file change earns a fresh budget), so a queue write
+// must never round-trip a Document through it — see queue.go.
+var docColumns = []string{
+	"id", "path", "content_hash", "size", "mtime", "state", "stage_versions",
+	"attempts", "next_retry_at", "last_error",
+}
 
 // prefixDocColumns renders docColumns with a table alias ("d.id, d.path, …").
 func prefixDocColumns(alias string) string {
@@ -57,20 +66,33 @@ func prefixDocColumns(alias string) string {
 
 // docRow holds the raw column values that need conversion after Scan.
 type docRow struct {
-	mtimeNS  int64
-	state    string
-	stageRaw string
+	mtimeNS   int64
+	state     string
+	stageRaw  string
+	nextRetry sql.NullInt64  // unix seconds; NULL = not scheduled
+	lastError sql.NullString // NULL = no failure recorded
 }
 
 // targets returns Scan destinations matching docColumns order.
 func (r *docRow) targets(doc *domain.Document) []any {
-	return []any{&doc.ID, &doc.Path, &doc.ContentHash, &doc.Size, &r.mtimeNS, &r.state, &r.stageRaw}
+	return []any{
+		&doc.ID, &doc.Path, &doc.ContentHash, &doc.Size, &r.mtimeNS, &r.state, &r.stageRaw,
+		&doc.Attempts, &r.nextRetry, &r.lastError,
+	}
 }
 
 // finish converts the raw values into their domain form.
 func (r *docRow) finish(doc *domain.Document) error {
 	doc.MTime = time.Unix(0, r.mtimeNS)
 	doc.State = domain.DocState(r.state)
+	// NULL next_retry_at means "due now", which is the zero Time: the
+	// scheduler compares with !After(now), so zero is always due.
+	if r.nextRetry.Valid {
+		doc.NextRetryAt = time.Unix(r.nextRetry.Int64, 0)
+	} else {
+		doc.NextRetryAt = time.Time{}
+	}
+	doc.LastError = r.lastError.String
 	if r.stageRaw == "" || r.stageRaw == "{}" {
 		doc.StageVersions = nil
 		return nil

@@ -348,7 +348,7 @@ func TestSearchStoreFailure(t *testing.T) {
 }
 
 func TestSearchVecGenerationCutoverIsNotIndexed(t *testing.T) {
-	// bsearch index runs in another process and can swap the vector
+	// A reindex can swap the vector
 	// generation between the spec read and the KNN query; the table vanishing
 	// under us is "not indexed right now", not a server fault (ADR 0009).
 	svc, index, _ := newService(t)
