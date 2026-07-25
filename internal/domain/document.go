@@ -55,9 +55,14 @@ func (s DocState) Terminal() bool {
 }
 
 // docTransitions is the state machine: which states a document may move to
-// from each state. It is the documentation of the pipeline's shape, and
-// ValidTransition is what stops a future stage from inventing an edge nobody
-// reasoned about.
+// from each state.
+//
+// It documents and asserts the pipeline's shape; it does not enforce it. No
+// writer consults ValidTransition — UpsertDocument, UpdateDocumentState and
+// MarkFailed will each persist any state from any state — so this is a
+// specification the tests hold the code to, not a runtime guard. Making it a
+// real invariant means checking it in every writer, which is worth doing when
+// there are enough writers to lose track of; today there are three.
 //
 // The v1 pipeline walks discovered → chunked → indexed. DocStateConverted and
 // DocStateEmbedded are declared, accepted by the schema's CHECK constraint,

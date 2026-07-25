@@ -86,6 +86,12 @@ const (
 	GateBattery   = "deferred: on battery"
 	GateEmbedder  = "embedding endpoint unreachable"
 	GateStoreFail = "index write failed"
+	// GateUnreadable means the drain ran out of documents it could read, not
+	// of documents to do — files are being skipped every cycle (permissions,
+	// or files that vanished). Distinct from GateIdle because reporting an
+	// index as complete while it is quietly passing over files is the failure
+	// this whole gate vocabulary exists to prevent.
+	GateUnreadable = "files could not be read — check Full Disk Access"
 )
 
 // Queue is the catalog access the scheduler needs. Composed from the domain
@@ -160,13 +166,18 @@ type Snapshot struct {
 	// distinguishes a queue that is slow from one that is stuck.
 	LastProgress time.Time
 
-	Indexed   int // documents indexed since start
-	Failed    int // documents given up on since start
-	Skipped   int // documents unreadable at the time since start
-	Retried   int // transient failures rescheduled since start
-	Swept     int // documents re-queued by a stale sweep since start
-	ScanErrs  int // per-path problems in the last scan (TCC, unreadable)
-	Deferring bool
+	Indexed  int // documents indexed since start
+	Failed   int // documents given up on since start
+	Skipped  int // documents unreadable at the time since start
+	Retried  int // transient failures rescheduled since start
+	Swept    int // documents re-queued by a stale sweep since start
+	ScanErrs int // per-path problems in the last scan (TCC, unreadable)
+	// ScanReachedNothing means the last scan hit errors and reached no files
+	// at all — the signature of a missing Full Disk Access grant, and the one
+	// scan outcome that leaves the daemon looking healthy while indexing
+	// nothing (DESIGN.md: TCC is first-class state).
+	ScanReachedNothing bool
+	Deferring          bool
 }
 
 // Scheduler runs the indexing loop. Construct with New, drive with Run.
@@ -297,6 +308,13 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			s.log.Info("indexing scheduler stopped")
 			return nil
 		}
+		if next <= 0 {
+			// A policy with no interval — a zero-value PowerPolicy from a
+			// future power adapter — would otherwise reset the timer to fire
+			// immediately, spinning this loop on a full core. Config validates
+			// intervals as positive, so this only ever catches a caller bug.
+			next = deferRecheckInterval
+		}
 		// Reset after the cycle rather than on a fixed schedule: that is what
 		// makes the overrun policy Prefer Old (see the package comment) and
 		// what lets a power-state change take effect on the next interval
@@ -364,6 +382,20 @@ func (s *Scheduler) scan(ctx context.Context) {
 		}
 		s.log.Warn("scan could not read a path", "path", pe.Path, "error", pe.Err)
 	}
+	reached := res.Discovered + res.Unchanged + res.Renamed + res.Dataless
+	if len(res.PathErrors) > 0 && reached == 0 {
+		// Every root failed and nothing was reachable. That is a permissions
+		// problem — almost always a missing or revoked Full Disk Access grant
+		// — not a successful scan of an empty machine, and it is the one scan
+		// outcome that leaves the daemon looking healthy while indexing
+		// nothing at all. The removed one-shot command exited non-zero here;
+		// a daemon cannot, so it says so at Error and keeps the reason where
+		// `bsearch status` (#16) will find it (CLAUDE.md: EPERM on scan is
+		// first-class state, never a silent skip).
+		s.log.Error("scan reached no files at all — check Full Disk Access for bsearch in System Settings",
+			"path_errors", len(res.PathErrors))
+	}
+
 	s.log.Info("scan complete",
 		"discovered", res.Discovered,
 		"unchanged", res.Unchanged,
@@ -375,6 +407,7 @@ func (s *Scheduler) scan(ctx context.Context) {
 	s.mark(func(snap *Snapshot) {
 		snap.LastScan = s.now()
 		snap.ScanErrs = len(res.PathErrors)
+		snap.ScanReachedNothing = len(res.PathErrors) > 0 && reached == 0
 	})
 }
 
@@ -388,6 +421,7 @@ func (s *Scheduler) scan(ctx context.Context) {
 func (s *Scheduler) drain(ctx context.Context) {
 	seen := make(map[string]struct{})
 	dims, prepared := 0, false
+	skipped := 0
 
 	for {
 		if ctx.Err() != nil {
@@ -433,7 +467,7 @@ func (s *Scheduler) drain(ctx context.Context) {
 		// confirm there is still nothing to embed would keep a model resident
 		// and a laptop awake for no reason.
 		if len(fresh) == 0 && s.sweptDims {
-			s.gate(GateIdle, false)
+			s.gate(idleGate(skipped), false)
 			return
 		}
 
@@ -459,12 +493,14 @@ func (s *Scheduler) drain(ctx context.Context) {
 			}
 		}
 		if len(fresh) == 0 {
-			s.gate(GateIdle, false)
+			s.gate(idleGate(skipped), false)
 			return
 		}
 
 		sv := s.indexer.StageVersions(dims)
-		if !s.process(ctx, fresh, sv, seen) {
+		n, ok := s.process(ctx, fresh, sv, seen)
+		skipped += n
+		if !ok {
 			return
 		}
 		s.gate(GateNone, false)
@@ -519,26 +555,27 @@ func (s *Scheduler) sweep(ctx context.Context, current map[string]string) bool {
 	return true
 }
 
-// process works one batch, reporting whether the drain should continue. Each
-// document is recorded in seen as it is handled, which is what bounds the
-// drain to one pass per document however the outcome leaves the row.
-func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[string]string, seen map[string]struct{}) bool {
+// process works one batch, reporting how many documents were unreadable and
+// whether the drain should continue. Each document is recorded in seen as it
+// is handled, which is what bounds the drain to one pass per document however
+// the outcome leaves the row.
+func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[string]string, seen map[string]struct{}) (skipped int, ok bool) {
 	for _, doc := range docs {
 		if ctx.Err() != nil {
-			return false
+			return skipped, false
 		}
 		seen[doc.ID] = struct{}{}
 		res, err := s.indexer.ProcessDocument(ctx, doc, sv)
 		if err != nil {
 			if ctx.Err() != nil {
-				return false
+				return skipped, false
 			}
 			// The machinery failed, not the document: a store write that did
 			// not land says nothing about this file, so nothing is charged.
 			s.log.Error("indexing failed", "path", doc.Path, "error", err)
 			s.gate(GateStoreFail, false)
 			s.mark(func(snap *Snapshot) { snap.LastError = err.Error() })
-			return false
+			return skipped, false
 		}
 
 		switch res.Outcome {
@@ -556,14 +593,30 @@ func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[
 			// on purpose: restoring the file or granting access must take
 			// effect without the file having to change.
 			s.log.Debug("document unreadable, leaving it alone", "path", doc.Path, "error", res.Err)
+			skipped++
 			s.mark(func(snap *Snapshot) { snap.Skipped++ })
 		case pipeline.OutcomeTransient:
 			if !s.retry(ctx, doc, res.Err) {
-				return false
+				return skipped, false
 			}
 		}
 	}
-	return true
+	return skipped, true
+}
+
+// idleGate names why a drain stopped with nothing left to claim.
+//
+// "Idle" and "everything left is unreadable" look identical from the queue's
+// side — a skipped document is deliberately left untouched, so it stays
+// claimable and simply falls out of this drain's seen set — but they are
+// opposite situations for the user. One means the corpus is indexed; the
+// other means files are being passed over every cycle, which is what a
+// revoked Full Disk Access grant looks like from here.
+func idleGate(skipped int) string {
+	if skipped > 0 {
+		return GateUnreadable
+	}
+	return GateIdle
 }
 
 // retry decides what a transient failure means, and reports whether the drain
@@ -598,6 +651,19 @@ func (s *Scheduler) retry(ctx context.Context, doc domain.Document, cause error)
 	if attempts >= s.maxAttempts {
 		s.log.Warn("giving up on a document after repeated failures",
 			"path", doc.Path, "attempts", attempts, "error", cause)
+		// Record the final count before flipping the state, so the row does
+		// not end up claiming "after 5 attempts" in last_error while the
+		// attempts column still reads 4 — MarkFailed writes state and reason
+		// only. The next_retry_at this also sets is inert once the second
+		// write lands: the row is terminal, so dispatch stops looking at it,
+		// and anything that revives it (a file change, a stale sweep) clears
+		// it. A crash between the two writes leaves the row claimable with
+		// attempts already at the cap, so it is re-claimed and goes terminal
+		// one attempt later — self-correcting, and the reason collapsing this
+		// into one transaction is not worth a new store method.
+		if err := s.queue.Reschedule(ctx, doc.ID, attempts, s.now(), reason); err != nil {
+			return s.storeFailure(ctx, "record final attempt", err)
+		}
 		if err := s.queue.MarkFailed(ctx, doc.ID,
 			fmt.Sprintf("%s (after %d attempts)", reason, attempts)); err != nil {
 			return s.storeFailure(ctx, "mark failed", err)

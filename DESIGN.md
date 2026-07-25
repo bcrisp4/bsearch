@@ -225,7 +225,7 @@ The queue is a SQLite-backed state machine — no external queue infrastructure.
   rows and the same inference server. Nothing is lost: the queue is durable
   and the next cycle re-reads it.
 - **Stated limits (ADR 0011).** Batch 32 documents; 5 attempts; backoff base
-  30 s, cap 15 min; scan every 15 min, independent of the drain interval.
+  30 s, cap 15 min; scan every 5 min, independent of the drain interval.
   Queue **depth is deliberately unbounded** — the queue is the catalog, one
   row per file, bounded by the corpus, with no submission path that can
   inflate it.

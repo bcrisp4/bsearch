@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -617,11 +618,18 @@ func TestRepeatedTransientFailuresEventuallyGiveUp(t *testing.T) {
 
 		q.mu.Lock()
 		failures := append([]failure(nil), q.failures...)
-		reschedules := len(q.reschedules)
+		reschedules := append([]rescheduled(nil), q.reschedules...)
 		q.mu.Unlock()
 
-		if reschedules != 2 {
-			t.Errorf("reschedules = %d, want 2 before the cap of 3", reschedules)
+		// Two retries, then a third write recording the final count before
+		// the row goes terminal.
+		if len(reschedules) != 3 {
+			t.Fatalf("reschedules = %d, want 3 (two retries plus the final count)", len(reschedules))
+		}
+		for i, got := range reschedules {
+			if want := i + 1; got.attempts != want {
+				t.Errorf("reschedule[%d] attempts = %d, want %d", i, got.attempts, want)
+			}
 		}
 		if len(failures) != 1 {
 			t.Fatalf("failures = %d, want 1", len(failures))
@@ -629,8 +637,13 @@ func TestRepeatedTransientFailuresEventuallyGiveUp(t *testing.T) {
 		if failures[0].docID != "d_1" {
 			t.Errorf("failed %q, want d_1", failures[0].docID)
 		}
-		if failures[0].reason == "" {
-			t.Error("gave up with no reason recorded")
+		// The reason names the attempt count, and the column has to agree
+		// with it — otherwise a failed row reads as barely tried.
+		if !strings.Contains(failures[0].reason, "after 3 attempts") {
+			t.Errorf("failure reason = %q, want it to name the attempt count", failures[0].reason)
+		}
+		if got := q.snapshotDoc("d_1").Attempts; got != 3 {
+			t.Errorf("recorded attempts = %d, want 3 to match the reason", got)
 		}
 	})
 }
@@ -728,6 +741,67 @@ func TestSkippedDocumentsDoNotSpinTheDrain(t *testing.T) {
 		}
 		if got := s.Snapshot().Skipped; got != 1 {
 			t.Errorf("snapshot Skipped = %d, want 1", got)
+		}
+		// A drain that ran out of *readable* documents is not an indexed
+		// corpus. Reporting it as idle would describe a daemon quietly
+		// passing over files every cycle as finished.
+		if got := s.Snapshot().Gate; got != GateUnreadable {
+			t.Errorf("gate = %q, want %q", got, GateUnreadable)
+		}
+	})
+}
+
+// A scan that hits errors and reaches nothing at all is the signature of a
+// missing Full Disk Access grant. It is the one outcome where the daemon
+// looks perfectly healthy while indexing nothing, so it must be recorded —
+// the removed one-shot command exited non-zero here, and a daemon cannot.
+func TestScanReachingNoFilesIsRecorded(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue()
+		ix := newFakeIndexer()
+		sc := &fakeScanner{result: discovery.Result{
+			PathErrors: []discovery.PathError{
+				{Path: "/Users/ben/Documents", Err: errors.New("operation not permitted")},
+				{Path: "/Users/ben/Desktop", Err: errors.New("operation not permitted")},
+			},
+		}}
+		s := newScheduler(t, q, ix, sc, nil)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go func() { _ = s.Run(ctx) }()
+		synctest.Wait()
+
+		snap := s.Snapshot()
+		if !snap.ScanReachedNothing {
+			t.Error("ScanReachedNothing = false; status would report a healthy daemon that indexes nothing")
+		}
+		if snap.ScanErrs != 2 {
+			t.Errorf("ScanErrs = %d, want 2", snap.ScanErrs)
+		}
+	})
+}
+
+// A scan that reaches files is not a permissions failure, even when some
+// paths errored — one unreadable directory must not look like a revoked
+// grant.
+func TestPartialScanErrorsAreNotAPermissionsFailure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue()
+		ix := newFakeIndexer()
+		sc := &fakeScanner{result: discovery.Result{
+			Unchanged:  40,
+			PathErrors: []discovery.PathError{{Path: "/x", Err: errors.New("operation not permitted")}},
+		}}
+		s := newScheduler(t, q, ix, sc, nil)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go func() { _ = s.Run(ctx) }()
+		synctest.Wait()
+
+		if s.Snapshot().ScanReachedNothing {
+			t.Error("ScanReachedNothing = true despite the scan reaching 40 files")
 		}
 	})
 }

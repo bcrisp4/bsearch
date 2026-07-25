@@ -183,7 +183,10 @@ func TestUpsertDocumentDisplacesPathOwner(t *testing.T) {
 	}
 }
 
-func TestUpsertDocumentResetsRetryColumns(t *testing.T) {
+// Discovery upserts with state=discovered when a file is new or its content
+// changed, and that is what earns a fresh retry budget: the previous failures
+// were about content that no longer exists.
+func TestUpsertDocumentResetsRetryColumnsForAChangedFile(t *testing.T) {
 	db := openTestDB(t)
 	store := NewStore(db)
 	ctx := context.Background()
@@ -196,8 +199,9 @@ func TestUpsertDocumentResetsRetryColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// File changed → re-upsert must reset the retry state.
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+	changed := testDoc("d_1", "/notes/a.md")
+	changed.State = domain.DocStateDiscovered
+	if _, err := store.UpsertDocument(ctx, changed, nil); err != nil {
 		t.Fatalf("re-upsert: %v", err)
 	}
 	var attempts int
@@ -210,6 +214,84 @@ func TestUpsertDocumentResetsRetryColumns(t *testing.T) {
 	if attempts != 0 || nextRetry.Valid || lastError.Valid {
 		t.Errorf("retry columns not reset: attempts=%d next_retry=%v last_error=%v",
 			attempts, nextRetry, lastError)
+	}
+}
+
+// The pipeline commits chunks through UpsertDocument with state=chunked
+// *before* the embed network call. Resetting the retry columns there would
+// park the row at attempts=0 for the whole duration of that call, so a crash
+// in the window would hand the document a fresh budget — and a document that
+// can never be embedded would never reach the attempt cap.
+func TestUpsertDocumentKeepsRetryColumnsMidPipeline(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if _, err := db.Writer().Exec(
+		"UPDATE documents SET attempts = 3, next_retry_at = 123, last_error = 'embed: boom' WHERE id = 'd_1'"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A retry: same content, re-chunked and committed ahead of embedding.
+	chunked := testDoc("d_1", "/notes/a.md")
+	chunked.State = domain.DocStateChunked
+	if _, err := store.UpsertDocument(ctx, chunked, testChunks("d_1", "hello")); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+
+	var attempts int
+	var nextRetry sql.NullInt64
+	var lastError sql.NullString
+	if err := db.Reader().QueryRow(
+		"SELECT attempts, next_retry_at, last_error FROM documents WHERE id = 'd_1'").
+		Scan(&attempts, &nextRetry, &lastError); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want it preserved at 3 across the pipeline's commit", attempts)
+	}
+	if !nextRetry.Valid || nextRetry.Int64 != 123 {
+		t.Errorf("next_retry_at = %v, want it preserved", nextRetry)
+	}
+	if lastError.String != "embed: boom" {
+		t.Errorf("last_error = %q, want it preserved", lastError.String)
+	}
+}
+
+// Recording a permanent failure must not wipe the count that justified it,
+// or a failed row reads as though it were never tried.
+func TestUpsertDocumentKeepsRetryColumnsWhenRecordingFailure(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if _, err := db.Writer().Exec(
+		"UPDATE documents SET attempts = 4 WHERE id = 'd_1'"); err != nil {
+		t.Fatal(err)
+	}
+
+	failed := testDoc("d_1", "/notes/a.md")
+	failed.State = domain.DocStateFailed
+	if _, err := store.UpsertDocument(ctx, failed, nil); err != nil {
+		t.Fatalf("upsert failed doc: %v", err)
+	}
+	if err := store.MarkFailed(ctx, "d_1", "embed: poison (after 5 attempts)"); err != nil {
+		t.Fatalf("MarkFailed: %v", err)
+	}
+
+	var attempts int
+	if err := db.Reader().QueryRow(
+		"SELECT attempts FROM documents WHERE id = 'd_1'").Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 4 {
+		t.Errorf("attempts = %d, want the count that led to the failure preserved", attempts)
 	}
 }
 
@@ -426,8 +508,10 @@ func TestMarkFailed(t *testing.T) {
 		t.Errorf("state=%q last_error=%q", state, lastErr)
 	}
 
-	// A file change (re-upsert) clears the failure.
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+	// A file change (discovery re-upserting as discovered) clears the failure.
+	changed := testDoc("d_1", "/notes/a.md")
+	changed.State = domain.DocStateDiscovered
+	if _, err := store.UpsertDocument(ctx, changed, nil); err != nil {
 		t.Fatalf("re-upsert: %v", err)
 	}
 	var cleared sql.NullString

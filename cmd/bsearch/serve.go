@@ -89,14 +89,6 @@ func runServe(args []string, out io.Writer) error {
 		}
 	}()
 
-	// The indexing side. It is set up defensively: every way it can fail to
-	// start leaves the daemon serving /v1/status, because a LaunchAgent that
-	// exits non-zero is a crash-loop with nothing able to explain itself, and
-	// "why is nothing being indexed" is exactly the question status exists to
-	// answer.
-	sched, closeIndexer := newScheduler(cfg, opts.Embedder, *dbPath, log)
-	defer closeIndexer()
-
 	ln, err := socket.Listen(*socketPath, *lockPath)
 	if err != nil {
 		if errors.Is(err, socket.ErrAlreadyRunning) {
@@ -107,6 +99,19 @@ func runServe(args []string, out io.Writer) error {
 		return err
 	}
 	defer ln.Close() //nolint:errcheck // Serve's shutdown closes it; this is the failure path
+
+	// The indexing side, built only once the single-instance lock is held:
+	// opening the writer creates and migrates the index (ADR 0012), and a
+	// second `bsearch serve` must not take the write lock on a running
+	// daemon's database — or apply a migration underneath it — before it
+	// discovers it lost the race.
+	//
+	// It is set up defensively: every way it can fail to start leaves the
+	// daemon serving /v1/status, because a LaunchAgent that exits non-zero is
+	// a crash-loop with nothing able to explain itself, and "why is nothing
+	// being indexed" is exactly the question status exists to answer.
+	sched, closeIndexer := newScheduler(cfg, opts.Embedder, *dbPath, log)
+	defer closeIndexer()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

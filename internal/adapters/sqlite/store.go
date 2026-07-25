@@ -45,9 +45,20 @@ func (s *Store) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 // detection) is discovery's policy; by the time this is called, it has
 // been decided.
 //
-// An upsert also resets the retry columns (attempts, next_retry_at,
-// last_error): a changed file starts fresh (DESIGN.md: "A file change
-// resets failed").
+// An upsert resets the retry columns (attempts, next_retry_at, last_error)
+// only when the incoming state is `discovered`, which is discovery's marker
+// for content that is new or has changed on disk — the case DESIGN.md's "A
+// file change resets failed" is about.
+//
+// Every other state leaves them alone, and that distinction is load-bearing
+// rather than tidiness. The pipeline commits chunks through this method with
+// state=chunked *before* the embed network call, so an unconditional reset
+// would park the row at attempts=0 for the whole duration of that call: a
+// crash in the window would hand the document a fresh budget on restart, and
+// a document that can never be embedded would never reach the attempt cap.
+// The scheduler restores the count from the claimed Document afterwards, so
+// the normal path was always correct — it was only the crash window that was
+// not.
 func (s *Store) UpsertDocument(ctx context.Context, doc domain.Document, chunks []domain.Chunk) ([]int64, error) {
 	stageJSON, err := marshalStageVersions(doc.StageVersions)
 	if err != nil {
@@ -72,6 +83,9 @@ func (s *Store) UpsertDocument(ctx context.Context, doc domain.Document, chunks 
 		}
 
 		now := time.Now().Unix()
+		// Bound rather than compared in SQL against a literal, so the rule
+		// reads off domain.DocStateDiscovered and cannot drift from it.
+		freshFile := doc.State == domain.DocStateDiscovered
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO documents (id, path, content_hash, size, mtime, state, stage_versions, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -82,12 +96,13 @@ func (s *Store) UpsertDocument(ctx context.Context, doc domain.Document, chunks 
 				mtime = excluded.mtime,
 				state = excluded.state,
 				stage_versions = excluded.stage_versions,
-				attempts = 0,
-				next_retry_at = NULL,
-				last_error = NULL,
+				attempts = CASE WHEN ? THEN 0 ELSE documents.attempts END,
+				next_retry_at = CASE WHEN ? THEN NULL ELSE documents.next_retry_at END,
+				last_error = CASE WHEN ? THEN NULL ELSE documents.last_error END,
 				updated_at = excluded.updated_at`,
 			doc.ID, doc.Path, doc.ContentHash, doc.Size, doc.MTime.UnixNano(),
-			string(doc.State), stageJSON, now, now); err != nil {
+			string(doc.State), stageJSON, now, now,
+			freshFile, freshFile, freshFile); err != nil {
 			return fmt.Errorf("upsert document %s: %w", doc.ID, err)
 		}
 
