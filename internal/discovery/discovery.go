@@ -1,11 +1,17 @@
-// Package discovery keeps the catalog's view of the filesystem current: new
-// and changed files become state=discovered rows for the pipeline, unchanged
-// files are skipped cheaply (size/mtime, then content hash), renamed files
-// keep their document IDs, and deleted files are purged. Per-path problems
-// (permission errors — the macOS TCC constraint — unreadable files, missing
-// roots) are collected in the result, never silently swallowed. See
-// DESIGN.md (Indexing pipeline and queue; Change detection; Data retention;
-// doc_id Closed issue).
+// Package discovery keeps the catalog's view of the filesystem current: it
+// owns the documents table (ADR 0015). New and changed files become
+// documents rows pointing at their content hash — creating the content row
+// at state=discovered when the hash is new — unchanged files are skipped
+// cheaply (size/mtime, then content hash), and deleted files are purged.
+// Per-path problems (permission errors — the macOS TCC constraint —
+// unreadable files, missing roots) are collected in the result, never
+// silently swallowed. See DESIGN.md (Indexing pipeline and queue; Identity:
+// path locates, content hash identifies; Data retention).
+//
+// There is deliberately no rename detection. A rename is a documents row
+// appearing at a new path with the same hash while the old path purges;
+// chunks, vectors and summaries were never addressed by path, so nothing
+// needs repointing and no identity needs preserving (ADR 0015).
 //
 // Two entry points, one body of rules. Scan walks every include root; it is
 // the periodic backstop, and the only thing that notices a file nothing told
@@ -21,7 +27,6 @@ package discovery
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -70,15 +75,18 @@ type PathError struct {
 
 // Result summarises one scan.
 type Result struct {
-	// Discovered counts new or content-changed files upserted as
-	// state=discovered (renames included).
+	// Discovered counts new or content-changed files upserted (the content
+	// row is created at state=discovered when the hash is new to the
+	// catalog).
 	Discovered int
 	// Unchanged counts files skipped because the catalog is current
 	// (size/mtime match, or content hash match after a touch).
 	Unchanged int
-	// Renamed counts moved files whose document ID was preserved
-	// (a subset of Discovered).
-	Renamed int
+	// Changed counts known paths re-pointed to a different content hash —
+	// an edit, not a new file (a subset of Discovered). The orphan sweep
+	// keys on it: re-pointing a path is one of the two ways content is
+	// orphaned, deletion being the other.
+	Changed int
 	// Dataless counts iCloud placeholder files skipped — indexing must
 	// never trigger cloud downloads.
 	Dataless int
@@ -136,14 +144,13 @@ func (s *Scanner) Scan(ctx context.Context) (Result, error) {
 // a walk would give it. As with Scan, the error return is for fatal problems
 // only.
 //
-// The two passes are not a tidiness: their order is what makes a rename keep
-// its document ID. A move arrives as the old path and the new path in one
-// batch, and rename detection works by finding a catalog row whose content
-// hash matches and whose path is gone from disk. Reconciling the paths that
-// exist first lets the new path claim the old row; only then are the
-// still-missing paths considered for deletion, by which point the renamed
-// row has already moved out from under the old path and is not purged. In
-// the other order every rename would purge and re-mint (DESIGN.md: doc_id).
+// The two passes — paths that exist first, vanished paths second — order
+// the work so purge's re-stat guard sees the world settled: a rename
+// arrives as the old path and the new path in one batch, and reconciling
+// the surviving paths first means the second pass stats the old path
+// against a filesystem that is done moving. Nothing here preserves identity
+// across the move any more (ADR 0015 retired rename detection); the order
+// is purely about not purging on a stale view.
 func (s *Scanner) ScanPaths(ctx context.Context, paths []string) (Result, error) {
 	var res Result
 	// Root-resolution problems are the walk's to report, not this batch's:
@@ -400,7 +407,10 @@ func (s *Scanner) processFile(ctx context.Context, path string, info fs.FileInfo
 	}
 
 	// Cheap check: size and mtime unchanged → catalog is current, no read.
-	if known && existing.Size == info.Size() &&
+	// Only for rows with content: an unread row (NULL hash) must be re-tried
+	// every scan, so that granting Full Disk Access clears a denial without
+	// the file having to change.
+	if known && existing.ContentHash != "" && existing.Size == info.Size() &&
 		existing.MTime.UnixNano() == info.ModTime().UnixNano() {
 		res.Unchanged++
 		return nil
@@ -412,101 +422,42 @@ func (s *Scanner) processFile(ctx context.Context, path string, info fs.FileInfo
 		return nil //nolint:nilerr // recorded in PathErrors; keep walking
 	}
 
-	// Touched but content-identical → refresh stat, keep everything else.
+	// Touched but content-identical → refresh stat. The same upsert as
+	// below — a documents row carries nothing else worth protecting — but
+	// counted as unchanged, because for the user nothing happened.
 	if known && existing.ContentHash == hash {
-		switch err := s.store.UpdateDocumentStat(ctx, existing.ID, info.Size(), info.ModTime()); {
-		case errors.Is(err, domain.ErrDocumentGone):
-			// The row was purged between the read above and this write.
-			//
-			// That used to be ordinary: the watcher's reconcile ran on its own
-			// goroutine and could see this path deleted while the walk was
-			// mid-stride over it. Since ADR 0014 both run on the scheduler
-			// goroutine, so nothing can purge between the two — reaching here
-			// means the single-writer invariant broke, and swallowing it with
-			// a bare `return nil` would absorb that silently: no log, no
-			// PathError, and the document simply stops being counted.
-			//
-			// Recorded as a path error instead, which is the channel the rest
-			// of this function already uses for "something was wrong with this
-			// file" and which `bsearch status` surfaces (CLAUDE.md: never a
-			// silent skip). Still not fatal: one document is not worth failing
-			// a walk over, and the next pass rediscovers the file if it is
-			// really still there.
-			res.PathErrors = append(res.PathErrors, PathError{Path: path, Err: err})
-			return nil //nolint:nilerr // recorded in PathErrors; keep walking
-		case err != nil:
+		if err := s.upsert(ctx, domain.Document{
+			Path: path, ContentHash: hash,
+			Size: info.Size(), MTime: info.ModTime(),
+		}); err != nil {
 			return err
 		}
 		res.Unchanged++
 		return nil
 	}
 
-	id, renamed := existing.ID, false
-	if !known {
-		if id, renamed, err = s.resolveID(ctx, hash, res); err != nil {
-			return err
-		}
-	}
-
-	doc := domain.Document{
-		ID:          id,
-		Path:        path,
-		ContentHash: hash,
-		Size:        info.Size(),
-		MTime:       info.ModTime(),
-		State:       domain.DocStateDiscovered,
-	}
-	if _, err := s.store.UpsertDocument(ctx, doc, nil); err != nil {
+	// New path, or a known path re-pointed to different bytes. The upsert
+	// creates the content row at discovered when the hash is new; when it
+	// is not — a duplicate, or a file restored to prior content — there is
+	// simply no work to schedule, structurally (ADR 0015).
+	if err := s.upsert(ctx, domain.Document{
+		Path: path, ContentHash: hash,
+		Size: info.Size(), MTime: info.ModTime(),
+	}); err != nil {
 		return err
 	}
 	res.Discovered++
-	if renamed {
-		res.Renamed++
+	if known && existing.ContentHash != "" && existing.ContentHash != hash {
+		res.Changed++
 	}
 	return nil
 }
 
-// resolveID decides the document ID for a path not in the catalog:
-// rename detection per DESIGN.md's doc_id Closed issue. A catalog row
-// with the same content hash whose path is gone from disk is a rename —
-// reuse its ID. Anything ambiguous (old path still exists = copy; several
-// candidate rows; stat failure on the old path) mints a fresh ID: prefer
-// id churn over a false merge.
-func (s *Scanner) resolveID(ctx context.Context, hash string, res *Result) (id string, renamed bool, err error) {
-	candidates, err := s.store.GetByContentHash(ctx, hash)
-	if err != nil {
-		return "", false, err
-	}
-	var gone []domain.Document
-	for _, c := range candidates {
-		switch _, statErr := os.Lstat(c.Path); {
-		case statErr == nil:
-			// Old path still exists: a copy, not a rename.
-		case errors.Is(statErr, fs.ErrNotExist):
-			gone = append(gone, c)
-		default:
-			// Can't verify the old path is gone (e.g. TCC EPERM):
-			// counted as still existing — prefer id churn over a false
-			// merge — but recorded, or the churn is undiagnosable.
-			res.PathErrors = append(res.PathErrors, PathError{Path: c.Path, Err: statErr})
-		}
-	}
-	if len(gone) == 1 {
-		return gone[0].ID, true, nil
-	}
-	id, err = newDocID()
-	return id, false, err
-}
-
-// newDocID mints an opaque surrogate document ID: "d_" + 16 hex chars
-// (64 random bits — collisions negligible at the 100k-doc target, which
-// matters because the store's upsert would silently merge on collision).
-func newDocID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("mint doc id: %w", err)
-	}
-	return "d_" + hex.EncodeToString(b[:]), nil
+// upsert writes one document through the batch port. One-document batches
+// for now: real buffering across the scan is issue #34's half of #77,
+// landing separately.
+func (s *Scanner) upsert(ctx context.Context, doc domain.Document) error {
+	return s.store.UpsertDocuments(ctx, []domain.Document{doc})
 }
 
 // hashFile returns the lowercase hex sha256 of the file contents.

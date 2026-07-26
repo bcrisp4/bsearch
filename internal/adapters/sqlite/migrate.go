@@ -11,54 +11,69 @@ import (
 // migrations: the index is derived data and drop-and-reindex is the fallback
 // of last resort (DESIGN.md: Storage).
 //
+// ADR 0015 replaced this list wholesale rather than appending: the identity
+// split was executed as drop-and-reindex while the project was pre-0.1.0,
+// so the old shape is unreachable and re-deriving it migration-by-migration
+// would reject nothing and document nothing. A database recording a higher
+// version than this build carries is from before the rewrite (or from a
+// newer build) and is refused by migrate() with the remedy. Higher is not
+// enough: the replacement also shrank the list, so an old-shape database
+// can record the same version number as the rebuilt schema —
+// checkNotPreRewrite probes for the content table to refuse those too.
+//
 // Static tables only. Vector tables are per-embedding-model and created
 // lazily by the adapter once model+dims are known (see vec.go): vec0
 // dimensions are fixed at CREATE, and the model is a config/M2 decision, so
 // no static migration can create them.
 var migrations = []string{
-	// v1: catalog + chunks + summaries + meta (DESIGN.md: queue state
-	// machine, chunking, pyramid summaries, pipeline metadata).
+	// v1: catalog + content queue + chunks + summaries + meta (ADR 0015,
+	// DESIGN.md: Identity — path locates, content hash identifies; Queue).
+	//
+	// documents mirrors the filesystem and keys on path; content is the work
+	// queue and everything derived from the bytes, keyed on the content
+	// hash. There is no doc_id.
 	`
-CREATE TABLE documents (
-	id             TEXT PRIMARY KEY,
-	path           TEXT NOT NULL UNIQUE,
-	content_hash   TEXT NOT NULL,
-	size           INTEGER NOT NULL,
-	mtime          INTEGER NOT NULL, -- unix nanoseconds
+CREATE TABLE content (
+	content_hash   TEXT PRIMARY KEY,
 	state          TEXT NOT NULL CHECK (state IN
-		('discovered','converted','chunked','embedded','indexed','failed','deleted')),
+		('discovered','converted','chunked','embedded','indexed','failed')),
+	stage_versions TEXT NOT NULL DEFAULT '{}', -- JSON, per-stage versions
 	attempts       INTEGER NOT NULL DEFAULT 0,
 	next_retry_at  INTEGER,          -- unix seconds; NULL = not scheduled
 	last_error     TEXT,
-	stage_versions TEXT NOT NULL DEFAULT '{}', -- JSON, per-stage versions
 	created_at     INTEGER NOT NULL, -- unix seconds
 	updated_at     INTEGER NOT NULL  -- unix seconds
 ) STRICT;
 
--- Dispatch: SELECT ... WHERE state NOT IN (...) AND next_retry_at <= now.
-CREATE INDEX idx_documents_dispatch ON documents (state, next_retry_at);
-
--- Rename detection: hash match against rows whose path is gone.
-CREATE INDEX idx_documents_content_hash ON documents (content_hash);
+CREATE TABLE documents (
+	path          TEXT PRIMARY KEY,
+	content_hash  TEXT REFERENCES content(content_hash),
+	unread_reason TEXT CHECK (unread_reason IN ('denied','dataless','io_error')),
+	size          INTEGER NOT NULL,
+	mtime         INTEGER NOT NULL,  -- unix nanoseconds
+	-- Exactly one: either we have the content, or we say why not.
+	CHECK ((content_hash IS NULL) <> (unread_reason IS NULL))
+) STRICT;
 
 CREATE TABLE chunks (
-	-- AUTOINCREMENT: chunk IDs key vec-table rowids, so a freed ID must
-	-- never be reused — a stale vector would silently attach to a new chunk.
+	-- AUTOINCREMENT: chunk IDs key vec-table rowids (and the future FTS5
+	-- external-content table), so a freed ID must never be reused — a stale
+	-- vector would silently attach to a new chunk.
 	id           INTEGER PRIMARY KEY AUTOINCREMENT,
-	doc_id       TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+	content_hash TEXT NOT NULL REFERENCES content(content_hash) ON DELETE CASCADE,
 	ordinal      INTEGER NOT NULL,
 	text         TEXT NOT NULL,
 	heading_path TEXT NOT NULL DEFAULT '',
 	byte_start   INTEGER NOT NULL,
 	byte_end     INTEGER NOT NULL,
-	UNIQUE (doc_id, ordinal) -- also serves as the doc_id lookup index
+	UNIQUE (content_hash, ordinal) -- also serves as the content_hash lookup index
 ) STRICT;
 
 CREATE TABLE summaries (
-	doc_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-	level  INTEGER NOT NULL CHECK (level IN (4, 16, 64)),
-	text   TEXT NOT NULL,
-	PRIMARY KEY (doc_id, level)
+	content_hash TEXT NOT NULL REFERENCES content(content_hash) ON DELETE CASCADE,
+	level        INTEGER NOT NULL CHECK (level IN (4, 16, 64)),
+	text         TEXT NOT NULL,
+	PRIMARY KEY (content_hash, level)
 ) STRICT;
 
 -- Versioned pipeline metadata: current vec generation, model descriptors,
@@ -67,28 +82,23 @@ CREATE TABLE meta (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 ) STRICT;
-`,
-	// v2: the claim index the scheduler actually uses (ADR 0011). v1's
-	// idx_documents_dispatch (state, next_retry_at) was never read: it leads
-	// on state, which the dispatch predicate only ever negates, and it carries
-	// every terminal row — so its size tracks the corpus while the work it
-	// serves tracks the backlog.
-	//
-	// The partial index inverts both. Terminal rows are absent from the
-	// B-tree entirely, so claim cost is bounded by the working set rather
-	// than by history, and inserting a row into a terminal state costs no
-	// index maintenance on the hot path. updated_at leads because it is what
-	// the claim orders by: forwards for the aging slice, backwards for the
-	// recency slice, one index serving both.
-	//
-	// The WHERE clause duplicates domain.TerminalDocStates. SQLite requires a
-	// literal here, so the two are kept honest by a test rather than by
-	// construction.
-	`
-DROP INDEX idx_documents_dispatch;
 
-CREATE INDEX idx_documents_queue ON documents (updated_at)
-	WHERE state NOT IN ('indexed', 'failed', 'deleted');
+-- The claim index (ADR 0011). Partial: terminal rows are absent from the
+-- B-tree entirely, so claim cost is bounded by the working set rather than
+-- by history, and flipping a row terminal costs no index maintenance on
+-- the hot path. updated_at leads because it is what the claim orders by:
+-- forwards for the aging slice, backwards for the recency slice, one index
+-- serving both.
+--
+-- The WHERE clause duplicates domain.TerminalContentStates. SQLite
+-- requires a literal here, so the two are kept honest by a test rather
+-- than by construction.
+CREATE INDEX idx_content_queue ON content (updated_at)
+	WHERE state NOT IN ('indexed', 'failed');
+
+-- The join key for search-result assembly, GetWork's primary-path pick,
+-- and the orphan sweep's NOT EXISTS probe.
+CREATE INDEX idx_documents_content ON documents (content_hash);
 `,
 }
 
@@ -112,13 +122,49 @@ func checkSchema(reader *sql.DB) error {
 		return fmt.Errorf("index schema is version %d but this build expects %d — restart the bsearch daemon, which migrates the index at startup",
 			current, schemaVersion)
 	case current > schemaVersion:
-		return fmt.Errorf("index schema is version %d, newer than this build supports (%d) — upgrade bsearch",
-			current, schemaVersion)
+		return fmt.Errorf("index schema is version %d, newer than this build supports (%d) — %s", current, schemaVersion, schemaRemedy)
+	}
+	return checkNotPreRewrite(reader, current)
+}
+
+// checkNotPreRewrite refuses a database from before the ADR 0015 rebuild.
+// Replacing the migration list wholesale reset the version count, so an
+// old-shape database can record the very version number this build carries
+// — the version comparison accepts it and every later query dies on a raw
+// "no such table" instead of the remedy. The content table is the
+// discriminator: the old shape never had one, and this build creates it in
+// the same transaction that records version 1, so any recorded version
+// without it is pre-rewrite.
+func checkNotPreRewrite(db *sql.DB, current int) error {
+	if current == 0 {
+		return nil // nothing recorded yet, nothing to probe
+	}
+	var n int
+	if err := db.QueryRow(
+		"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'content'").Scan(&n); err != nil {
+		return fmt.Errorf("probe for the content table: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("index schema records version %d but has no content table, so it is from before the ADR 0015 rebuild — there is no in-place migration; delete the index database and let the daemon reindex", current)
 	}
 	return nil
 }
 
+// schemaRemedy is what to do about a database recording a version this build
+// does not carry. The index is derived data, so the remedy is deletion, not
+// repair — but deleting is the user's call, never this code's: an old binary
+// pointed at a genuinely newer database must refuse loudly, not destroy it.
+const schemaRemedy = "if you have downgraded bsearch, upgrade it again; " +
+	"otherwise the schema was rebuilt (ADR 0015) and there is no in-place " +
+	"migration — delete the index database and let the daemon reindex"
+
 // migrate brings the schema up to the current version.
+//
+// A recorded version *above* what this build carries is an error, not a
+// no-op: the loop below would silently apply nothing and leave every query
+// running against a shape this code has never seen. That is exactly the
+// state an ADR 0015-style wholesale replacement leaves an old database in,
+// so it must be loud.
 func migrate(writer *sql.DB) error {
 	if _, err := writer.Exec(
 		`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -132,6 +178,13 @@ func migrate(writer *sql.DB) error {
 	if err := writer.QueryRow(
 		"SELECT coalesce(max(version), 0) FROM schema_migrations").Scan(&current); err != nil {
 		return fmt.Errorf("read schema version: %w", err)
+	}
+	if current > len(migrations) {
+		return fmt.Errorf("index schema is version %d, newer than this build supports (%d) — %s",
+			current, len(migrations), schemaRemedy)
+	}
+	if err := checkNotPreRewrite(writer, current); err != nil {
+		return err
 	}
 
 	for v := current + 1; v <= len(migrations); v++ {

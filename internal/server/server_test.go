@@ -138,7 +138,7 @@ func decodeError(t *testing.T, body []byte) (code, message string) {
 
 func TestSearchReturnsHits(t *testing.T) {
 	backend := &fakeBackend{resp: search.Response{
-		Hits:   []search.Hit{{DocID: "d_1", Path: "/notes/a.md", Distance: 0.25}},
+		Hits:   []search.Hit{{Path: "/notes/a.md", ContentHash: "sha256:h1", Distance: 0.25}},
 		TookMS: 12,
 	}}
 	ts := newTestServer(t, backend)
@@ -154,7 +154,7 @@ func TestSearchReturnsHits(t *testing.T) {
 	if err := json.Unmarshal(rep.body, &out); err != nil {
 		t.Fatalf("decode: %v (body %s)", err, rep.body)
 	}
-	if len(out.Hits) != 1 || out.Hits[0].DocID != "d_1" {
+	if len(out.Hits) != 1 || out.Hits[0].ContentHash != "sha256:h1" || out.Hits[0].Path != "/notes/a.md" {
 		t.Errorf("hits = %+v, want the backend's single hit", out.Hits)
 	}
 	if got := backend.request(); got.Query != "heat pump" || got.Limit != 5 {
@@ -269,10 +269,12 @@ func TestInternalErrorsAreNotLeaked(t *testing.T) {
 
 func TestStatusReportsDaemonAndIndex(t *testing.T) {
 	backend := &fakeBackend{status: server.IndexStatus{
-		Ready:     true,
-		Model:     "test-model",
-		Dims:      768,
-		Documents: map[string]int{"indexed": 192, "failed": 0},
+		Ready:   true,
+		Model:   "test-model",
+		Dims:    768,
+		Files:   200,
+		Content: map[string]int{"indexed": 192, "failed": 0},
+		Unread:  map[string]int{"denied": 1, "dataless": 0, "io_error": 0},
 	}}
 	ts := newTestServer(t, backend)
 
@@ -303,8 +305,14 @@ func TestStatusReportsDaemonAndIndex(t *testing.T) {
 	if !out.Index.Ready || out.Index.Model != "test-model" || out.Index.Dims != 768 {
 		t.Errorf("index = %+v, want the backend's report", out.Index)
 	}
-	if out.Index.Documents["indexed"] != 192 {
-		t.Errorf("documents = %v, want the backend's counts", out.Index.Documents)
+	if out.Index.Files != 200 {
+		t.Errorf("files = %d, want the backend's path count", out.Index.Files)
+	}
+	if out.Index.Content["indexed"] != 192 {
+		t.Errorf("content = %v, want the backend's counts", out.Index.Content)
+	}
+	if out.Index.Unread["denied"] != 1 {
+		t.Errorf("unread = %v, want the backend's counts", out.Index.Unread)
 	}
 }
 
@@ -339,11 +347,12 @@ func TestStatusAnswersWhenNothingIsIndexed(t *testing.T) {
 // draining queue from a stuck one.
 func TestStatusReportsQueueFailuresAndFootprint(t *testing.T) {
 	ts := newTestServer(t, &fakeBackend{status: server.IndexStatus{
-		Ready:     true,
-		Documents: map[string]int{"indexed": 192, "failed": 2},
-		Queue:     &server.QueueStatus{Pending: 37, Retrying: 2},
+		Ready:   true,
+		Files:   194,
+		Content: map[string]int{"indexed": 192, "failed": 2},
+		Queue:   &server.QueueStatus{Pending: 37, Retrying: 2},
 		Failures: []server.FailureGroup{
-			{Reason: "not valid UTF-8", Documents: 2, ExamplePath: "/tmp/legacy.txt"},
+			{Reason: "not valid UTF-8", Contents: 2, ExamplePath: "/tmp/legacy.txt"},
 		},
 		Disk: &server.DiskUsage{DBBytes: 400, WALBytes: 12, TotalBytes: 412},
 	}})
@@ -361,7 +370,7 @@ func TestStatusReportsQueueFailuresAndFootprint(t *testing.T) {
 	if out.Index.Queue == nil || *out.Index.Queue != (server.QueueStatus{Pending: 37, Retrying: 2}) {
 		t.Errorf("queue = %+v, want the backend's backlog", out.Index.Queue)
 	}
-	if len(out.Index.Failures) != 1 || out.Index.Failures[0].Documents != 2 {
+	if len(out.Index.Failures) != 1 || out.Index.Failures[0].Contents != 2 {
 		t.Errorf("failures = %+v, want the backend's one group", out.Index.Failures)
 	}
 	if out.Index.Disk == nil || out.Index.Disk.TotalBytes != 412 {

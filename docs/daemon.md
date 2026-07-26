@@ -94,14 +94,16 @@ bsearch v0.2.0 — running (pid 4312, up 1d 1h)
   db      ~/Library/Application Support/bsearch/bsearch.db  (412 MiB)
 
 Index
-  ready      yes
-  model      text-embedding-embeddinggemma-300m (768d)
-  documents  1,204 indexed · 2 failed · 0 deleted
+  ready     yes
+  model     text-embedding-embeddinggemma-300m (768d)
+  files     1,280
+  contents  1,204 indexed · 2 failed
+  unread    denied 2 · dataless 10 · io_error 0
 
 Queue
-  pending   37
+  pending   33
   retrying  2
-  states    discovered 35 · chunked 2
+  states    discovered 33 · chunked 2
 
 Indexing
   gate           idle — nothing to index
@@ -116,7 +118,14 @@ Failures (2)
 ```
 
 The two halves fail independently, which is the point. **Index** is what the
-database holds; **Indexing** is what the background loop is doing. A corpus
+database holds; **Indexing** is what the background loop is doing. The index
+section reports three populations and never conflates them (ADR 0015):
+*files* counts paths, *contents* counts distinct byte sequences by pipeline
+state — on a corpus with duplicate files it is legitimately smaller than
+*files* — and *unread* counts files whose bytes could not be obtained, by
+reason (only shown when there are any). On the wire these are `index.files`,
+`index.content`, and `index.unread`; failure groups count contents
+(`failures[].contents`). A corpus
 that is not being indexed says so under *gate* — "embedding endpoint
 unreachable", "deferred: on battery", "files could not be read — check Full
 Disk Access" — and *last progress* against *last cycle* is what separates a

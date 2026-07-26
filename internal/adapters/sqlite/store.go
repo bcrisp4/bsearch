@@ -19,7 +19,10 @@ type Store struct {
 // NewStore wraps an open DB in the storage ports.
 func NewStore(db *DB) *Store { return &Store{db: db} }
 
-var _ domain.DocumentStore = (*Store)(nil)
+var (
+	_ domain.DocumentStore = (*Store)(nil)
+	_ domain.ContentStore  = (*Store)(nil)
+)
 
 // withTx runs fn in one writer transaction (IMMEDIATE via the pool's
 // _txlock), committing on nil and rolling back on error.
@@ -35,127 +38,69 @@ func (s *Store) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-// UpsertDocument writes the document row and replaces its chunks in one
-// short IMMEDIATE transaction. Chunk IDs are returned in ordinal order.
+// UpsertDocuments writes the batch in one short IMMEDIATE transaction (#34):
+// content rows first (created at discovered if absent), then the documents
+// rows, wholesale.
 //
-// Semantics: the document owns its path. Any other catalog row still holding
-// the path (e.g. deleted-and-recreated file whose old row wasn't purged yet)
-// is displaced — removed with its chunks and vectors — instead of failing
-// the UNIQUE(path) constraint. Which document ID a path gets (rename/copy
-// detection) is discovery's policy; by the time this is called, it has
-// been decided.
+// The eager content insert is what keeps dispatch a plain predicate over
+// content rather than an anti-join (ADR 0015). A re-referenced hash splits
+// on whether the row is terminal: non-terminal content gets its updated_at
+// bumped, so an undo, a `git checkout`, or a copy of not-yet-indexed bytes
+// is hot in the claim's recency ordering rather than stranded behind the
+// aging slice; terminal content is never touched — a second identical file
+// schedules no work, and re-discovering indexed or failed bytes must not
+// drag them back through the pipeline.
 //
-// An upsert resets the retry columns (attempts, next_retry_at, last_error)
-// only when the incoming state is `discovered`, which is discovery's marker
-// for content that is new or has changed on disk — the case DESIGN.md's "A
-// file change resets failed" is about.
-//
-// Every other state leaves them alone, and that distinction is load-bearing
-// rather than tidiness. The pipeline commits chunks through this method with
-// state=chunked *before* the embed network call, so an unconditional reset
-// would park the row at attempts=0 for the whole duration of that call: a
-// crash in the window would hand the document a fresh budget on restart, and
-// a document that can never be embedded would never reach the attempt cap.
-// The scheduler restores the count from the claimed Document afterwards, so
-// the normal path was always correct — it was only the crash window that was
-// not.
-func (s *Store) UpsertDocument(ctx context.Context, doc domain.Document, chunks []domain.Chunk) ([]int64, error) {
-	stageJSON, err := marshalStageVersions(doc.StageVersions)
-	if err != nil {
-		return nil, err
+// The documents upsert replaces the row completely: a rename is the same
+// path-keyed write as an edit, an unread→readable transition is the hash
+// filling in as the reason NULLs out, and there are no queue columns here to
+// protect — the old UpsertDocument's displacement, liveness and retry-reset
+// machinery all died with the surrogate id.
+func (s *Store) UpsertDocuments(ctx context.Context, docs []domain.Document) error {
+	if len(docs) == 0 {
+		return nil
 	}
-
-	var ids []int64
-	err = s.withTx(ctx, func(tx *sql.Tx) error {
-		// Displace any other row holding this path.
-		var displaced string
-		err := tx.QueryRowContext(ctx,
-			"SELECT id FROM documents WHERE path = ? AND id != ?", doc.Path, doc.ID).Scan(&displaced)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			// Path free (or already ours).
-		case err != nil:
-			return fmt.Errorf("check path owner: %w", err)
-		default:
-			if err := deleteDocumentTx(ctx, tx, displaced); err != nil {
-				return fmt.Errorf("displace %s from %s: %w", displaced, doc.Path, err)
-			}
-		}
-
+	return s.withTx(ctx, func(tx *sql.Tx) error {
 		now := time.Now().Unix()
-		// Bound rather than compared in SQL against a literal, so the rule
-		// reads off domain.DocStateDiscovered and cannot drift from it.
-		freshFile := doc.State == domain.DocStateDiscovered
 
-		// Only discovery creates rows. A pipeline write lands seconds after
-		// the document was claimed, and in those seconds the file can be
-		// deleted and the watcher's reconcile can purge it — at which point
-		// this INSERT would put it back, and the pipeline would go on to
-		// embed and finalize a document whose file is gone. Nothing would
-		// ever notice: the row looks indexed, and search serves it.
-		if !freshFile {
-			var live int
-			switch err := tx.QueryRowContext(ctx,
-				"SELECT 1 FROM documents WHERE id = ?", doc.ID).Scan(&live); {
-			case errors.Is(err, sql.ErrNoRows):
-				return fmt.Errorf("upsert document %s (%s): %w", doc.ID, doc.Path, domain.ErrDocumentGone)
-			case err != nil:
-				return fmt.Errorf("check document %s still exists: %w", doc.ID, err)
-			}
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO documents (id, path, content_hash, size, mtime, state, stage_versions, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT (id) DO UPDATE SET
-				path = excluded.path,
-				content_hash = excluded.content_hash,
-				size = excluded.size,
-				mtime = excluded.mtime,
-				state = excluded.state,
-				stage_versions = excluded.stage_versions,
-				attempts = CASE WHEN ? THEN 0 ELSE documents.attempts END,
-				next_retry_at = CASE WHEN ? THEN NULL ELSE documents.next_retry_at END,
-				last_error = CASE WHEN ? THEN NULL ELSE documents.last_error END,
-				updated_at = excluded.updated_at`,
-			doc.ID, doc.Path, doc.ContentHash, doc.Size, doc.MTime.UnixNano(),
-			string(doc.State), stageJSON, now, now,
-			freshFile, freshFile, freshFile); err != nil {
-			return fmt.Errorf("upsert document %s: %w", doc.ID, err)
-		}
-
-		// Replace chunks wholesale — and their vectors first, while the old
-		// chunk IDs still exist to find them by.
-		if err := deleteVectorsTx(ctx, tx, doc.ID); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM chunks WHERE doc_id = ?", doc.ID); err != nil {
-			return fmt.Errorf("delete old chunks for %s: %w", doc.ID, err)
-		}
-
-		ins, err := tx.PrepareContext(ctx, `
-			INSERT INTO chunks (doc_id, ordinal, text, heading_path, byte_start, byte_end)
-			VALUES (?, ?, ?, ?, ?, ?)`)
+		//nolint:gosec // G202: the spliced text is domain.TerminalContentStates, not input
+		insContent, err := tx.PrepareContext(ctx, `
+			INSERT INTO content (content_hash, state, created_at, updated_at)
+			VALUES (?, 'discovered', ?, ?)
+			ON CONFLICT (content_hash) DO UPDATE SET updated_at = excluded.updated_at
+				WHERE state NOT IN (`+terminalStatesSQL()+`)`)
 		if err != nil {
 			return err
 		}
-		defer ins.Close()
+		defer insContent.Close()
 
-		ids = make([]int64, len(chunks))
-		for i, c := range chunks {
-			res, err := ins.ExecContext(ctx, doc.ID, c.Ordinal, c.Text, c.HeadingPath, c.ByteStart, c.ByteEnd)
-			if err != nil {
-				return fmt.Errorf("insert chunk %d of %s: %w", c.Ordinal, doc.ID, err)
+		insDoc, err := tx.PrepareContext(ctx, `
+			INSERT INTO documents (path, content_hash, unread_reason, size, mtime)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT (path) DO UPDATE SET
+				content_hash = excluded.content_hash,
+				unread_reason = excluded.unread_reason,
+				size = excluded.size,
+				mtime = excluded.mtime`)
+		if err != nil {
+			return err
+		}
+		defer insDoc.Close()
+
+		for _, doc := range docs {
+			if doc.ContentHash != "" {
+				if _, err := insContent.ExecContext(ctx, doc.ContentHash, now, now); err != nil {
+					return fmt.Errorf("insert content %s: %w", doc.ContentHash, err)
+				}
 			}
-			if ids[i], err = res.LastInsertId(); err != nil {
-				return err
+			if _, err := insDoc.ExecContext(ctx,
+				doc.Path, nullable(doc.ContentHash), nullable(string(doc.UnreadReason)),
+				doc.Size, doc.MTime.UnixNano()); err != nil {
+				return fmt.Errorf("upsert document %s: %w", doc.Path, err)
 			}
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return ids, nil
 }
 
 // GetByPath fetches the catalog row for a path; ok is false when the path
@@ -163,10 +108,10 @@ func (s *Store) UpsertDocument(ctx context.Context, doc domain.Document, chunks 
 func (s *Store) GetByPath(ctx context.Context, path string) (domain.Document, bool, error) {
 	var (
 		doc domain.Document
-		raw docRow
+		raw documentRow
 	)
 	err := s.db.Reader().QueryRowContext(ctx,
-		"SELECT "+strings.Join(docColumns, ", ")+" FROM documents WHERE path = ?", path).
+		"SELECT "+documentColumns+" FROM documents WHERE path = ?", path).
 		Scan(raw.targets(&doc)...)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -174,164 +119,8 @@ func (s *Store) GetByPath(ctx context.Context, path string) (domain.Document, bo
 	case err != nil:
 		return domain.Document{}, false, fmt.Errorf("get by path %s: %w", path, err)
 	}
-	if err := raw.finish(&doc); err != nil {
-		return domain.Document{}, false, err
-	}
+	raw.finish(&doc)
 	return doc, true, nil
-}
-
-// GetByID fetches one catalog row, reporting domain.ErrDocumentGone when the
-// id is not there.
-func (s *Store) GetByID(ctx context.Context, docID string) (domain.Document, error) {
-	var (
-		doc domain.Document
-		raw docRow
-	)
-	err := s.db.Reader().QueryRowContext(ctx,
-		"SELECT "+strings.Join(docColumns, ", ")+" FROM documents WHERE id = ?", docID).
-		Scan(raw.targets(&doc)...)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return domain.Document{}, fmt.Errorf("get %s: %w", docID, domain.ErrDocumentGone)
-	case err != nil:
-		return domain.Document{}, fmt.Errorf("get by id %s: %w", docID, err)
-	}
-	if err := raw.finish(&doc); err != nil {
-		return domain.Document{}, err
-	}
-	return doc, nil
-}
-
-// GetByContentHash returns every catalog row with this content hash, in
-// stable id order — discovery's rename detection input.
-func (s *Store) GetByContentHash(ctx context.Context, hash string) ([]domain.Document, error) {
-	return s.queryDocs(ctx, "get by content hash",
-		"SELECT "+strings.Join(docColumns, ", ")+" FROM documents WHERE content_hash = ? ORDER BY id", hash)
-}
-
-// queryDocs runs a documents SELECT (projecting docColumns) and hydrates
-// every row. op prefixes errors.
-func (s *Store) queryDocs(ctx context.Context, op, query string, args ...any) ([]domain.Document, error) {
-	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-	defer rows.Close()
-
-	var docs []domain.Document
-	for rows.Next() {
-		var (
-			doc domain.Document
-			raw docRow
-		)
-		if err := rows.Scan(raw.targets(&doc)...); err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
-		}
-		if err := raw.finish(&doc); err != nil {
-			return nil, err
-		}
-		docs = append(docs, doc)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-	return docs, nil
-}
-
-// UpdateDocumentStat refreshes size/mtime on an existing row, leaving
-// state, chunks, stage versions, and retry columns untouched. Unknown
-// docID is a loud error — the caller just read the row.
-func (s *Store) UpdateDocumentStat(ctx context.Context, docID string, size int64, mtime time.Time) error {
-	return s.updateDoc(ctx, "update stat", docID,
-		"UPDATE documents SET size = ?, mtime = ?, updated_at = ? WHERE id = ?",
-		size, mtime.UnixNano(), time.Now().Unix(), docID)
-}
-
-// ListIndexable returns every catalog row the pipeline may need to work on
-// — every state except deleted — ordered by path. Indexed and failed rows
-// are included; whether a row is stale (or still failed) against current
-// stage versions is the caller's call.
-func (s *Store) ListIndexable(ctx context.Context) ([]domain.Document, error) {
-	return s.queryDocs(ctx, "list indexable",
-		"SELECT "+strings.Join(docColumns, ", ")+
-			" FROM documents WHERE state != 'deleted' ORDER BY path")
-}
-
-// CountsByState returns the number of catalog rows in each document state.
-// Every state in domain.DocStates is present, zero included: a reporting
-// consumer must never have to tell "no documents here" apart from "this
-// build didn't know about the state" (DESIGN.md: status is observable).
-// A state in the database that this build doesn't know is still reported —
-// dropping it would hide exactly the drift worth seeing.
-func (s *Store) CountsByState(ctx context.Context) (map[domain.DocState]int, error) {
-	counts := make(map[domain.DocState]int, len(domain.DocStates))
-	for _, state := range domain.DocStates {
-		counts[state] = 0
-	}
-
-	rows, err := s.db.Reader().QueryContext(ctx,
-		"SELECT state, count(*) FROM documents GROUP BY state")
-	if err != nil {
-		return nil, fmt.Errorf("count documents by state: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
-
-	for rows.Next() {
-		var state string
-		var n int
-		if err := rows.Scan(&state, &n); err != nil {
-			return nil, fmt.Errorf("count documents by state: %w", err)
-		}
-		counts[domain.DocState(state)] = n
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("count documents by state: %w", err)
-	}
-	return counts, nil
-}
-
-// UpdateDocumentState flips state (and updated_at) only. Unknown docID is a
-// loud error — the caller just processed the row.
-func (s *Store) UpdateDocumentState(ctx context.Context, docID string, state domain.DocState) error {
-	return s.updateDoc(ctx, "update state", docID,
-		"UPDATE documents SET state = ?, updated_at = ? WHERE id = ?",
-		string(state), time.Now().Unix(), docID)
-}
-
-// MarkFailed sets state=failed and records the reason in last_error.
-func (s *Store) MarkFailed(ctx context.Context, docID, reason string) error {
-	return s.updateDoc(ctx, "mark failed", docID,
-		"UPDATE documents SET state = 'failed', last_error = ?, updated_at = ? WHERE id = ?",
-		reason, time.Now().Unix(), docID)
-}
-
-// updateDoc runs one UPDATE on a single documents row inside a writer
-// transaction, erroring loudly when the row doesn't exist.
-func (s *Store) updateDoc(ctx context.Context, op, docID, query string, args ...any) error {
-	return s.withTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, query, args...)
-		if err != nil {
-			return fmt.Errorf("%s for %s: %w", op, docID, err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			// Not a bug in the caller: the row can be purged between
-			// claiming a document and finishing with it, and the answer to
-			// that is to stop working on it, not to fail the daemon.
-			return fmt.Errorf("%s for %s: %w", op, docID, domain.ErrDocumentGone)
-		}
-		return nil
-	})
-}
-
-// DeleteDocument removes the document and everything derived from it.
-func (s *Store) DeleteDocument(ctx context.Context, docID string) error {
-	return s.withTx(ctx, func(tx *sql.Tx) error {
-		return deleteDocumentTx(ctx, tx, docID)
-	})
 }
 
 // DeleteByPathPrefix removes the document stored at dir and every document
@@ -339,9 +128,14 @@ func (s *Store) DeleteDocument(ctx context.Context, docID string) error {
 // deleted file and a deleted directory, which is what the caller needs:
 // FSEvents reports a vanished path without saying which it was.
 //
+// Documents only. Content the removed rows referenced keeps its chunks and
+// vectors until the orphan sweep collects it — and contributes nothing to
+// search in the meantime, because result assembly inner-joins documents. A
+// deletion takes effect the moment this returns, whenever the sweep runs.
+//
 // The range predicate rather than LIKE: '/' is 0x2f and '0' is 0x30, so
-// everything under dir sorts between dir+"/" and dir+"0", which the UNIQUE
-// index on path serves as a range scan and which needs no escaping.
+// everything under dir sorts between dir+"/" and dir+"0", which the primary
+// key on path serves as a range scan and which needs no escaping.
 func (s *Store) DeleteByPathPrefix(ctx context.Context, dir string) (int, error) {
 	// A prefix delete is the one operation here that can empty the catalog,
 	// so the degenerate inputs that would do it are refused rather than
@@ -355,37 +149,11 @@ func (s *Store) DeleteByPathPrefix(ctx context.Context, dir string) (int, error)
 	}
 	dir = trimmed
 
-	// One statement per vec generation plus one for the documents, however
-	// many rows are under dir. Deleting row by row would run a meta-table
-	// scan per document and hold the single writer connection for the length
-	// of the subtree — `rm -rf` on a large indexed folder is exactly the
-	// input, and a write transaction that scales with it is what the
-	// busy-timeout discipline exists to avoid.
-	const under = "documents.path = ? OR (documents.path > ? AND documents.path < ?)"
-	args := []any{dir, dir + "/", dir + "0"}
-
 	var removed int
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		// Vectors first, while the chunk rows still exist to find them by,
-		// and across every generation — a document deleted while model B is
-		// current must not resurface as orphan rowids under model A.
-		tables, err := listVecTables(ctx, tx)
-		if err != nil {
-			return err
-		}
-		for table := range tables {
-			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-				DELETE FROM %s WHERE rowid IN (
-					SELECT chunks.id FROM chunks
-					JOIN documents ON documents.id = chunks.doc_id
-					WHERE %s)`, table, under), args...); err != nil {
-				return fmt.Errorf("delete vectors under %s from %s: %w", dir, table, err)
-			}
-		}
-
-		// Chunks and summaries cascade via FK.
 		res, err := tx.ExecContext(ctx,
-			"DELETE FROM documents WHERE "+under, args...)
+			"DELETE FROM documents WHERE path = ? OR (path > ? AND path < ?)",
+			dir, dir+"/", dir+"0")
 		if err != nil {
 			return fmt.Errorf("delete documents under %s: %w", dir, err)
 		}
@@ -402,33 +170,248 @@ func (s *Store) DeleteByPathPrefix(ctx context.Context, dir string) (int, error)
 	return removed, nil
 }
 
-// deleteDocumentTx removes one document inside an open transaction. Chunks
-// and summaries cascade via FK; vec rows have no FK (virtual table) and are
-// deleted explicitly first, while the chunk rows still exist to find them by.
-func deleteDocumentTx(ctx context.Context, tx *sql.Tx, docID string) error {
-	if err := deleteVectorsTx(ctx, tx, docID); err != nil {
-		return err
+// StoreChunks replaces c.Hash's chunks and records its state and stage
+// versions in one short IMMEDIATE transaction, returning chunk IDs in
+// ordinal order.
+//
+// It never creates the content row: discovery creates rows at discovered,
+// and a write against a missing row means the content was swept while this
+// work was in flight — resurrecting it would make content whose every
+// source is gone permanently searchable, so it reports ErrContentGone
+// instead.
+//
+// Retry columns are deliberately untouched. The pipeline commits chunks
+// with state=chunked *before* the embed network call, so a reset here would
+// park the row at attempts=0 for the whole duration of that call — a crash
+// in the window would hand the content a fresh budget on restart, and
+// content that can never be embedded would never reach the attempt cap.
+func (s *Store) StoreChunks(ctx context.Context, c domain.Content, chunks []domain.Chunk) ([]int64, error) {
+	stageJSON, err := marshalStageVersions(c.StageVersions)
+	if err != nil {
+		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM documents WHERE id = ?", docID); err != nil {
-		return fmt.Errorf("delete document %s: %w", docID, err)
+
+	var ids []int64
+	err = s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			"UPDATE content SET state = ?, stage_versions = ?, updated_at = ? WHERE content_hash = ?",
+			string(c.State), stageJSON, time.Now().Unix(), c.Hash)
+		if err != nil {
+			return fmt.Errorf("store chunks for %s: %w", c.Hash, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("store chunks for %s: %w", c.Hash, domain.ErrContentGone)
+		}
+
+		// Replace chunks wholesale — and their vectors first, while the old
+		// chunk IDs still exist to find them by.
+		if err := deleteVectorsTx(ctx, tx, c.Hash); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM chunks WHERE content_hash = ?", c.Hash); err != nil {
+			return fmt.Errorf("delete old chunks for %s: %w", c.Hash, err)
+		}
+
+		ins, err := tx.PrepareContext(ctx, `
+			INSERT INTO chunks (content_hash, ordinal, text, heading_path, byte_start, byte_end)
+			VALUES (?, ?, ?, ?, ?, ?)`)
+		if err != nil {
+			return err
+		}
+		defer ins.Close()
+
+		ids = make([]int64, len(chunks))
+		for i, ch := range chunks {
+			res, err := ins.ExecContext(ctx, c.Hash, ch.Ordinal, ch.Text, ch.HeadingPath, ch.ByteStart, ch.ByteEnd)
+			if err != nil {
+				return fmt.Errorf("insert chunk %d of %s: %w", ch.Ordinal, c.Hash, err)
+			}
+			if ids[i], err = res.LastInsertId(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	return ids, nil
 }
 
-// deleteVectorsTx removes a document's vec rows from EVERY generation, not
-// just the current one — a doc deleted while model B is current must not
-// resurface as orphan rowids when the user switches back to model A's
+// UpdateContentState flips state (and updated_at) only. Unknown hash is a
+// loud error — the caller just processed the row.
+func (s *Store) UpdateContentState(ctx context.Context, hash string, state domain.ContentState) error {
+	return s.updateContent(ctx, "update state", hash,
+		"UPDATE content SET state = ?, updated_at = ? WHERE content_hash = ?",
+		string(state), time.Now().Unix(), hash)
+}
+
+// MarkFailed sets state=failed, records the reason in last_error, and
+// deletes the content's chunks and vectors (every generation) in the same
+// transaction. Failed content must not serve stale chunks, and there are two
+// routes to failed — the pipeline's normalize failure and the scheduler's
+// attempt cap — which must leave identical state behind, or M4's FTS5
+// external-content table would turn the cap route's leftovers into live
+// BM25 hits.
+//
+// Permanent by construction — content is immutable, so nothing resets it;
+// a config change re-queues it via ResetStale, which is a different event.
+func (s *Store) MarkFailed(ctx context.Context, hash, reason string) error {
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			"UPDATE content SET state = 'failed', last_error = ?, updated_at = ? WHERE content_hash = ?",
+			reason, time.Now().Unix(), hash)
+		if err != nil {
+			return fmt.Errorf("mark failed for %s: %w", hash, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			// Not a bug in the caller: the row can be swept between claiming
+			// content and giving up on it — see updateContent.
+			return fmt.Errorf("mark failed for %s: %w", hash, domain.ErrContentGone)
+		}
+		// Vectors first, while the chunk IDs still exist to find them by —
+		// the same discipline as StoreChunks' replacement path.
+		if err := deleteVectorsTx(ctx, tx, hash); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM chunks WHERE content_hash = ?", hash); err != nil {
+			return fmt.Errorf("delete chunks of failed %s: %w", hash, err)
+		}
+		return nil
+	})
+}
+
+// updateContent runs one UPDATE on a single content row inside a writer
+// transaction, erroring loudly when the row doesn't exist.
+func (s *Store) updateContent(ctx context.Context, op, hash, query string, args ...any) error {
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, query, args...)
+		if err != nil {
+			return fmt.Errorf("%s for %s: %w", op, hash, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			// Not a bug in the caller: the row can be swept between claiming
+			// content and finishing with it, and the answer to that is to
+			// stop working on it, not to fail the daemon.
+			return fmt.Errorf("%s for %s: %w", op, hash, domain.ErrContentGone)
+		}
+		return nil
+	})
+}
+
+// ListWorkItems returns one WorkItem per content row — the pipeline's
+// one-shot equivalent of a full claim, ordered by path for stable output.
+// Terminal rows are included; whether a row is stale against current stage
+// versions, or failed and not worth another attempt, is the caller's call.
+//
+// The path is the content's primary: newest mtime, tie-broken by path
+// ascending — GetWork's rule, and search's. Content no document references
+// (orphaned, sweep pending) has no path to read from and is omitted.
+func (s *Store) ListWorkItems(ctx context.Context) ([]domain.WorkItem, error) {
+	return s.queryWorkItems(ctx, "list work items", `
+		SELECT `+prefixedContentColumns+`, d.path
+		FROM content c
+		JOIN documents d ON d.content_hash = c.content_hash
+		WHERE d.path = (
+			SELECT d2.path FROM documents d2
+			WHERE d2.content_hash = c.content_hash
+			ORDER BY d2.mtime DESC, d2.path ASC LIMIT 1)
+		ORDER BY d.path`)
+}
+
+// prefixedContentColumns is contentColumns under the alias every join in
+// this package gives the content table.
+const prefixedContentColumns = "c.content_hash, c.state, c.stage_versions, c.attempts, c.next_retry_at, c.last_error"
+
+// queryWorkItems runs a SELECT projecting prefixedContentColumns + a path
+// column and hydrates every row. op prefixes errors.
+func (s *Store) queryWorkItems(ctx context.Context, op, query string, args ...any) ([]domain.WorkItem, error) {
+	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
+
+	var items []domain.WorkItem
+	for rows.Next() {
+		var (
+			item domain.WorkItem
+			raw  contentRow
+		)
+		targets := append(raw.targets(&item.Content), &item.Path)
+		if err := rows.Scan(targets...); err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+		if err := raw.finish(&item.Content); err != nil {
+			return nil, err
+		}
+		// Primary only: the one-shot path (pipeline.Run, eval) works
+		// corpora with no duplicate files, so the fallback list is just
+		// the primary.
+		item.Paths = []string{item.Path}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	return items, nil
+}
+
+// queryContents runs a content SELECT (projecting contentColumns) and
+// hydrates every row. op prefixes errors.
+func (s *Store) queryContents(ctx context.Context, op, query string, args ...any) ([]domain.Content, error) {
+	rows, err := s.db.Reader().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
+
+	var contents []domain.Content
+	for rows.Next() {
+		var (
+			c   domain.Content
+			raw contentRow
+		)
+		if err := rows.Scan(raw.targets(&c)...); err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+		if err := raw.finish(&c); err != nil {
+			return nil, err
+		}
+		contents = append(contents, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	return contents, nil
+}
+
+// deleteVectorsTx removes a content's vec rows from EVERY generation, not
+// just the current one — content re-chunked while model B is current must
+// not resurface as orphan rowids when the user switches back to model A's
 // table. Generations are few (one per model tried), so the sweep is cheap.
-func deleteVectorsTx(ctx context.Context, tx *sql.Tx, docID string) error {
+func deleteVectorsTx(ctx context.Context, tx *sql.Tx, hash string) error {
 	tables, err := listVecTables(ctx, tx)
 	if err != nil {
 		return err
 	}
 	for table := range tables {
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf(
-			"DELETE FROM %s WHERE rowid IN (SELECT id FROM chunks WHERE doc_id = ?)", table),
-			docID); err != nil {
-			return fmt.Errorf("delete vectors for %s from %s: %w", docID, table, err)
+			"DELETE FROM %s WHERE rowid IN (SELECT id FROM chunks WHERE content_hash = ?)", table),
+			hash); err != nil {
+			return fmt.Errorf("delete vectors for %s from %s: %w", hash, table, err)
 		}
 	}
 	return nil

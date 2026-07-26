@@ -406,7 +406,7 @@ func (s *Scheduler) recordReconcile(list []string, res discovery.Result) {
 	s.log.Debug("changed paths reconciled",
 		"paths", len(list),
 		"discovered", res.Discovered,
-		"renamed", res.Renamed,
+		"changed", res.Changed,
 		"deleted", res.Deleted,
 		"unchanged", res.Unchanged,
 		"ignored", res.Ignored,

@@ -11,6 +11,31 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Files are now identified by path, and their content by hash — `doc_id` is
+  gone.** ([ADR 0015](docs/adr/0015-content-addressed-chunks-and-summaries.md),
+  [#77](https://github.com/bcrisp4/bsearch/issues/77)) What this buys:
+
+  - **Renaming or moving a file no longer costs a re-embed**
+    ([#32](https://github.com/bcrisp4/bsearch/issues/32)): everything derived
+    from the file's bytes is keyed by their hash, and a rename doesn't change
+    the bytes.
+  - **Identical files are embedded once**, however many copies exist. A search
+    hit names one primary path (the most recently modified copy) and lists the
+    rest in `also_at`, rather than spending result slots on copies that would
+    all rank identically.
+  - Search results (`POST /v1/search`, `bsearch search --json`) carry `path`
+    (the identity), `content_hash`, and `also_at` — the `doc_id` field is
+    removed. A path is what an agent can act on; nothing needs to survive a
+    rebuild.
+
+  **The index database is rebuilt from scratch by this change.** There is no
+  in-place migration — the index is derived data. Delete the old database
+  (`~/Library/Application Support/bsearch/bsearch.db*`) and the daemon
+  reindexes on next start; an old database left in place is refused with an
+  error saying exactly that.
+
 ### Added
 
 - **Save a file, and it is searchable in seconds.** The daemon now watches
@@ -18,8 +43,7 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   just wrote turns up in search about fifteen seconds later rather than up to
   five minutes. Deleting a file now works too, for the first time: it stops
   appearing in search just as quickly, instead of lingering in the index
-  pointing at a path that is not there. Renames and folder moves keep a
-  document's identity, so anything holding onto a `doc_id` still resolves.
+  pointing at a path that is not there.
 
   The periodic walk has not gone away — it is the backstop for changes the
   event stream missed, and it now runs every fifteen minutes rather than

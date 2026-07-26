@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bcrisp4/bsearch/internal/domain"
 )
@@ -15,8 +16,7 @@ func vecSpec(model string) domain.EmbeddingSpec {
 }
 
 func TestEnsureVecTableCreatesGenerationAndMeta(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 4); err != nil {
@@ -79,18 +79,14 @@ func TestEnsureVecTableCreatesGenerationAndMeta(t *testing.T) {
 }
 
 func TestUpsertVectorsAndSearch(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, _ := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
-	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"),
-		testChunks("d_1", "north", "east", "up"))
-	if err != nil {
-		t.Fatalf("UpsertDocument: %v", err)
-	}
+	ids := seedChunked(t, store, testDoc("hash-1", "/notes/a.md"),
+		testChunks("north", "east", "up"))
 
 	vectors := [][]float32{
 		{1, 0, 0}, // north
@@ -120,14 +116,159 @@ func TestUpsertVectorsAndSearch(t *testing.T) {
 	if hits[0].Doc.Path != "/notes/a.md" {
 		t.Errorf("hit doc path = %q", hits[0].Doc.Path)
 	}
+	if hits[0].Doc.ContentHash != "hash-1" {
+		t.Errorf("hit doc hash = %q, want the join key hash-1", hits[0].Doc.ContentHash)
+	}
 	if hits[0].Chunk.HeadingPath == "" {
 		t.Error("hit chunk missing heading path")
 	}
 }
 
+// One row per (chunk, referencing path): a chunk whose content lives at N
+// paths yields N consecutive rows, newest mtime first, tie broken path
+// ascending — the ordering contract CollapseBestPerContent's primary-path
+// pick depends on.
+func TestSearchVectorsFansOutPerReferencingPath(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+
+	// One content at three paths. /w/b-new.md is newest; the other two tie
+	// on mtime and must order by path — and /w/a-tie.md sorting before
+	// /w/b-new.md lexically proves mtime takes precedence over path.
+	newest := testDoc("hash-1", "/w/b-new.md")
+	newest.MTime = time.Unix(200, 0)
+	tieA := testDoc("hash-1", "/w/a-tie.md")
+	tieA.MTime = time.Unix(100, 0)
+	tieZ := testDoc("hash-1", "/w/z-tie.md")
+	tieZ.MTime = time.Unix(100, 0)
+
+	ids := seedChunked(t, store, newest, testChunks("alpha", "beta"))
+	if err := store.UpsertDocuments(ctx, []domain.Document{tieA, tieZ}); err != nil {
+		t.Fatalf("upsert extra paths: %v", err)
+	}
+	if err := store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0}, {0, 1, 0}}); err != nil {
+		t.Fatalf("UpsertVectors: %v", err)
+	}
+
+	hits, err := store.SearchVectors(ctx, []float32{1, 0, 0}, 2)
+	if err != nil {
+		t.Fatalf("SearchVectors: %v", err)
+	}
+	// limit counts KNN chunks, not fanned-out rows: 2 chunks × 3 paths.
+	if len(hits) != 6 {
+		t.Fatalf("hits = %d, want 6 (2 chunks fanned out over 3 paths)", len(hits))
+	}
+	wantPaths := []string{"/w/b-new.md", "/w/a-tie.md", "/w/z-tie.md"}
+	for chunk := 0; chunk < 2; chunk++ {
+		rows := hits[chunk*3 : chunk*3+3]
+		for i, h := range rows {
+			if h.Doc.Path != wantPaths[i] {
+				t.Errorf("chunk %d row %d path = %q, want %q (mtime DESC, then path ASC)",
+					chunk, i, h.Doc.Path, wantPaths[i])
+			}
+			// Consecutive rows for one chunk are the same chunk.
+			if h.Chunk.Ordinal != rows[0].Chunk.Ordinal || h.Distance != rows[0].Distance {
+				t.Errorf("chunk %d row %d = ordinal %d dist %v, want the fan-out rows consecutive per chunk",
+					chunk, i, h.Chunk.Ordinal, h.Distance)
+			}
+		}
+	}
+	if hits[0].Chunk.Text != "alpha" || hits[3].Chunk.Text != "beta" {
+		t.Errorf("chunk order = %q then %q, want alpha (nearest) then beta",
+			hits[0].Chunk.Text, hits[3].Chunk.Text)
+	}
+}
+
+// The fan-out's mtime tie-break is a sort in Go, not an ORDER BY — this is
+// the mutation trap for it. The two paths tie on mtime and are inserted in
+// reverse-lexical order (separate upserts, so their rowids — and any index
+// scan over them — come back z-then-a): only the explicit path tie-break
+// puts them back ascending, so dropping it fails here where the old SQL
+// ORDER BY version could not.
+func TestSearchVectorsEqualMTimeTieBreaksByPathAscending(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+	tie := time.Unix(100, 0)
+	last := testDoc("hash-1", "/w/z-last.md")
+	last.MTime = tie
+	first := testDoc("hash-1", "/w/a-first.md")
+	first.MTime = tie
+
+	ids := seedChunked(t, store, last, testChunks("alpha"))
+	if err := store.UpsertDocuments(ctx, []domain.Document{first}); err != nil {
+		t.Fatalf("upsert second path: %v", err)
+	}
+	if err := store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0}}); err != nil {
+		t.Fatalf("UpsertVectors: %v", err)
+	}
+
+	hits, err := store.SearchVectors(ctx, []float32{1, 0, 0}, 1)
+	if err != nil {
+		t.Fatalf("SearchVectors: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("hits = %d, want 2 (one chunk fanned over two paths)", len(hits))
+	}
+	if hits[0].Doc.Path != "/w/a-first.md" || hits[1].Doc.Path != "/w/z-last.md" {
+		t.Errorf("fan-out order = [%q, %q], want path ascending on an mtime tie",
+			hits[0].Doc.Path, hits[1].Doc.Path)
+	}
+}
+
+// Deletion follows the source the moment the documents row goes: search's
+// inner join stops serving the path immediately, without waiting for the
+// orphan sweep to collect the content.
+func TestDeleteByPathPrefixRemovesPathFromSearchImmediately(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+	ids := seedChunked(t, store, testDoc("hash-1", "/notes/keep.md"), testChunks("alpha"))
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-1", "/gone/x.md")}); err != nil {
+		t.Fatalf("upsert second path: %v", err)
+	}
+	if err := store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0}}); err != nil {
+		t.Fatalf("UpsertVectors: %v", err)
+	}
+
+	hits, err := store.SearchVectors(ctx, []float32{1, 0, 0}, 1)
+	if err != nil {
+		t.Fatalf("SearchVectors: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("hits before delete = %d, want 2 (both paths)", len(hits))
+	}
+
+	if _, err := store.DeleteByPathPrefix(ctx, "/gone"); err != nil {
+		t.Fatalf("DeleteByPathPrefix: %v", err)
+	}
+
+	hits, err = store.SearchVectors(ctx, []float32{1, 0, 0}, 1)
+	if err != nil {
+		t.Fatalf("SearchVectors after delete: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Doc.Path != "/notes/keep.md" {
+		t.Errorf("hits after delete = %+v, want only /notes/keep.md", hits)
+	}
+	// The content row is still there — the delete is documents-only and the
+	// sweep is what collects it later.
+	if n := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'hash-1'"); n != 1 {
+		t.Error("content row gone after a documents-only delete")
+	}
+}
+
 func TestVecTableUsesCosineMetric(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 4); err != nil {
@@ -154,18 +295,14 @@ func TestVecTableUsesCosineMetric(t *testing.T) {
 }
 
 func TestSearchRankingIsMagnitudeInvariant(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, _ := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
-	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"),
-		testChunks("d_1", "north-big", "east"))
-	if err != nil {
-		t.Fatalf("UpsertDocument: %v", err)
-	}
+	ids := seedChunked(t, store, testDoc("hash-1", "/notes/a.md"),
+		testChunks("north-big", "east"))
 
 	// A non-normalized model: same direction as the query but 10× the
 	// magnitude. Cosine must rank it nearest; L2 would rank "east" first
@@ -192,8 +329,7 @@ func TestSearchRankingIsMagnitudeInvariant(t *testing.T) {
 }
 
 func TestDescriptorMetricBackfillMintsNewGeneration(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
@@ -221,19 +357,15 @@ func TestDescriptorMetricBackfillMintsNewGeneration(t *testing.T) {
 }
 
 func TestUpsertVectorsDimsMismatch(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, _ := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
-	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
-	if err != nil {
-		t.Fatalf("UpsertDocument: %v", err)
-	}
+	ids := seedChunked(t, store, testDoc("hash-1", "/notes/a.md"), testChunks("alpha"))
 
-	err = store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0, 0}}) // 4 dims into a 3-dim table
+	err := store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0, 0}}) // 4 dims into a 3-dim table
 	if err == nil {
 		t.Fatal("UpsertVectors accepted wrong dimensions, want error")
 	}
@@ -243,8 +375,7 @@ func TestUpsertVectorsDimsMismatch(t *testing.T) {
 }
 
 func TestSearchWithoutVecTableFailsLoud(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, _ := newTestStore(t)
 
 	_, err := store.SearchVectors(context.Background(), []float32{1, 0, 0}, 5)
 	if err == nil {
@@ -252,75 +383,49 @@ func TestSearchWithoutVecTableFailsLoud(t *testing.T) {
 	}
 }
 
-func TestDeleteAndReplaceRemoveVectors(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+// Re-chunking replaces vectors: StoreChunks must drop the old chunks'
+// vectors while the old chunk IDs still exist to find them by.
+func TestStoreChunksReplacesVectors(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
 
-	vecCount := func() int {
-		t.Helper()
-		var n int
-		if err := db.Reader().QueryRow("SELECT count(*) FROM vec_chunks_1").Scan(&n); err != nil {
-			t.Fatalf("count vectors: %v", err)
-		}
-		return n
-	}
-
-	// Replacement path: re-upserting a document must drop old chunk vectors.
-	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha", "beta"))
-	if err != nil {
-		t.Fatalf("upsert d_1: %v", err)
-	}
+	ids := seedChunked(t, store, testDoc("hash-1", "/notes/a.md"), testChunks("alpha", "beta"))
 	if err := store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0}, {0, 1, 0}}); err != nil {
-		t.Fatalf("vectors d_1: %v", err)
-	}
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "gamma")); err != nil {
-		t.Fatalf("re-upsert d_1: %v", err)
-	}
-	if n := vecCount(); n != 0 {
-		t.Errorf("vectors after chunk replacement = %d, want 0 (stale vectors)", n)
+		t.Fatalf("vectors: %v", err)
 	}
 
-	// Delete path.
-	ids, err = seedUpsert(t, store, testDoc("d_2", "/notes/b.md"), testChunks("d_2", "delta"))
-	if err != nil {
-		t.Fatalf("upsert d_2: %v", err)
+	if _, err := store.StoreChunks(ctx,
+		domain.Content{Hash: "hash-1", State: domain.ContentStateChunked},
+		testChunks("gamma")); err != nil {
+		t.Fatalf("re-chunk: %v", err)
 	}
-	if err := store.UpsertVectors(ctx, ids, [][]float32{{0, 0, 1}}); err != nil {
-		t.Fatalf("vectors d_2: %v", err)
-	}
-	if err := store.DeleteDocument(ctx, "d_2"); err != nil {
-		t.Fatalf("DeleteDocument: %v", err)
-	}
-	if n := vecCount(); n != 0 {
-		t.Errorf("vectors after document delete = %d, want 0", n)
+	if n := countRows(t, db, "SELECT count(*) FROM vec_chunks_1"); n != 0 {
+		t.Errorf("vectors after chunk replacement = %d, want 0 (stale vectors)", n)
 	}
 }
 
 func TestUpsertVectorsRejectsStaleChunkIDs(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
 	}
-	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
-	if err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	// Document re-indexed mid-embed: old chunk IDs are dead.
-	if _, err := store.UpsertDocument(ctx, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "beta")); err != nil {
-		t.Fatalf("re-upsert: %v", err)
+	ids := seedChunked(t, store, testDoc("hash-1", "/notes/a.md"), testChunks("alpha"))
+	// Content re-chunked mid-embed: old chunk IDs are dead.
+	if _, err := store.StoreChunks(ctx,
+		domain.Content{Hash: "hash-1", State: domain.ContentStateChunked},
+		testChunks("beta")); err != nil {
+		t.Fatalf("re-chunk: %v", err)
 	}
 
-	err = store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0}})
-	if err == nil {
-		t.Fatal("UpsertVectors accepted stale chunk IDs — permanent orphan vectors")
+	err := store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0}})
+	if !errors.Is(err, domain.ErrContentSuperseded) {
+		t.Fatalf("UpsertVectors(stale ids) = %v, want domain.ErrContentSuperseded", err)
 	}
 
 	var orphans int
@@ -332,33 +437,32 @@ func TestUpsertVectorsRejectsStaleChunkIDs(t *testing.T) {
 	}
 }
 
-func TestDeleteCleansAllVecGenerations(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+// The vector delete inside StoreChunks must reach EVERY generation, not just
+// the current one — content re-chunked while model B is current must not
+// resurface as orphan rowids when the user switches back to model A's table.
+func TestStoreChunksCleansAllVecGenerations(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	// Embed under model A (generation 1).
 	if err := store.EnsureVecTable(ctx, vecSpec("model-a"), 3); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	ids := seedChunked(t, store, testDoc("hash-1", "/notes/a.md"), testChunks("alpha"))
 	if err := store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0}}); err != nil {
 		t.Fatal(err)
 	}
 
-	// Switch current to model B (generation 2), then delete the doc.
+	// Switch current to model B (generation 2), then re-chunk the content.
 	if err := store.EnsureVecTable(ctx, vecSpec("model-b"), 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.DeleteDocument(ctx, "d_1"); err != nil {
+	if _, err := store.StoreChunks(ctx,
+		domain.Content{Hash: "hash-1", State: domain.ContentStateChunked},
+		testChunks("alpha v2")); err != nil {
 		t.Fatal(err)
 	}
 
-	// The non-current generation must be clean too: switching back to
-	// model A must not resurface orphan rowids.
 	var stale int
 	if err := db.Reader().QueryRow("SELECT count(*) FROM vec_chunks_1").Scan(&stale); err != nil {
 		t.Fatal(err)
@@ -369,8 +473,7 @@ func TestDeleteCleansAllVecGenerations(t *testing.T) {
 }
 
 func TestDescriptorLayoutBackfill(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
@@ -399,8 +502,7 @@ func TestDescriptorLayoutBackfill(t *testing.T) {
 }
 
 func TestEnsureVecTableTemplateIdentity(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	spec := domain.EmbeddingSpec{
@@ -453,8 +555,7 @@ func TestEnsureVecTableTemplateIdentity(t *testing.T) {
 }
 
 func TestEnsureVecTableCeilingChangeKeepsGeneration(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	spec := domain.EmbeddingSpec{Model: "test-model", QueryTemplate: "q: {q}", CeilingTokens: 2048}
@@ -488,8 +589,7 @@ func TestEnsureVecTableCeilingChangeKeepsGeneration(t *testing.T) {
 }
 
 func TestDescriptorTemplateBackfill(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
@@ -518,8 +618,7 @@ func TestDescriptorTemplateBackfill(t *testing.T) {
 }
 
 func TestCurrentVecSpec(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, _ := newTestStore(t)
 	ctx := context.Background()
 
 	// Fresh DB: nothing embedded.
@@ -556,8 +655,7 @@ func TestCurrentVecSpec(t *testing.T) {
 }
 
 func TestEnsureVecTableRejectsInvalidInputs(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, vecSpec(""), 4); err == nil {
@@ -583,8 +681,7 @@ func TestSearchVectorsDoesNotMistakeDamageForACutover(t *testing.T) {
 	// A missing chunks table is permanent damage, and the KNN statement joins
 	// it, so a broad "no such table" match would tell the user to retry
 	// forever.
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
 	if err := store.EnsureVecTable(ctx, domain.EmbeddingSpec{Model: "m"}, 3); err != nil {

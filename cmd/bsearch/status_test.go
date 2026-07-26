@@ -55,9 +55,11 @@ func TestStatusRendersAHealthyDaemon(t *testing.T) {
 		DBPath: "/home/data/bsearch.db",
 		Index: server.IndexStatus{
 			Ready: true, Model: "embeddinggemma-300m", Dims: 768,
-			Documents: map[string]int{"indexed": 1204, "discovered": 35, "chunked": 2},
-			Queue:     &server.QueueStatus{Pending: 37},
-			Disk:      &server.DiskUsage{DBBytes: 432013312, TotalBytes: 432013312},
+			Files:   1268,
+			Content: map[string]int{"indexed": 1204, "discovered": 35, "chunked": 2, "failed": 2},
+			Unread:  map[string]int{"denied": 0, "dataless": 0, "io_error": 0},
+			Queue:   &server.QueueStatus{Pending: 37},
+			Disk:    &server.DiskUsage{DBBytes: 432013312, TotalBytes: 432013312},
 		},
 		Indexing: &server.IndexingStatus{
 			Running: true, Gate: "idle — nothing to index",
@@ -76,7 +78,10 @@ func TestStatusRendersAHealthyDaemon(t *testing.T) {
 		"~/data/bsearch.db  (412 MiB)",
 		"ready", "yes",
 		"embeddinggemma-300m (768d)",
-		"1,204 indexed",
+		// Two lines for two populations (ADR 0015): paths and distinct
+		// contents rendered side by side would read as a comparable triple.
+		"files     1,268",
+		"contents  1,204 indexed · 2 failed",
 		"pending  37",
 		"discovered 35 · chunked 2",
 		"idle — nothing to index",
@@ -87,12 +92,88 @@ func TestStatusRendersAHealthyDaemon(t *testing.T) {
 			t.Errorf("report is missing %q:\n%s", want, got)
 		}
 	}
-	// Nothing failed and nothing was unreadable: those sections must not
-	// appear at all rather than as empty headings.
-	for _, unwanted := range []string{"Failures", "Unreadable", "retrying"} {
+	// No failure groups reported and nothing was unread: those sections and
+	// lines must not appear at all rather than as empty headings — and the
+	// retired "deleted" state must never resurface (ADR 0015: a deleted file
+	// is a removed row, not a state).
+	for _, unwanted := range []string{"Failures", "Unreadable", "retrying", "unread", "deleted"} {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("report mentions %q with nothing to report:\n%s", unwanted, got)
 		}
+	}
+}
+
+// A pre-identity-split daemon reports the retired `documents` map and none of
+// the fields this build reads. Rendering zeros would report a healthy-looking
+// empty index on the one command reached for when something already seems
+// wrong — the CLI must say what is actually happening instead.
+func TestStatusWarnsWhenTheDaemonIsOlder(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.1.0", PID: 1,
+		Index: server.IndexStatus{
+			Ready:     true,
+			Documents: map[string]int{"indexed": 1204, "failed": 2},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	got := out.String()
+	if !strings.Contains(got, "older than this CLI") || !strings.Contains(got, "bsearch serve") {
+		t.Errorf("report does not warn about the old daemon:\n%s", got)
+	}
+	// The retired counts must not be rendered as if this build understood
+	// them, and there are no new-style counts to show.
+	if strings.Contains(got, "contents") {
+		t.Errorf("report renders a contents line an old daemon never sent:\n%s", got)
+	}
+}
+
+// The changed total only earns a line when it is non-zero: it is the visible
+// trace of a claim abandoned because the file changed under it.
+func TestStatusRendersTheChangedTotalOnlyWhenNonZero(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Index: server.IndexStatus{Ready: true},
+		Indexing: &server.IndexingStatus{
+			Running: true,
+			Totals:  server.IndexingTotals{Indexed: 7, Changed: 3},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); !strings.Contains(got, "7 indexed · 0 failed · 0 skipped · 0 retried · 3 changed") {
+		t.Errorf("since-start line does not carry the changed total:\n%s", got)
+	}
+
+	resp.Indexing.Totals.Changed = 0
+	out.Reset()
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); strings.Contains(got, "changed") {
+		t.Errorf("since-start line mentions changed with nothing to report:\n%s", got)
+	}
+}
+
+// Unread files are invisible to search and the counts are the only place that
+// says so. All three reasons render whenever any is non-zero: denied is the
+// Full Disk Access signal and must never fold into dataless, which is an
+// iCloud placeholder skipped by design (ADR 0015).
+func TestStatusRendersUnreadFiles(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Index: server.IndexStatus{
+			Ready:   true,
+			Files:   14,
+			Content: map[string]int{"indexed": 11},
+			Unread:  map[string]int{"denied": 2, "dataless": 1, "io_error": 0},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); !strings.Contains(got, "denied 2 · dataless 1 · io_error 0") {
+		t.Errorf("report does not break unread files down by reason:\n%s", got)
 	}
 }
 
@@ -226,11 +307,11 @@ func TestStatusRendersFailureGroups(t *testing.T) {
 	resp := server.StatusResponse{
 		Version: "v0.2.0", PID: 1,
 		Index: server.IndexStatus{
-			Ready:     true,
-			Documents: map[string]int{"failed": 3},
+			Ready:   true,
+			Content: map[string]int{"failed": 3},
 			Failures: []server.FailureGroup{
-				{Reason: "file is not valid UTF-8", Documents: 2, ExamplePath: "/home/notes/legacy.txt"},
-				{Reason: "", Documents: 1, ExamplePath: "/home/notes/mystery.md"},
+				{Reason: "file is not valid UTF-8", Contents: 2, ExamplePath: "/home/notes/legacy.txt"},
+				{Reason: "", Contents: 1, ExamplePath: "/home/notes/mystery.md"},
 			},
 		},
 	}
@@ -277,10 +358,10 @@ func TestStatusMarksTruncatedFailureGroups(t *testing.T) {
 	resp := server.StatusResponse{
 		Version: "v0.2.0", PID: 1,
 		Index: server.IndexStatus{
-			Documents: map[string]int{"failed": 50},
+			Content: map[string]int{"failed": 50},
 			Failures: []server.FailureGroup{
-				{Reason: "not valid UTF-8", Documents: 20},
-				{Reason: "too large", Documents: 5},
+				{Reason: "not valid UTF-8", Contents: 20},
+				{Reason: "too large", Contents: 5},
 			},
 		},
 	}
@@ -322,9 +403,9 @@ func TestStatusStripsControlCharactersFromUntrustedText(t *testing.T) {
 		Version: "v0.2.0", PID: 1,
 		DBPath: "/home/data/\x1b[31mbsearch.db",
 		Index: server.IndexStatus{
-			Documents: map[string]int{"failed": 1},
+			Content: map[string]int{"failed": 1},
 			Failures: []server.FailureGroup{
-				{Reason: "bad\x1b[2Jreason", Documents: 1, ExamplePath: "/home/a\nb.md"},
+				{Reason: "bad\x1b[2Jreason", Contents: 1, ExamplePath: "/home/a\nb.md"},
 			},
 		},
 	}

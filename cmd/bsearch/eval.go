@@ -194,15 +194,15 @@ func runEvalRun(args []string, out io.Writer) error {
 	for _, pe := range scanRes.PathErrors {
 		fmt.Fprintf(out, "warning: %s: %v\n", stripControl(pe.Path), pe.Err)
 	}
-	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d renamed, %d skipped (iCloud placeholder)\n",
-		scanRes.Discovered, scanRes.Unchanged, scanRes.Renamed, scanRes.Dataless)
+	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d skipped (iCloud placeholder)\n",
+		scanRes.Discovered, scanRes.Unchanged, scanRes.Dataless)
 	// Unlike index.go's equivalent guard (which only fires alongside
 	// PathErrors, since a live filesystem scan legitimately turning up zero
 	// files elsewhere is not by itself suspicious), a golden corpus must
 	// contain files regardless of whether any PathErrors were reported —
 	// an empty corpus/ scores every query against nothing and reports
 	// misleadingly clean zeros instead of failing loudly.
-	if scanRes.Discovered+scanRes.Unchanged+scanRes.Renamed+scanRes.Dataless == 0 {
+	if scanRes.Discovered+scanRes.Unchanged+scanRes.Dataless == 0 {
 		return errors.New("scan reached no files — check --corpus points at a corpus directory with a corpus/ subtree (see warnings above, if any)")
 	}
 
@@ -216,11 +216,11 @@ func runEvalRun(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	docs, err := store.ListIndexable(ctx)
+	items, err := store.ListWorkItems(ctx)
 	if err != nil {
 		return err
 	}
-	sum, runErr := ix.Run(ctx, docs)
+	sum, runErr := ix.Run(ctx, items)
 
 	line := fmt.Sprintf("done: %d indexed, %d up to date, %d failed", sum.Indexed, sum.UpToDate, sum.Failed)
 	if sum.Skipped > 0 {
@@ -289,19 +289,29 @@ func runEvalRun(args []string, out io.Writer) error {
 		// Truncating to *limit here — before ScoreQuery removes the
 		// acceptable docs — would let those acceptable docs eat rank slots
 		// they aren't supposed to occupy, undercounting recall.
-		collapsed := domain.CollapseBestPerDoc(hits, k)
+		collapsed := domain.CollapseBestPerContent(hits, k)
 		ranked := make([]evalharness.RankedDoc, len(collapsed))
-		for n, h := range collapsed {
-			// h.Doc.Path is under resolvedDocsDir (discovery's canonicalized
-			// include root), not literally under "<corpusDir>/corpus" — so
-			// re-prepend "corpus/" after relativizing, keeping the result a
-			// clean corpus-relative path that matches golden.yaml regardless
-			// of whether corpus/ itself was a symlink.
-			rel, err := filepath.Rel(resolvedDocsDir, h.Doc.Path)
-			if err != nil {
-				return fmt.Errorf("query %s: relativize %q: %w", q.ID, h.Doc.Path, err)
+		for n, ch := range collapsed {
+			// ch.Hit.Doc.Path is under resolvedDocsDir (discovery's
+			// canonicalized include root), not literally under
+			// "<corpusDir>/corpus" — so re-prepend "corpus/" after
+			// relativizing, keeping the result a clean corpus-relative path
+			// that matches golden.yaml regardless of whether corpus/ itself
+			// was a symlink.
+
+			// The primary path alone is scored, so a duplicate-content pair
+			// would make golden.yaml's expected path ambiguous — refused
+			// rather than assumed, since a silently mis-scored query is
+			// indistinguishable from a genuine retrieval miss.
+			if len(ch.AlsoAt) > 0 {
+				return fmt.Errorf("query %s: %q has duplicate-content copies at %v — an eval corpus must hold no duplicate files",
+					q.ID, ch.Hit.Doc.Path, ch.AlsoAt)
 			}
-			ranked[n] = evalharness.RankedDoc{Path: path.Join("corpus", filepath.ToSlash(rel)), Distance: h.Distance}
+			rel, err := filepath.Rel(resolvedDocsDir, ch.Hit.Doc.Path)
+			if err != nil {
+				return fmt.Errorf("query %s: relativize %q: %w", q.ID, ch.Hit.Doc.Path, err)
+			}
+			ranked[n] = evalharness.RankedDoc{Path: path.Join("corpus", filepath.ToSlash(rel)), Distance: ch.Hit.Distance}
 		}
 		evalharness.SortRanked(ranked)
 
