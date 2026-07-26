@@ -98,7 +98,7 @@ func addDocument(t *testing.T, path, docID string, state domain.DocState, failur
 		t.Fatalf("UpsertDocument (discover): %v", err)
 	}
 	if state != domain.DocStateDiscovered {
-		if err := store.UpdateDocumentState(ctx, docID, state); err != nil {
+		if err := store.UpdateDocumentState(ctx, docID, domain.DocStateDiscovered, state); err != nil {
 			t.Fatalf("UpdateDocumentState: %v", err)
 		}
 	}

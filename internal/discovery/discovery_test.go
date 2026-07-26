@@ -122,7 +122,7 @@ func (f *fakeStore) GetByID(context.Context, string) (domain.Document, error) {
 	return domain.Document{}, errors.New("not used by discovery")
 }
 
-func (f *fakeStore) UpdateDocumentState(context.Context, string, domain.DocState) error {
+func (f *fakeStore) UpdateDocumentState(context.Context, string, domain.DocState, domain.DocState) error {
 	return errors.New("not used by discovery")
 }
 

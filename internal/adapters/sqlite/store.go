@@ -290,12 +290,54 @@ func (s *Store) CountsByState(ctx context.Context) (map[domain.DocState]int, err
 	return counts, nil
 }
 
-// UpdateDocumentState flips state (and updated_at) only. Unknown docID is a
-// loud error — the caller just processed the row.
-func (s *Store) UpdateDocumentState(ctx context.Context, docID string, state domain.DocState) error {
-	return s.updateDoc(ctx, "update state", docID,
-		"UPDATE documents SET state = ?, updated_at = ? WHERE id = ?",
-		string(state), time.Now().Unix(), docID)
+// UpdateDocumentState flips state (and updated_at) only, and only if the row
+// is still in state `from`.
+//
+// The guard is an assertion, not a lock (ADR 0014). One goroutine owns every
+// catalog write, so `from` is a fact the caller already knows; the clause is
+// here to make its arrival being untrue *loud* rather than silent, because the
+// silent version is issue #63 — a document left `indexed` with no chunks, in a
+// terminal state nothing re-queues, permanently unsearchable.
+//
+// Not routed through updateDoc: that helper reads every zero-row result as
+// ErrDocumentGone, which is still right for its other callers and is exactly
+// wrong here. Zero rows now means one of two opposite things, so the failure
+// path pays for one more read to tell them apart — a purge landing between
+// documents is legitimate and the caller stands down, while a row sitting in
+// an unexpected state is a bug and must not be swallowed. The transaction is
+// IMMEDIATE (see withTx), so that read sees precisely what the UPDATE saw.
+//
+// `from` is bound rather than spliced, for the same reason the freshFile
+// predicate above is bound: a state literal in SQL is a second place for the
+// domain's states to be spelled, and the two would eventually disagree.
+func (s *Store) UpdateDocumentState(ctx context.Context, docID string, from, to domain.DocState) error {
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			"UPDATE documents SET state = ?, updated_at = ? WHERE id = ? AND state = ?",
+			string(to), time.Now().Unix(), docID, string(from))
+		if err != nil {
+			return fmt.Errorf("update state for %s: %w", docID, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return nil
+		}
+
+		var actual string
+		switch err := tx.QueryRowContext(ctx,
+			"SELECT state FROM documents WHERE id = ?", docID).Scan(&actual); {
+		case errors.Is(err, sql.ErrNoRows):
+			return fmt.Errorf("update state for %s: %w", docID, domain.ErrDocumentGone)
+		case err != nil:
+			return fmt.Errorf("check state of %s: %w", docID, err)
+		}
+		return fmt.Errorf(
+			"update state for %s: expected state %q but found %q — another writer touched the catalog (ADR 0014)",
+			docID, from, actual)
+	})
 }
 
 // MarkFailed sets state=failed and records the reason in last_error.

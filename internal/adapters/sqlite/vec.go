@@ -277,11 +277,29 @@ func (s *Store) UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][
 			return fmt.Errorf("check chunk ids: %w", err)
 		}
 		if live != len(chunkIDs) {
-			// Re-chunked or purged under us. Wrapped so the caller can tell
-			// this apart from a broken store and stand down instead of
-			// failing the drain (domain.ErrDocumentSuperseded).
-			return fmt.Errorf("%d of %d chunk ids no longer exist: %w",
-				len(chunkIDs)-live, len(chunkIDs), domain.ErrDocumentSuperseded)
+			// Unreachable since ADR 0014 — one goroutine owns every catalog
+			// write, and it is inside ProcessDocument for the whole window
+			// between the chunk upsert and this call — and kept anyway,
+			// because of the two assertions guarding that invariant this is
+			// the only one that *prevents* rather than reports.
+			//
+			// A vec row is reachable by every delete in this package only
+			// through its chunk (see deleteVectorsTx and DeleteByPathPrefix),
+			// and chunks.id is AUTOINCREMENT precisely so a freed id is never
+			// reused. So a vector written against a chunk that has gone is
+			// unreachable by every delete we have, permanently. Worse, it is
+			// not inert: SearchVectors takes k from the vector table in a
+			// subquery and only then joins chunks, so the orphan displaces a
+			// real hit before being dropped — a k=10 search quietly returns
+			// nine, forever, with nothing anywhere to say why.
+			//
+			// The finalize's state guard would notice the same broken
+			// invariant a few lines later, but only after this write had
+			// committed, and there is no repair for it. Cost of keeping: one
+			// count(*) over an integer primary key in a transaction that is
+			// already open.
+			return fmt.Errorf("%d of %d chunk ids no longer exist",
+				len(chunkIDs)-live, len(chunkIDs))
 		}
 
 		// vec0 has no upsert; delete-then-insert is the documented pattern.

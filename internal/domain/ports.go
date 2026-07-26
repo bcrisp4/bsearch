@@ -39,25 +39,6 @@ type Embedder interface {
 // the caller treats the document as what it is: gone, and nothing to index.
 var ErrDocumentGone = errors.New("the catalog row no longer exists (deleted while in flight?)")
 
-// ErrDocumentSuperseded means the row is still there but was rewritten while
-// a write was in flight, so the write is aimed at a document that no longer
-// exists in the shape it was aimed at.
-//
-// It exists because a file saved again during its own embed used to reset the
-// row to `discovered` and replace its chunks, while the vectors coming back
-// from that embed still keyed on chunk IDs that had since been deleted.
-// Writing them anyway would attach one version's vectors to another version's
-// text, so the store reports instead and the caller stands down.
-//
-// Since ADR 0014 that race cannot happen: one goroutine owns every catalog
-// write, and it is inside the pipeline for the whole window. The check that
-// produces this is kept anyway — an orphaned vector row is unreachable by
-// every delete in the store and silently displaces a real search hit, so it
-// is the one guard here that prevents rather than reports. What is left to do
-// is retire the sentinel and let the check be a plain error: nothing should be
-// able to recognise a broken invariant and stand down from it (#69).
-var ErrDocumentSuperseded = errors.New("the catalog row was rewritten while this write was in flight")
-
 // DocumentStore persists the catalog: documents and their chunks.
 type DocumentStore interface {
 	// UpsertDocument writes the document row and replaces its chunks in one
@@ -110,7 +91,21 @@ type DocumentStore interface {
 	// UpdateDocumentState flips state (and updated_at) only — never chunks,
 	// vectors, stage versions, or retry columns. UpsertDocument cannot serve
 	// this: it replaces chunks wholesale and deletes their vectors.
-	UpdateDocumentState(ctx context.Context, docID string, state DocState) error
+	//
+	// The write lands only if the row is still in state `from`. That guard is
+	// an assertion that one goroutine owns every catalog write (ADR 0014),
+	// not concurrency control — there is nothing to control, and a reader who
+	// takes it for a lock will reconstruct a concurrency story that no longer
+	// exists. It is here because DESIGN.md commits to summarization running
+	// alongside embedding, and a second writer arriving without it would
+	// strand documents as `indexed` with no chunks, silently, exactly as
+	// issue #63 described.
+	//
+	// A row that is gone reports ErrDocumentGone and the caller stands down —
+	// a purge landing between documents is legitimate. A row that is present
+	// in some other state reports a plain error naming both states, and is
+	// never anything but a bug.
+	UpdateDocumentState(ctx context.Context, docID string, from, to DocState) error
 	// MarkFailed sets state=failed and records the reason in last_error.
 	// A subsequent file change resets it (UpsertDocument clears retry
 	// columns).
@@ -214,9 +209,15 @@ type VectorStore interface {
 	// from the first embedding batch — vec0 fixes them at CREATE.
 	EnsureVecTable(ctx context.Context, spec EmbeddingSpec, dims int) error
 	// UpsertVectors stores one vector per chunk storage ID (from
-	// DocumentStore.UpsertDocument), replacing any existing rows. A chunk ID
-	// that no longer exists means the document was re-chunked during the
-	// embed, and reports ErrDocumentSuperseded rather than orphaning vectors.
+	// DocumentStore.UpsertDocument), replacing any existing rows.
+	//
+	// A chunk ID that no longer exists is refused rather than written. Under
+	// ADR 0014 nothing can delete those chunks between the upsert that minted
+	// them and this call, so reaching that error means the single-writer
+	// invariant broke — but it is refused rather than merely reported because
+	// the resulting vector row would be unreachable by every delete in the
+	// store while still displacing real search hits. It is the one check here
+	// that prevents rather than reports.
 	UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][]float32) error
 	// SearchVectors returns the limit nearest chunks by ascending distance.
 	// Loud error when no current vec table exists (nothing embedded yet or

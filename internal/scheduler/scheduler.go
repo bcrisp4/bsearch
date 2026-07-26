@@ -929,10 +929,12 @@ func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[
 		case pipeline.OutcomeSuperseded:
 			// Since ADR 0014 this can only mean the single-writer invariant
 			// broke. The document was re-read a moment ago, so its row was
-			// there; for it to be gone or rewritten by the time the pipeline
-			// wrote, something other than this goroutine must have written the
-			// catalog while this goroutine was inside ProcessDocument — and
-			// there is nothing else.
+			// there; for it to be gone by the time the pipeline wrote,
+			// something other than this goroutine must have purged the catalog
+			// while this goroutine was inside ProcessDocument — and there is
+			// nothing else. (A row found in an *unexpected state* does not
+			// arrive here at all: since #69 the pipeline treats that as fatal
+			// rather than standing down from it.)
 			//
 			// It used to be routine, which is why it was logged at Debug and
 			// counted nowhere. Left that way it is now the quietest failure in

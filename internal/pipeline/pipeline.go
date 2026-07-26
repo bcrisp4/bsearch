@@ -330,17 +330,19 @@ func (ix *Indexer) ProcessDocument(ctx context.Context, doc domain.Document, sv 
 			return ix.failWith(ctx, doc, out, fmt.Sprintf("embed: %v", err))
 		}
 		if err := ix.opts.Vectors.UpsertVectors(ctx, chunkIDs, vectors); err != nil {
-			// The widest window in the pipeline: an embed is seconds of
-			// network, and both a delete and a re-save inside it land here as
-			// chunk IDs that no longer exist.
-			if gone, r := ix.movedOn(doc, err); gone {
-				return r, nil
-			}
+			// Fatal, with no "moved on" arm any more. This used to be the
+			// widest window in the pipeline — an embed is seconds of network,
+			// and a concurrent reconcile could delete the chunk IDs inside it
+			// — but nothing writes the catalog while this goroutine is here
+			// (ADR 0014). The store still checks those IDs are live, and if
+			// that check ever fires it is a broken invariant rather than a
+			// file that changed, so it must stop the drain.
 			return Result{}, fmt.Errorf("store vectors for %s: %w", doc.Path, err)
 		}
 	}
 
-	if err := ix.opts.Store.UpdateDocumentState(ctx, doc.ID, domain.DocStateIndexed); err != nil {
+	if err := ix.opts.Store.UpdateDocumentState(ctx, doc.ID,
+		domain.DocStateChunked, domain.DocStateIndexed); err != nil {
 		if gone, r := ix.movedOn(doc, err); gone {
 			return r, nil
 		}
@@ -350,31 +352,25 @@ func (ix *Indexer) ProcessDocument(ctx context.Context, doc domain.Document, sv 
 	return out, nil
 }
 
-// movedOn classifies a store error as "the document moved on while we were
-// working on it" — deleted (ErrDocumentGone) or rewritten
-// (ErrDocumentSuperseded) — which is an outcome rather than a fault.
+// movedOn classifies a store error as "the document was deleted while we were
+// working on it" (ErrDocumentGone), which is an outcome rather than a fault.
 //
 // Not failed: failed is a claim about the document's content that would sit
 // in `bsearch status` under a reason, and the content this pass was making
-// claims about is not the content in the catalog any more.
+// claims about is not in the catalog any more.
 //
-// Since ADR 0014 the two cases are no longer alike. A purge between documents
-// is ordinary — the scheduler drains reconciles there, so a row in the batch
-// it claimed really can be gone — and nothing is owed, because the row is
-// gone. A *rewrite* is not: the scheduler re-reads each row immediately
-// before working on it and nothing writes the catalog while it does, so
-// reaching that arm means the single-writer invariant broke. The caller is
-// what tells them apart; both arrive here as OutcomeSuperseded, and the
-// scheduler reports and reschedules rather than passing over it.
+// One case, since ADR 0014. A purge between documents is ordinary — the
+// scheduler drains reconciles there, so a row in the batch it claimed really
+// can be gone by the time the batch reaches it — and nothing is owed, because
+// the row is gone. Every *other* way a write can miss its row is a broken
+// invariant now: the scheduler re-reads each row immediately before working on
+// it and nothing writes the catalog while it does. Those return false from
+// here and are fatal at the call site rather than being stood down from.
 func (ix *Indexer) movedOn(doc domain.Document, err error) (bool, Result) {
-	switch {
-	case errors.Is(err, domain.ErrDocumentGone):
-		fmt.Fprintf(ix.opts.Progress, "skipped %s: deleted while it was being indexed\n", doc.Path)
-	case errors.Is(err, domain.ErrDocumentSuperseded):
-		fmt.Fprintf(ix.opts.Progress, "skipped %s: changed again while it was being indexed\n", doc.Path)
-	default:
+	if !errors.Is(err, domain.ErrDocumentGone) {
 		return false, Result{}
 	}
+	fmt.Fprintf(ix.opts.Progress, "skipped %s: deleted while it was being indexed\n", doc.Path)
 	return true, Result{Outcome: OutcomeSuperseded, Err: err}
 }
 

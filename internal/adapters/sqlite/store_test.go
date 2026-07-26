@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -331,7 +332,9 @@ func TestPipelineWritesDoNotResurrectAPurgedDocument(t *testing.T) {
 			_, err := store.UpsertDocument(ctx, failed, nil)
 			return err
 		},
-		"finalize":    func() error { return store.UpdateDocumentState(ctx, "d_1", domain.DocStateIndexed) },
+		"finalize": func() error {
+			return store.UpdateDocumentState(ctx, "d_1", domain.DocStateChunked, domain.DocStateIndexed)
+		},
 		"mark failed": func() error { return store.MarkFailed(ctx, "d_1", "embed: boom") },
 		"refresh stat": func() error {
 			return store.UpdateDocumentStat(ctx, "d_1", 99, time.Unix(1700000001, 0))
@@ -677,7 +680,8 @@ func TestUpdateDocumentState(t *testing.T) {
 		t.Fatalf("UpsertVectors: %v", err)
 	}
 
-	if err := store.UpdateDocumentState(ctx, "d_1", domain.DocStateIndexed); err != nil {
+	if err := store.UpdateDocumentState(ctx, "d_1",
+		domain.DocStateChunked, domain.DocStateIndexed); err != nil {
 		t.Fatalf("UpdateDocumentState: %v", err)
 	}
 
@@ -701,8 +705,51 @@ func TestUpdateDocumentState(t *testing.T) {
 		t.Fatalf("vectors gone after state flip: %+v", hits)
 	}
 
-	if err := store.UpdateDocumentState(ctx, "d_missing", domain.DocStateIndexed); err == nil {
-		t.Error("UpdateDocumentState(unknown id) = nil, want error")
+	if err := store.UpdateDocumentState(ctx, "d_missing",
+		domain.DocStateChunked, domain.DocStateIndexed); !errors.Is(err, domain.ErrDocumentGone) {
+		t.Errorf("UpdateDocumentState(unknown id) = %v, want domain.ErrDocumentGone", err)
+	}
+}
+
+// The state guard is an assertion that one goroutine owns every catalog write
+// (ADR 0014), so its two failure modes have to stay distinguishable: a row
+// that is gone is a purge landing between documents and the caller stands
+// down, while a row sitting in an unexpected state is a second writer and must
+// be loud. A single "zero rows affected" cannot say which.
+func TestUpdateDocumentStateRejectsAnUnexpectedFromState(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	// Seeded chunked, then finalized — so the row is `indexed` and a second
+	// finalize is aimed at a state it left.
+	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := store.UpdateDocumentState(ctx, "d_1", domain.DocStateChunked, domain.DocStateIndexed); err != nil {
+		t.Fatalf("first finalize: %v", err)
+	}
+
+	err := store.UpdateDocumentState(ctx, "d_1", domain.DocStateChunked, domain.DocStateIndexed)
+	if err == nil {
+		t.Fatal("UpdateDocumentState(wrong from-state) = nil, want an error")
+	}
+	if errors.Is(err, domain.ErrDocumentGone) {
+		t.Errorf("err = %v, want a loud error rather than ErrDocumentGone — the row is there", err)
+	}
+	// Both states named, or the report cannot be acted on.
+	for _, want := range []string{string(domain.DocStateChunked), string(domain.DocStateIndexed)} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %q, want it to name state %q", err, want)
+		}
+	}
+
+	got, ok, err := store.GetByPath(ctx, "/notes/a.md")
+	if err != nil || !ok {
+		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
+	}
+	if got.State != domain.DocStateIndexed {
+		t.Errorf("state = %q, want the row left untouched at indexed", got.State)
 	}
 }
 
