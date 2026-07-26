@@ -101,6 +101,11 @@ type Queue interface {
 	domain.Queue
 	// MarkFailed records a document as permanently failed with a reason.
 	MarkFailed(ctx context.Context, docID, reason string) error
+	// GetByID re-reads a claimed document. ClaimBatch hands out copies read
+	// once, and a batch is worked through over the minutes that follow, so a
+	// reconcile landing between documents can move a row out from under the
+	// copy of it still waiting its turn (ADR 0014).
+	GetByID(ctx context.Context, docID string) (domain.Document, error)
 }
 
 // Indexer is the per-document work, as implemented by *pipeline.Indexer.
@@ -196,6 +201,11 @@ type Snapshot struct {
 	Skipped int // documents unreadable at the time since start
 	Retried int // transient failures rescheduled since start
 	Swept   int // documents re-queued by a stale sweep since start
+	// Superseded counts documents whose row changed under the pipeline
+	// mid-document. Since ADR 0014 that can only happen if something other
+	// than the scheduler goroutine wrote the catalog, so any non-zero value
+	// is a broken invariant rather than a busy daemon.
+	Superseded int
 	// ScanErrs counts per-path problems (TCC, unreadable) the daemon has met
 	// since the last walk: the walk replaces the count, and each reconcile in
 	// between adds to it. Both sources on purpose — a permission error the
@@ -233,6 +243,14 @@ type Snapshot struct {
 	WatchReconciled int // documents queued from watched events since start
 	WatchDeleted    int // documents purged because their file went away
 	WatchRescans    int // full scans forced by an incomplete event stream
+	// WatchIgnored counts watched paths that were out of scope — outside
+	// every include root, or deny-listed. A running total rather than a
+	// per-reconcile log line, because the pathology it exists to expose (a
+	// root whose on-disk spelling does not match the paths FSEvents reports,
+	// so every event is discarded) is invisible in any single reconcile once
+	// one reconcile can span several debounce windows. Reconciled 0 against a
+	// large Ignored is the signature.
+	WatchIgnored int
 }
 
 // Scheduler runs the indexing loop. Construct with New, drive with Run.
@@ -268,6 +286,21 @@ type Scheduler struct {
 	// forceScan is a walk requested out of band — by an incomplete event
 	// stream. Consumed by scanDue, so it survives a scan already in flight.
 	forceScan bool
+	// pendingPaths is the debounce windows the watcher has closed and this
+	// goroutine has not reconciled yet. It is the whole of the handoff ADR
+	// 0014 asks for: the watcher merges into it, the scheduler swaps it out,
+	// and no catalog row is written anywhere but here.
+	//
+	// A set rather than a queue of windows, for two reasons. A file saved
+	// three times during one long embed is one path to stat, so merging is
+	// free deduplication; and the bound that matters — the one the overflow
+	// rule is written against — is distinct paths, which a queue of windows
+	// could not express.
+	pendingPaths map[string]struct{}
+	// nextProbe is when the embedding endpoint may be probed again after a
+	// failure. Zero means "now". See prepare for why the wake rate must not
+	// decide the probe rate.
+	nextProbe time.Time
 }
 
 // New builds a Scheduler.
@@ -364,10 +397,10 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		"max_attempts", s.maxAttempts,
 		"watching", s.watcher != nil)
 
-	// The watcher runs alongside the cycle rather than inside it: its whole
-	// point is that a saved file does not wait for a drain that may be
-	// hours long. Run owns it so shutdown stays one story — cancel the
-	// context, and both goroutines are accounted for before Run returns.
+	// The watcher runs alongside the cycle rather than inside it: FSEvents
+	// intake and the debounce window must not wait behind a drain that may be
+	// hours long. It writes nothing, though — it hands its closed windows to
+	// this goroutine (ADR 0014). Run owns it so shutdown stays one story.
 	var watching sync.WaitGroup
 	if s.watcher != nil {
 		// Recorded before the goroutine starts, not inside it: resolving
@@ -382,7 +415,23 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			s.watch(ctx)
 		}()
 	}
-	defer watching.Wait()
+	// Ordered, not a bare `defer watching.Wait()`. The watcher hands over its
+	// still-open debounce window as it exits, and only this goroutine may
+	// write it — so the wait is a precondition of the final reconcile rather
+	// than goroutine hygiene, whichever goroutine notices the cancellation
+	// first.
+	//
+	// Worth the machinery because a window's contents are not equally
+	// recoverable. An edit dropped here is picked up by the next walk; a
+	// deletion dropped here is picked up by nothing, since only ScanPaths
+	// purges and a walk sees what exists. The last ten seconds before a
+	// restart would otherwise be the one window whose deletions stay in the
+	// index for good.
+	defer func() {
+		watching.Wait()
+		s.flushPending(ctx)
+		s.log.Info("indexing scheduler stopped")
+	}()
 
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -390,7 +439,6 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			s.log.Info("indexing scheduler stopped")
 			return nil
 		case <-timer.C:
 		case <-s.notify:
@@ -398,7 +446,6 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 		next := s.cycle(ctx)
 		if ctx.Err() != nil {
-			s.log.Info("indexing scheduler stopped")
 			return nil
 		}
 		if next <= 0 {
@@ -425,6 +472,24 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 }
 
+// flushPending reconciles what the watcher handed over and the loop did not
+// reach, as the daemon stops.
+func (s *Scheduler) flushPending(ctx context.Context) {
+	if !s.hasPending() {
+		// Checked before the context is built, so a daemon with no watcher —
+		// or nothing owed — does not arm a timer on its way out.
+		return
+	}
+	// Detached from ctx: it is almost certainly already cancelled — that is
+	// why we are here — and ScanPaths on a cancelled context does nothing.
+	// Bounded so a slow store cannot hold shutdown open; a shutdown that hangs
+	// is worse than a stale row, and launchd's patience is finite.
+	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownFlush)
+	defer cancel()
+	s.log.Debug("reconciling the last events before shutting down")
+	s.reconcilePending(flushCtx)
+}
+
 // cycle runs one scan-if-due plus one drain, and returns how long to wait
 // before the next one.
 func (s *Scheduler) cycle(ctx context.Context) time.Duration {
@@ -439,6 +504,23 @@ func (s *Scheduler) cycle(ctx context.Context) time.Duration {
 	if due, forced := s.scanDue(); due {
 		s.scan(ctx, forced)
 	}
+	if ctx.Err() != nil {
+		return deferRecheckInterval
+	}
+
+	// Above the battery gate, and below the walk, both deliberately.
+	//
+	// Above the gate because reconciling named paths is the same stat-and-hash
+	// the walk is, and discovery already runs on battery for that reason
+	// (DESIGN.md: cheap stages always run). Below the gate this would be the
+	// one thing a deferred cycle never reached, and an unplugged laptop would
+	// accumulate a day of deletions and purge none of them.
+	//
+	// Below the walk because scan *replaces* ScanErrs and PathErrors while
+	// this appends to them. One order or the other had to be chosen; this one
+	// makes the sample deterministic, where two goroutines made it a race the
+	// mutex kept safe but not repeatable.
+	s.reconcilePending(ctx)
 	if ctx.Err() != nil {
 		return deferRecheckInterval
 	}
@@ -604,6 +686,10 @@ func (s *Scheduler) drain(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		// Between batches, so the row a reconcile just wrote is at the head of
+		// the very next claim rather than one batch late. It also covers the
+		// two `continue` arms below, which never reach process.
+		s.reconcilePending(ctx)
 		// The version sweep needs no network, so it runs before anything can
 		// decide the queue is empty: a corpus that is entirely indexed under
 		// a superseded model looks like no work at all until it is swept.
@@ -697,6 +783,22 @@ func (s *Scheduler) drain(ctx context.Context) {
 // nothing to any document: an endpoint that is switched off is not evidence
 // about any file.
 func (s *Scheduler) prepare(ctx context.Context) (int, bool) {
+	// A probe that failed a moment ago is not worth repeating. Cycles used to
+	// arrive on a timer, so "once per cycle" was already a rate limit; since
+	// ADR 0014 a closed debounce window wakes one too, and ordinary background
+	// churn under a watched root — an editor's save, a build writing into a
+	// deny-listed directory — would otherwise probe a switched-off inference
+	// server every debounce window rather than every interval.
+	//
+	// Not backoff: there is nothing to back off from, no attempt is charged to
+	// any document, and the interval is the same one a deferred cycle already
+	// rechecks on. It only stops the wake *rate* deciding the probe rate
+	// (DESIGN.md: near-zero CPU when idle).
+	if until, ok := s.probeDeferredUntil(); ok {
+		s.log.Debug("skipping the embedding endpoint probe", "retry_at", until)
+		return 0, false
+	}
+
 	dims, err := s.indexer.Prepare(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -705,9 +807,33 @@ func (s *Scheduler) prepare(ctx context.Context) (int, bool) {
 		s.log.Warn("indexing deferred", "reason", GateEmbedder, "error", err)
 		s.gate(GateEmbedder, false)
 		s.mark(func(snap *Snapshot) { snap.LastError = err.Error() })
+		s.deferProbe()
 		return 0, false
 	}
+	s.clearProbeDeferral()
 	return dims, true
+}
+
+// probeDeferredUntil reports whether a failed probe is still inside its
+// recheck interval, and when that interval ends.
+func (s *Scheduler) probeDeferredUntil() (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.nextProbe, !s.nextProbe.IsZero() && s.now().Before(s.nextProbe)
+}
+
+// deferProbe holds the next endpoint probe off until the recheck interval.
+func (s *Scheduler) deferProbe() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextProbe = s.now().Add(deferRecheckInterval)
+}
+
+// clearProbeDeferral forgets a past failure once the endpoint answers.
+func (s *Scheduler) clearProbeDeferral() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextProbe = time.Time{}
 }
 
 // sweep re-queues documents whose derived data predates current, reporting
@@ -741,6 +867,34 @@ func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[
 		if ctx.Err() != nil {
 			return skipped, false
 		}
+		// Between documents, never inside one. Both halves of this matter and
+		// they are the same constraint (ADR 0014): a saved file waits at most
+		// one document to be noticed, and — because nothing else writes the
+		// catalog — the re-read below cannot go stale between here and the end
+		// of ProcessDocument.
+		s.reconcilePending(ctx)
+		if ctx.Err() != nil {
+			return skipped, false
+		}
+
+		// The copy in docs was read when the batch was claimed, which may be
+		// many documents and several reconciles ago. Working from it would
+		// send the pipeline to whatever path this document had *then* — and a
+		// rename since reconciled has given that path to a different file
+		// (issue #63).
+		fresh, err := s.queue.GetByID(ctx, doc.ID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return skipped, false
+			}
+			if s.documentGone(doc, err) {
+				seen[doc.ID] = struct{}{}
+				continue
+			}
+			return skipped, s.storeFailure(ctx, "re-read document", err)
+		}
+		doc = fresh
+
 		seen[doc.ID] = struct{}{}
 		res, err := s.indexer.ProcessDocument(ctx, doc, sv)
 		if err != nil {
@@ -773,13 +927,31 @@ func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[
 			skipped++
 			s.mark(func(snap *Snapshot) { snap.Skipped++ })
 		case pipeline.OutcomeSuperseded:
-			// Deleted or saved again while it was being indexed. Deliberately
-			// counted nowhere: it is not unreadable (which would make
-			// idleGate blame Full Disk Access for a working daemon) and not a
-			// failure. The reconcile that overtook this pass has already
-			// recorded what happened under the watcher's own counters.
-			s.log.Debug("document moved on while it was being indexed",
+			// Since ADR 0014 this can only mean the single-writer invariant
+			// broke. The document was re-read a moment ago, so its row was
+			// there; for it to be gone or rewritten by the time the pipeline
+			// wrote, something other than this goroutine must have written the
+			// catalog while this goroutine was inside ProcessDocument — and
+			// there is nothing else.
+			//
+			// It used to be routine, which is why it was logged at Debug and
+			// counted nowhere. Left that way it is now the quietest failure in
+			// the daemon: the row keeps its state and its unset next_retry_at,
+			// so it is re-claimed and superseded every cycle forever, while
+			// `bsearch status` reports no failures, no skips, and an empty
+			// gate over a permanently unsearchable document. That is precisely
+			// the shape ADR 0014 exists to rule out, so it reports, it counts,
+			// and it goes on the retry schedule rather than staying hot.
+			//
+			// reschedule rather than retry: the embedding endpoint is not
+			// implicated, so its health probe would be answering a question
+			// nobody asked.
+			s.log.Warn("a document was superseded mid-flight; only this goroutine should be writing the catalog (ADR 0014)",
 				"path", doc.Path, "error", res.Err)
+			s.mark(func(snap *Snapshot) { snap.Superseded++ })
+			if !s.reschedule(ctx, doc, res.Err) {
+				return skipped, false
+			}
 		case pipeline.OutcomeTransient:
 			if !s.retry(ctx, doc, res.Err) {
 				return skipped, false
@@ -827,7 +999,15 @@ func (s *Scheduler) retry(ctx context.Context, doc domain.Document, cause error)
 		s.mark(func(snap *Snapshot) { snap.LastError = err.Error() })
 		return false
 	}
+	return s.reschedule(ctx, doc, cause)
+}
 
+// reschedule charges an attempt and sets when the document is next due,
+// giving up on it at the cap. Split from retry because not every caller needs
+// retry's health probe: that probe exists to decide whether a failure belongs
+// to the document or to the embedding endpoint, and a caller that already
+// knows the endpoint is not involved would only be paying for it.
+func (s *Scheduler) reschedule(ctx context.Context, doc domain.Document, cause error) bool {
 	reason := "unknown error"
 	if cause != nil {
 		reason = cause.Error()

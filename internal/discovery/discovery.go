@@ -416,11 +416,24 @@ func (s *Scanner) processFile(ctx context.Context, path string, info fs.FileInfo
 	if known && existing.ContentHash == hash {
 		switch err := s.store.UpdateDocumentStat(ctx, existing.ID, info.Size(), info.ModTime()); {
 		case errors.Is(err, domain.ErrDocumentGone):
-			// Purged between the read and the write — the watcher's
-			// reconcile saw this path deleted while the walk was mid-stride
-			// over it. Not a store failure: leave it, and the next pass
-			// rediscovers the file if it is really still there.
-			return nil
+			// The row was purged between the read above and this write.
+			//
+			// That used to be ordinary: the watcher's reconcile ran on its own
+			// goroutine and could see this path deleted while the walk was
+			// mid-stride over it. Since ADR 0014 both run on the scheduler
+			// goroutine, so nothing can purge between the two — reaching here
+			// means the single-writer invariant broke, and swallowing it with
+			// a bare `return nil` would absorb that silently: no log, no
+			// PathError, and the document simply stops being counted.
+			//
+			// Recorded as a path error instead, which is the channel the rest
+			// of this function already uses for "something was wrong with this
+			// file" and which `bsearch status` surfaces (CLAUDE.md: never a
+			// silent skip). Still not fatal: one document is not worth failing
+			// a walk over, and the next pass rediscovers the file if it is
+			// really still there.
+			res.PathErrors = append(res.PathErrors, PathError{Path: path, Err: err})
+			return nil //nolint:nilerr // recorded in PathErrors; keep walking
 		case err != nil:
 			return err
 		}

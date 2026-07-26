@@ -180,6 +180,28 @@ func (s *Store) GetByPath(ctx context.Context, path string) (domain.Document, bo
 	return doc, true, nil
 }
 
+// GetByID fetches one catalog row, reporting domain.ErrDocumentGone when the
+// id is not there.
+func (s *Store) GetByID(ctx context.Context, docID string) (domain.Document, error) {
+	var (
+		doc domain.Document
+		raw docRow
+	)
+	err := s.db.Reader().QueryRowContext(ctx,
+		"SELECT "+strings.Join(docColumns, ", ")+" FROM documents WHERE id = ?", docID).
+		Scan(raw.targets(&doc)...)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return domain.Document{}, fmt.Errorf("get %s: %w", docID, domain.ErrDocumentGone)
+	case err != nil:
+		return domain.Document{}, fmt.Errorf("get by id %s: %w", docID, err)
+	}
+	if err := raw.finish(&doc); err != nil {
+		return domain.Document{}, err
+	}
+	return doc, nil
+}
+
 // GetByContentHash returns every catalog row with this content hash, in
 // stable id order — discovery's rename detection input.
 func (s *Store) GetByContentHash(ctx context.Context, hash string) ([]domain.Document, error) {

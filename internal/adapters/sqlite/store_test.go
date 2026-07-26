@@ -134,6 +134,62 @@ func TestUpsertDocumentReplacesChunks(t *testing.T) {
 	}
 }
 
+func TestGetByID(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	want := testDoc("d_1", "/notes/a.md")
+	if _, err := seedUpsert(t, store, want, testChunks("d_1", "alpha")); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := store.GetByID(ctx, "d_1")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Path != want.Path || got.ContentHash != want.ContentHash || got.State != want.State {
+		t.Errorf("GetByID = %+v, want path/hash/state from %+v", got, want)
+	}
+
+	// A missing id is ErrDocumentGone, not an ok=false — the id came out of a
+	// claim, so its absence is a purge and the caller stands down.
+	if _, err := store.GetByID(ctx, "d_missing"); !errors.Is(err, domain.ErrDocumentGone) {
+		t.Errorf("GetByID(unknown) = %v, want domain.ErrDocumentGone", err)
+	}
+}
+
+// Why the scheduler re-reads at all: a document claimed minutes ago must be
+// worked on at the path it has now, not the path it had then. Issue #63's
+// second half is exactly this — a stale copy sends the pipeline to a path a
+// rename has since given to a different file.
+func TestGetByIDSeesAPathChangedSinceTheClaim(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	claimed := testDoc("d_1", "/notes/a.md")
+	if _, err := seedUpsert(t, store, claimed, testChunks("d_1", "alpha")); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// The write discovery makes for a rename: same id, new path, back to
+	// discovered.
+	renamed := claimed
+	renamed.Path, renamed.State = "/notes/b.md", domain.DocStateDiscovered
+	if _, err := store.UpsertDocument(ctx, renamed, nil); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	got, err := store.GetByID(ctx, "d_1")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Path != "/notes/b.md" {
+		t.Errorf("path = %q, want the post-rename path — the claimed copy is stale", got.Path)
+	}
+}
+
 func TestGetByPathMissing(t *testing.T) {
 	db := openTestDB(t)
 	store := NewStore(db)

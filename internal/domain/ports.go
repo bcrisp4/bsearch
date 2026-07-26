@@ -43,15 +43,19 @@ var ErrDocumentGone = errors.New("the catalog row no longer exists (deleted whil
 // a write was in flight, so the write is aimed at a document that no longer
 // exists in the shape it was aimed at.
 //
-// The sibling of ErrDocumentGone, and for the same reason: the watcher's
-// reconcile now runs concurrently with a drain, so a file saved again during
-// its own embed resets the row to `discovered` and replaces its chunks. The
-// vectors coming back from that embed key on chunk IDs that have since been
-// deleted, and writing them anyway would attach one version's vectors to
-// another version's text. Reported rather than written, and the caller stands
-// down: the reconcile already re-queued the document, so the current content
-// is indexed by the next pass. Not a fault on either side — the file changed,
-// which is the one thing the pipeline cannot ask it not to do.
+// It exists because a file saved again during its own embed used to reset the
+// row to `discovered` and replace its chunks, while the vectors coming back
+// from that embed still keyed on chunk IDs that had since been deleted.
+// Writing them anyway would attach one version's vectors to another version's
+// text, so the store reports instead and the caller stands down.
+//
+// Since ADR 0014 that race cannot happen: one goroutine owns every catalog
+// write, and it is inside the pipeline for the whole window. The check that
+// produces this is kept anyway — an orphaned vector row is unreachable by
+// every delete in the store and silently displaces a real search hit, so it
+// is the one guard here that prevents rather than reports. What is left to do
+// is retire the sentinel and let the check be a plain error: nothing should be
+// able to recognise a broken invariant and stand down from it (#69).
 var ErrDocumentSuperseded = errors.New("the catalog row was rewritten while this write was in flight")
 
 // DocumentStore persists the catalog: documents and their chunks.
@@ -68,6 +72,19 @@ type DocumentStore interface {
 	// GetByPath fetches the catalog row for a path; ok is false when the
 	// path has never been stored. Cheap change detection (hash/size/mtime).
 	GetByPath(ctx context.Context, path string) (doc Document, ok bool, err error)
+	// GetByID fetches one catalog row, reporting ErrDocumentGone when it is
+	// not there. The scheduler re-reads a claimed document through this
+	// immediately before working on it: a batch is read once and worked
+	// through over the following minutes, so by the time a document comes up
+	// its copy can name a path the file no longer has (ADR 0014).
+	//
+	// A missing row is an error here where GetByPath returns ok=false,
+	// because the two answer different questions. Discovery asks GetByPath
+	// about paths it has never seen, and "never seen" is the normal answer
+	// and the reason discovery exists. An id, by contrast, came out of a
+	// claim — the row was there, so its absence is a purge, which is exactly
+	// what ErrDocumentGone names.
+	GetByID(ctx context.Context, docID string) (Document, error)
 	// GetByContentHash returns every catalog row with this content hash,
 	// for discovery's rename detection (DESIGN.md: doc_id Closed issue).
 	GetByContentHash(ctx context.Context, hash string) ([]Document, error)

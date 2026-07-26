@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -63,6 +64,19 @@ func newFakeQueue(docs ...domain.Document) *fakeQueue {
 		q.order = append(q.order, doc.ID)
 	}
 	return q
+}
+
+// GetByID is the scheduler's re-read. It returns the *current* row, so a test
+// that mutates q.docs between the claim and the process is standing in for a
+// reconcile landing between documents.
+func (q *fakeQueue) GetByID(_ context.Context, docID string) (domain.Document, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	doc, ok := q.docs[docID]
+	if !ok {
+		return domain.Document{}, fmt.Errorf("get %s: %w", docID, domain.ErrDocumentGone)
+	}
+	return *doc, nil
 }
 
 func (q *fakeQueue) ClaimBatch(_ context.Context, now time.Time, limit int) ([]domain.Document, error) {
@@ -160,6 +174,9 @@ type fakeIndexer struct {
 	// processErr is a fatal machinery failure.
 	processErr error
 	processed  []string
+	// processedDocs is what ProcessDocument was actually handed, which since
+	// ADR 0014 is the re-read row rather than the copy the claim produced.
+	processedDocs []domain.Document
 	// markIndexed lets a test mutate the queue as the real pipeline would.
 	markIndexed func(docID string)
 }
@@ -194,6 +211,7 @@ func (f *fakeIndexer) ProcessDocument(_ context.Context, doc domain.Document, _ 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.processed = append(f.processed, doc.ID)
+	f.processedDocs = append(f.processedDocs, doc)
 	if f.processErr != nil {
 		return pipeline.Result{}, f.processErr
 	}
@@ -240,13 +258,21 @@ type fakeScanner struct {
 	pathResult   discovery.Result
 	pathErr      error
 	scannedPaths [][]string
+	// onScanPaths runs inside ScanPaths, so a test can order a reconcile
+	// against document processing, or cancel mid-reconcile.
+	onScanPaths func()
 }
 
 func (s *fakeScanner) ScanPaths(_ context.Context, paths []string) (discovery.Result, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.scannedPaths = append(s.scannedPaths, slices.Clone(paths))
-	return s.pathResult, s.pathErr
+	hook, res, err := s.onScanPaths, s.pathResult, s.pathErr
+	s.mu.Unlock()
+	// Called outside the lock so a hook may reach back into the scheduler.
+	if hook != nil {
+		hook()
+	}
+	return res, err
 }
 
 func (s *fakeScanner) Roots() ([]string, []discovery.PathError) {
@@ -1322,5 +1348,45 @@ func TestSnapshotIsSafeConcurrently(t *testing.T) {
 		}
 		wg.Wait()
 		synctest.Wait()
+	})
+}
+
+// OutcomeSuperseded stopped being routine when the catalog gained a single
+// writer (ADR 0014): the document is re-read immediately before processing, so
+// for its row to change while the pipeline holds it, something other than this
+// goroutine must have written the catalog — and there is nothing else.
+//
+// Left as it was — Debug, counted nowhere, row untouched — it would be the
+// quietest failure in the daemon: re-claimed and superseded every cycle
+// forever, with `bsearch status` reporting no failures, no skips and an empty
+// gate over a permanently unsearchable document.
+func TestASupersededDocumentIsReportedAndRescheduled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredDoc("d_1"))
+		ix := newFakeIndexer()
+		ix.outcomes["d_1"] = pipeline.Result{
+			Outcome: pipeline.OutcomeSuperseded,
+			Err:     domain.ErrDocumentGone,
+		}
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		if snap := s.Snapshot(); snap.Superseded != 1 {
+			t.Errorf("Superseded = %d, want 1 — a broken invariant must be counted", snap.Superseded)
+		}
+		if len(q.reschedules) != 1 {
+			t.Fatalf("reschedules = %+v, want the row put on the retry schedule rather than left hot", q.reschedules)
+		}
+		if got := q.reschedules[0]; got.docID != "d_1" || got.attempts != 1 {
+			t.Errorf("reschedule = %+v, want d_1 charged one attempt", got)
+		}
+
+		// No health probe: the embedding endpoint is not implicated, so
+		// retry's fault-attribution probe would answer a question nobody
+		// asked. One probe for the drain itself, none for this.
+		if got := ix.prepareCount(); got != 1 {
+			t.Errorf("probes = %d, want only the drain's own", got)
+		}
 	})
 }

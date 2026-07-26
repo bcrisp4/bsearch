@@ -134,6 +134,12 @@ type WatchStatus struct {
 	Reconciled int `json:"reconciled"`
 	Deleted    int `json:"deleted"`
 	Rescans    int `json:"rescans"`
+	// Ignored counts watched paths that were out of scope. Reconciled 0
+	// against a large Ignored means the watcher is subscribed, healthy, and
+	// being told about paths the indexer does not recognise — usually an
+	// include root whose spelling (letter case, most often) does not match
+	// what FSEvents reports.
+	Ignored int `json:"ignored,omitempty"`
 }
 
 // PathError is one path the last scan could not read.
@@ -149,6 +155,10 @@ type IndexingTotals struct {
 	Skipped int `json:"skipped"`
 	Retried int `json:"retried"`
 	Swept   int `json:"swept"`
+	// Superseded counts documents whose catalog row changed while the
+	// pipeline was working on them. Only one goroutine writes the catalog
+	// (ADR 0014), so a non-zero value means that stopped being true.
+	Superseded int `json:"superseded,omitempty"`
 }
 
 // handleStatus answers even when nothing works: a status endpoint that fails

@@ -232,3 +232,36 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   cron job or a shell alias, delete it. A command to force a rebuild on demand
   is coming separately, and matters less than it used to now that a
   configuration change re-indexes by itself. (ADR 0012)
+
+
+### Fixed
+
+- **Saving or renaming a file while it was being indexed could quietly lose
+  it.** Two ways, both rare and both permanent until you touched the file
+  again. A file saved during its own indexing run could end up recorded as
+  indexed with nothing actually stored against it — present in the catalog,
+  on disk, and findable by no search. And a file renamed while the old
+  version was mid-flight could have the rename undone, leaving the new name
+  unindexed and the old name serving a different file's contents.
+
+  A brand new file could also be picked up twice at once and given two
+  identities, one of which was then discarded — so an agent holding onto the
+  discarded `doc_id` got nothing back.
+
+  All three came from the same place: the daemon had two things writing to the
+  index at once. It now has one.
+
+  What that costs is small and worth stating. A deleted file leaves search up
+  to one document later than before — in practice still seconds, and still
+  well inside the fifteen-second freshness target. Shutting the daemon down
+  now takes its steps in sequence rather than in parallel, so the launchd
+  configuration in `docs/daemon.md` allows more time for it; if you installed
+  the agent earlier, raising `ExitTimeOut` to 60 is worth doing.
+
+  `bsearch status` gains two numbers that should always read zero. One counts
+  watched paths that were out of scope — a large number against nothing queued
+  means an include root whose spelling does not match what macOS reports, which
+  otherwise looks like a perfectly healthy daemon indexing nothing. The other
+  counts documents whose index entry changed underneath the indexer, which
+  after this change should be impossible; if it isn't zero, something is wrong
+  and the line says so in plain words.

@@ -1,8 +1,18 @@
 # 0013 — FSEvents watcher and event-driven reconcile
 
-- **Status:** accepted
+- **Status:** accepted; the concurrency decision is reversed by
+  [0014](0014-single-writer-catalog.md)
 - **Date:** 2026-07-25
 - **Confidence:** medium
+
+> **One decision here no longer holds.** "Reconciling runs on the watch
+> goroutine, concurrently with a drain" was reversed by
+> [ADR 0014](0014-single-writer-catalog.md): every catalog write is back on the
+> scheduler goroutine, which is what closed the two races this record's own
+> Consequences section pre-registered (#62, #63). Everything else below stands —
+> the library choice, the stream flags, the debounce, the rescan-on-overflow
+> rule, the two-pass reconcile order, and the deletion guards. Not marked
+> superseded, because most of it is still the decision in force.
 
 ## Context
 
