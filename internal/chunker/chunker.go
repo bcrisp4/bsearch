@@ -32,7 +32,6 @@ const (
 // that exceeded the embedder input ceiling and was split as a fallback —
 // never truncated. The pipeline surfaces these in status.
 type Warning struct {
-	DocID       string
 	Ordinal     int // index into Result.Chunks
 	HeadingPath string
 	ByteStart   int
@@ -51,9 +50,12 @@ type Result struct {
 // metadata; <= 0 means unlimited. Pure and deterministic; Normalize owns
 // the only error path.
 //
+// Chunks carry no identity of their own: the caller writes them under a
+// content hash (ADR 0015), and this function never needs to know it.
+//
 // Every chunk's Text is exactly text[ByteStart:ByteEnd]; successive chunks
 // of a split section may overlap.
-func Chunk(docID, text string, inputCeilingTokens int) Result {
+func Chunk(text string, inputCeilingTokens int) Result {
 	// Base ceiling in bytes, with headroom reserved for the model prefix
 	// template that joins the chunk at embed time. The per-section
 	// breadcrumb is subtracted in chunkSection, where its length is known.
@@ -71,7 +73,6 @@ func Chunk(docID, text string, inputCeilingTokens int) Result {
 	res := Result{}
 	for i, c := range cands {
 		res.Chunks = append(res.Chunks, domain.Chunk{
-			DocID:       docID,
 			Ordinal:     i,
 			Text:        text[c.start:c.end],
 			HeadingPath: c.path,
@@ -80,7 +81,6 @@ func Chunk(docID, text string, inputCeilingTokens int) Result {
 		})
 		if c.warn != "" {
 			res.Warnings = append(res.Warnings, Warning{
-				DocID:       docID,
 				Ordinal:     i,
 				HeadingPath: c.path,
 				ByteStart:   c.start,

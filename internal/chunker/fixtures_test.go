@@ -25,7 +25,7 @@ func TestFixturesInvariants(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Normalize: %v", err)
 			}
-			res := Chunk("d1", text, 0)
+			res := Chunk(text, 0)
 			checkInvariants(t, text, res)
 			for _, w := range res.Warnings {
 				if w.Ordinal < 0 || w.Ordinal >= len(res.Chunks) {
@@ -45,7 +45,7 @@ func TestFixtureObsidianNote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := Chunk("d1", text, 0)
+	res := Chunk(text, 0)
 	checkInvariants(t, text, res)
 
 	all := ""
@@ -80,7 +80,7 @@ func TestFixtureCRLF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := Chunk("d1", text, 0)
+	res := Chunk(text, 0)
 	checkInvariants(t, text, res)
 	if len(res.Chunks) == 0 {
 		t.Fatal("no chunks")
@@ -103,7 +103,7 @@ func TestFixtureUTF16(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Normalize: %v", err)
 	}
-	res := Chunk("d1", text, 0)
+	res := Chunk(text, 0)
 	checkInvariants(t, text, res)
 	if len(res.Chunks) != 1 {
 		t.Fatalf("chunks: %+v", res.Chunks)

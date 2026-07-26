@@ -35,13 +35,8 @@ func checkInvariants(t *testing.T, text string, res Result) {
 
 func chunkAll(t *testing.T, text string) Result {
 	t.Helper()
-	res := Chunk("d1", text, 0)
+	res := Chunk(text, 0)
 	checkInvariants(t, text, res)
-	for _, c := range res.Chunks {
-		if c.DocID != "d1" {
-			t.Fatalf("DocID = %q", c.DocID)
-		}
-	}
 	return res
 }
 
@@ -312,7 +307,7 @@ func TestChunkCeilingSplitsAtomicBlockWithWarning(t *testing.T) {
 	}
 	b.WriteString("```\n")
 	src := b.String()
-	res := Chunk("d1", src, 300)
+	res := Chunk(src, 300)
 	checkInvariants(t, src, res)
 	if len(res.Chunks) < 2 {
 		t.Fatalf("want ceiling split, got %d chunks", len(res.Chunks))
@@ -347,7 +342,7 @@ func TestChunkCeilingSplitNeverMidRune(t *testing.T) {
 	// boundaries (invariant check would catch invalid spans via Text
 	// comparison, so assert valid UTF-8 explicitly).
 	src := "# É\n\n" + strings.Repeat("héllo wörld émoji 😀 ", 200) + "\n"
-	res := Chunk("d1", src, 100)
+	res := Chunk(src, 100)
 	checkInvariants(t, src, res)
 	for i, c := range res.Chunks {
 		for _, r := range c.Text {
