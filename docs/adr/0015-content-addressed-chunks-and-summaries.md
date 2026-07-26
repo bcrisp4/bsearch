@@ -266,13 +266,51 @@ a `docID` changes. This should land before
 [#18](https://github.com/bcrisp4/bsearch/issues/18) populates `summaries` and
 before M4's FTS5 triggers are written, purely to avoid writing them twice.
 
-**Risks.** The `content_hash IS NULL` case is new and every read path has to
-handle it — a missed case shows up as an unreadable file silently vanishing
-from `status` rather than being reported, the exact failure DESIGN.md's TCC
-handling exists to prevent. Worth a test that a permission error survives a
-full scan cycle and appears in `status` under `denied`, distinct from
-`dataless`. The `CHECK` makes the invalid states unrepresentable at the storage
-layer, which is most of the defence.
+**Risks — the nullable `content_hash`.** The `CHECK` makes the illegal states
+unrepresentable, so the remaining risk is queries reading a *legal* state
+wrongly. Three specific ones, worth naming because "handle NULL everywhere" is
+not actionable:
+
+1. **`NOT IN` against a column that can be NULL silently matches nothing.** If
+   the sweep's subquery is written `content_hash NOT IN (SELECT content_hash
+   FROM documents)`, then the first NULL in `documents` makes the predicate
+   `UNKNOWN` for every candidate and the statement deletes **zero rows,
+   permanently** — with no error and no log. It passes every test (fixtures
+   have readable files) and stops working the moment one real file is denied.
+   Prefer the NULL-safe form, which cannot be broken by omitting a clause:
+
+   ```sql
+   DELETE FROM content AS c WHERE NOT EXISTS (
+     SELECT 1 FROM documents d WHERE d.content_hash = c.content_hash);
+   ```
+
+2. **`status` must account for every file, and now needs three populations.**
+   Today `SELECT state, count(*) FROM documents GROUP BY state` puts every file
+   in exactly one bucket. Ported naively to `content` it counts *contents* (so
+   duplicates collapse) and omits NULL-hash rows entirely — a corpus with
+   twelve permission-denied files reports them nowhere and looks healthy. That
+   is precisely the silent-skip DESIGN.md's TCC constraint forbids. Report
+   files, distinct contents, and unread-by-reason separately. Note the existing
+   `PathErrors` do not cover this: they are last-scan transient, so a denial is
+   only visible if the most recent scan happened to touch that path, which is
+   why the reason is persisted here.
+
+3. **Enumeration has to make a choice.** `GET /v1/docs` lists files, and a
+   denied file is a file. Omitting it makes the endpoint answer "3 documents"
+   where there are five — the same lie as (2) at a different surface. Include
+   them, marked, without a summary.
+
+A fourth is self-limiting: `docRow.targets` scans `content_hash` into a plain
+`string` (`meta.go:80`), so a NULL fails loudly and immediately. The hazard is
+the *repair* — `COALESCE(content_hash, '')` compiles, and then `""` circulates
+as a hash, making a denied file indistinguishable from content that
+legitimately produced no chunks. The domain type must keep the two apart rather
+than leaning on a sentinel.
+
+Worth a test that a permission error survives a full scan cycle and appears in
+`status` under `denied`, distinct from `dataless` — and one that the sweep
+still collects orphans while an unreadable file is present, which is (1)'s
+regression test.
 
 **Follow-up.** Discovery can then hash only paths whose size/mtime changed
 *and* which it has not seen before, letting the pipeline's hash serve the rest
