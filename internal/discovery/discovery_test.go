@@ -16,9 +16,11 @@ import (
 	"github.com/bcrisp4/bsearch/internal/domain"
 )
 
-// fakeStore is an in-memory DocumentStore that records calls, keeping
-// these unit tests independent of cgo/sqlite (the real-store integration
-// lands with issue #6).
+// fakeStore is an in-memory DocumentStore that records calls, keeping the
+// unit tests fast and their assertions precise (which batches, in what
+// order). Not isolation: reconcile_integration_test.go links the real
+// sqlite store into this same test binary, so the package's tests are
+// cgo-built regardless.
 type fakeStore struct {
 	docs    map[string]domain.Document // keyed by path
 	content map[string]bool            // content rows, keyed by hash

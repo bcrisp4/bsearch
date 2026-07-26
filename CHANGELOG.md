@@ -54,12 +54,13 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 - **`bsearch status` now reports three populations that add up.** `files`
   counts your files, `unread` counts the ones whose bytes could never be
-  read — split by reason, because a permission denial (broken — grant Full
-  Disk Access) and a skipped iCloud placeholder (working as intended) must
-  never report as one number — and `content` counts distinct contents by
-  pipeline state. The gap between files-with-content and distinct contents
-  is what deduplication saved you. The always-zero "deleted" count is gone,
-  and failure groups now count contents (`failures[].contents` in the JSON).
+  read — split by the reasons described above, which must never report as
+  one number — and `content` counts distinct contents by pipeline state.
+  The gap between files-with-content and distinct contents is what
+  deduplication saved you (content pending garbage collection is excluded,
+  so the arithmetic holds at every moment, not just after a sweep). The
+  always-zero "deleted" count is gone, and failure groups now count
+  contents (`failures[].contents` in the JSON).
 
 - **Deleted and edited-away content is collected in the background.** When a
   file is deleted its search hits disappear immediately; the chunks, vectors
@@ -101,8 +102,8 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   [#57](https://github.com/bcrisp4/bsearch/issues/57).
 
 - **New `bsearch status` command: what the daemon is doing, and why it isn't.**
-  It reports the index — ready or not and why, the embedding model, per-state
-  document counts, and what the index costs on disk — alongside the
+  It reports the index — ready or not and why, the embedding model, the
+  file/content/unread counts, and what the index costs on disk — alongside the
   background indexing loop: what it is waiting on ("embedding endpoint
   unreachable", "deferred: on battery", "files could not be read — check Full
   Disk Access"), when it last scanned and last made progress, and what it has
@@ -111,8 +112,9 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   The two are reported separately on purpose, because they break separately:
   "nothing is indexed" and "nothing is indexing" have different fixes, and a
   daemon whose indexing never started now says so instead of looking idle.
-  Documents that were given up on are listed by reason, largest group first,
-  with a path to look at; directories that could not be read are listed too,
+  Content that was given up on is listed by reason, largest group first,
+  with a path to look at (identical failing files count once — they are one
+  content); directories that could not be read are listed too,
   which on macOS usually means the binary needs Full Disk Access.
 
   `bsearch status --json` emits the daemon's `GET /v1/status` document
