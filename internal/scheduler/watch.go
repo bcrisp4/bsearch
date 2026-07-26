@@ -432,6 +432,7 @@ func (s *Scheduler) recordReconcile(list []string, res discovery.Result) {
 		// scheduler happened to batch its wakes.
 		snap.WatchIgnored += res.Ignored
 	})
+	s.noteOrphanProducers(res)
 	// No Notify here. This runs on the scheduler goroutine, which is the only
 	// reader of that channel, so it would be waking itself: the drain that
 	// follows in the same cycle already sees the rows, and the buffered token

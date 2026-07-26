@@ -359,6 +359,60 @@ func (s *Store) queryContents(ctx context.Context, op, query string, args ...any
 	return contents, nil
 }
 
+// SweepOrphans deletes content no documents row references — the other half
+// of deletion (DeleteByPathPrefix removes only the documents row) and of
+// edits (discovery re-points a path and leaves the old hash behind). One
+// transaction, vectors first across every generation while the chunk ids
+// still resolve to find them by, then the content rows; chunks and
+// summaries follow by FK cascade. Returns how many contents went.
+//
+// ONE transaction, never find-then-delete across two: a file restored to
+// prior content in the gap (editor undo, `git checkout`, a sync client)
+// would lose derived data its hash had started referencing again — issue
+// #63's signature, rebuilt from new machinery.
+//
+// NOT EXISTS, never NOT IN. documents.content_hash is nullable (unread
+// rows), and `hash NOT IN (SELECT content_hash FROM documents)` goes
+// UNKNOWN for every candidate the moment one NULL is present — the sweep
+// would delete zero rows, permanently, with no error and no log. The shared
+// store-test seed keeps a NULL-hash row planted precisely so a rewrite in
+// that direction fails on arrival (see newTestStore).
+func (s *Store) SweepOrphans(ctx context.Context) (int, error) {
+	var removed int
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		tables, err := listVecTables(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for table := range tables {
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+				DELETE FROM %s WHERE rowid IN (
+					SELECT c.id FROM chunks c
+					WHERE NOT EXISTS (SELECT 1 FROM documents d
+						WHERE d.content_hash = c.content_hash))`, table)); err != nil {
+				return fmt.Errorf("sweep orphan vectors from %s: %w", table, err)
+			}
+		}
+		res, err := tx.ExecContext(ctx, `
+			DELETE FROM content WHERE NOT EXISTS (
+				SELECT 1 FROM documents d
+				WHERE d.content_hash = content.content_hash)`)
+		if err != nil {
+			return fmt.Errorf("sweep orphan content: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("sweep orphan content: %w", err)
+		}
+		removed = int(n)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
 // deleteVectorsTx removes a content's vec rows from EVERY generation, not
 // just the current one — content re-chunked while model B is current must
 // not resurface as orphan rowids when the user switches back to model A's

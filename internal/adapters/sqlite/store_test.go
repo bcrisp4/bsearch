@@ -640,3 +640,102 @@ func TestCatalogCountsReconciles(t *testing.T) {
 		t.Errorf("sum(Content) = %d, want 2 distinct contents for 3 readable files", contents)
 	}
 }
+
+// The orphan sweep runs with the shared NULL-hash seed row present in
+// documents — the exact shape that turns a `NOT IN (SELECT content_hash …)`
+// rewrite into a permanent silent no-op. If this test starts reporting zero
+// collected, the sweep's predicate has regressed to NOT IN (ADR 0015).
+func TestSweepOrphansCollectsUnreferencedContent(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("model-a"), 4); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+	vec := func(lead float32) []float32 { return []float32{lead, 0, 0, 0} }
+
+	keepIDs := seedChunked(t, store, testDoc("h_keep", "/keep.md"), testChunks("kept text"))
+	if err := store.UpsertVectors(ctx, keepIDs, [][]float32{vec(1)}); err != nil {
+		t.Fatalf("UpsertVectors keep: %v", err)
+	}
+	orphanIDs := seedChunked(t, store, testDoc("h_orphan", "/orphan.md"), testChunks("doomed text", "more doomed"))
+	if err := store.UpsertVectors(ctx, orphanIDs, [][]float32{vec(2), vec(3)}); err != nil {
+		t.Fatalf("UpsertVectors orphan: %v", err)
+	}
+
+	// A model switch mints generation 2 and leaves the orphan's vectors
+	// behind in generation 1 — the sweep must clean every generation, not
+	// just the current one.
+	if err := store.EnsureVecTable(ctx, vecSpec("model-b"), 4); err != nil {
+		t.Fatalf("EnsureVecTable gen2: %v", err)
+	}
+
+	if _, err := store.DeleteByPathPrefix(ctx, "/orphan.md"); err != nil {
+		t.Fatalf("DeleteByPathPrefix: %v", err)
+	}
+
+	removed, err := store.SweepOrphans(ctx)
+	if err != nil {
+		t.Fatalf("SweepOrphans: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("removed = %d, want 1 — exactly the orphaned content, with the NULL-hash seed row present", removed)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'h_orphan'"); got != 0 {
+		t.Errorf("orphan content rows = %d, want 0", got)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM chunks WHERE content_hash = 'h_orphan'"); got != 0 {
+		t.Errorf("orphan chunk rows = %d, want 0 (FK cascade)", got)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM vec_chunks_1 WHERE rowid IN (?, ?)",
+		orphanIDs[0], orphanIDs[1]); got != 0 {
+		t.Errorf("orphan vec rows = %d, want 0 — generation 1 is not current and must be swept anyway", got)
+	}
+
+	// The referenced content is untouched, vectors included.
+	if got := contentState(t, db, "h_keep"); got != "chunked" {
+		t.Errorf("kept content state = %q, want chunked", got)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM vec_chunks_1 WHERE rowid = ?", keepIDs[0]); got != 1 {
+		t.Errorf("kept vec rows = %d, want 1", got)
+	}
+}
+
+// A catalog with nothing orphaned sweeps to zero — the common case, and the
+// reason the scheduler only arms the sweep after deletions and edits.
+func TestSweepOrphansNothingToCollect(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+
+	seedChunked(t, store, testDoc("h_live", "/live.md"), testChunks("text"))
+	removed, err := store.SweepOrphans(ctx)
+	if err != nil {
+		t.Fatalf("SweepOrphans: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("removed = %d, want 0", removed)
+	}
+}
+
+// An edit orphans the old hash the same way a deletion does: the path
+// re-points, nothing references the old content, and the sweep collects it.
+func TestSweepOrphansCollectsTheOldHashOfAnEditedFile(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+
+	seedChunked(t, store, testDoc("h_before", "/note.md"), testChunks("v1"))
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("h_after", "/note.md")}); err != nil {
+		t.Fatalf("re-point: %v", err)
+	}
+
+	removed, err := store.SweepOrphans(ctx)
+	if err != nil {
+		t.Fatalf("SweepOrphans: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("removed = %d, want 1 (h_before)", removed)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'h_after'"); got != 1 {
+		t.Errorf("new content rows = %d, want 1 — the edit's own row must survive", got)
+	}
+}

@@ -49,6 +49,12 @@ type fakeQueue struct {
 	// sweepMoves is what ResetStale reports moved, per call.
 	sweepMoves []int
 	claims     int
+
+	// orphanSweeps counts SweepOrphans calls; orphanSweepErr fails them;
+	// orphanRemoved is what each call reports collected.
+	orphanSweeps   int
+	orphanSweepErr error
+	orphanRemoved  int
 }
 
 type rescheduled struct {
@@ -182,6 +188,22 @@ func (q *fakeQueue) MarkFailed(_ context.Context, hash, reason string) error {
 		c.State = domain.ContentStateFailed
 	}
 	return nil
+}
+
+func (q *fakeQueue) SweepOrphans(_ context.Context) (int, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.orphanSweeps++
+	if q.orphanSweepErr != nil {
+		return 0, q.orphanSweepErr
+	}
+	return q.orphanRemoved, nil
+}
+
+func (q *fakeQueue) orphanSweepCount() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.orphanSweeps
 }
 
 func (q *fakeQueue) snapshotContent(hash string) domain.Content {
@@ -1490,6 +1512,89 @@ func TestContentGoneAtTheReReadIsSkippedWithoutStoppingTheDrain(t *testing.T) {
 		reschedules, failures, _, _ := q.counts()
 		if reschedules != 0 || failures != 0 {
 			t.Errorf("reschedules = %d, failures = %d, want 0 and 0", reschedules, failures)
+		}
+	})
+}
+
+// The orphan sweep is armed at construction — the first drain collects
+// whatever a crash or a previous build left behind — and a quiet cycle
+// afterwards must not pay for it again.
+func TestOrphanSweepRunsOnceAtStartThenNotOnQuietCycles(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue()
+		s := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Fatalf("orphan sweeps after first cycle = %d, want 1", got)
+		}
+
+		s.cycle(t.Context())
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Errorf("orphan sweeps after a quiet cycle = %d, want still 1 — quiet cycles must not sweep", got)
+		}
+	})
+}
+
+// Deletions and edits are the two orphan producers, so a scan reporting
+// either arms the next drain's sweep.
+func TestDeletionsAndEditsArmTheOrphanSweep(t *testing.T) {
+	for name, res := range map[string]discovery.Result{
+		"deletions": {Deleted: 1},
+		"edits":     {Changed: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				q := newFakeQueue()
+				sc := watchedScanner("/root")
+				s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+				s.cycle(t.Context()) // consumes the construction arm
+				if got := q.orphanSweepCount(); got != 1 {
+					t.Fatalf("orphan sweeps = %d, want 1", got)
+				}
+
+				sc.mu.Lock()
+				sc.result = res
+				sc.mu.Unlock()
+				s.requestScan()
+				s.cycle(t.Context())
+				if got := q.orphanSweepCount(); got != 2 {
+					t.Errorf("orphan sweeps = %d, want 2 — a scan with orphan producers must arm the sweep", got)
+				}
+
+				s.cycle(t.Context())
+				if got := q.orphanSweepCount(); got != 2 {
+					t.Errorf("orphan sweeps = %d, want still 2 — the arm is consumed, not standing", got)
+				}
+			})
+		})
+	}
+}
+
+// A failed sweep re-arms itself and stops the drain before anything is
+// claimed: the deletions that armed it exist nowhere else, and an orphaned
+// row must never be handed to the pipeline.
+func TestOrphanSweepFailureRearmsAndStopsTheDrain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_1"))
+		q.orphanSweepErr = errors.New("disk full")
+		s := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+		if snap := s.Snapshot(); snap.Gate != GateStoreFail {
+			t.Errorf("gate = %q, want %q", snap.Gate, GateStoreFail)
+		}
+		if _, _, _, claims := q.counts(); claims != 0 {
+			t.Errorf("claims = %d, want 0 — the sweep runs before anything is claimed", claims)
+		}
+
+		q.mu.Lock()
+		q.orphanSweepErr = nil
+		q.mu.Unlock()
+		s.cycle(t.Context())
+		if got := q.orphanSweepCount(); got != 2 {
+			t.Errorf("orphan sweeps = %d, want 2 — a failed sweep must re-arm", got)
 		}
 	})
 }

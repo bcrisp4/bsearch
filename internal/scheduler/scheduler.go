@@ -101,6 +101,12 @@ type Queue interface {
 	domain.Queue
 	// MarkFailed records a content as permanently failed with a reason.
 	MarkFailed(ctx context.Context, hash, reason string) error
+	// SweepOrphans deletes content no documents row references — vectors,
+	// chunks and summaries with it — in one transaction, returning how many
+	// contents went. The queue is where it belongs because orphaned
+	// non-terminal rows are otherwise claimed and Gone-skipped every drain,
+	// forever.
+	SweepOrphans(ctx context.Context) (int, error)
 }
 
 // Indexer is the per-content work, as implemented by *pipeline.Indexer.
@@ -279,6 +285,16 @@ type Scheduler struct {
 
 	mu   sync.Mutex
 	snap Snapshot
+	// needOrphanSweep asks the next drain to collect content no documents
+	// row references (ADR 0015). Set by the two orphan producers — a
+	// deletion removing rows, an edit re-pointing a path away from its old
+	// hash — and once at construction, so the first drain collects whatever
+	// a crash or a previous build left behind. Not every cycle: a quiet
+	// machine's drains stay two queries long.
+	//
+	// Under mu only because scan results are recorded under mu; the sweep
+	// itself runs on the scheduler goroutine like every other write.
+	needOrphanSweep bool
 	// forceScan is a walk requested out of band — by an incomplete event
 	// stream. Consumed by scanDue, so it survives a scan already in flight.
 	forceScan bool
@@ -318,6 +334,9 @@ func New(opts Options) (*Scheduler, error) {
 		now:          opts.Clock,
 		rnd:          opts.Rand,
 		notify:       make(chan struct{}, 1),
+		// The first drain sweeps unconditionally: one indexed anti-join over
+		// content, buying a catalog with no leftovers from before a restart.
+		needOrphanSweep: true,
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -636,6 +655,19 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 		snap.PathErrors = sample
 		snap.ScanReachedNothing = len(res.PathErrors) > 0 && reached == 0
 	})
+	s.noteOrphanProducers(res)
+}
+
+// noteOrphanProducers arms the orphan sweep when a discovery result did
+// either of the two things that orphan content: deleted documents rows, or
+// re-pointed a path away from its old hash (an edit). New files and
+// unchanged files produce no orphans, so a bulk initial index never pays
+// for sweeping (ADR 0015; the issue's "after deletions, not every cycle",
+// widened to edits because they orphan identically).
+func (s *Scheduler) noteOrphanProducers(res discovery.Result) {
+	if res.Deleted > 0 || res.Changed > 0 {
+		s.requestOrphanSweep()
+	}
 }
 
 // logPathErrors reports per-path problems at Warn up to limit, says how many
@@ -698,6 +730,27 @@ func (s *Scheduler) drain(ctx context.Context) {
 			}
 			s.sweptVersions = true
 			continue
+		}
+
+		// Orphans are collected before anything is claimed, so a row a
+		// reconcile just orphaned is never handed to the pipeline only to
+		// come back ErrContentGone. Distinct from the *stale-versions* sweep
+		// above (s.sweep): that one re-queues outdated derived data, this
+		// one deletes unreferenced data (ADR 0015).
+		if s.takeOrphanSweep() {
+			n, err := s.queue.SweepOrphans(ctx)
+			if err != nil {
+				// Re-armed, or the deletions that set the flag would never
+				// be answered for: nothing else re-requests them.
+				s.requestOrphanSweep()
+				s.storeFailure(ctx, "sweep orphaned content", err)
+				return
+			}
+			if n > 0 {
+				s.log.Info("swept orphaned content", "contents", n)
+			} else {
+				s.log.Debug("orphan sweep found nothing to collect")
+			}
 		}
 
 		contents, err := s.queue.ClaimBatch(ctx, s.now(), s.batchSize)
@@ -1051,6 +1104,23 @@ func (s *Scheduler) reschedule(ctx context.Context, item domain.WorkItem, cause 
 		"path", item.Path, "attempts", attempts, "retry_in_s", int(wait.Seconds()))
 	s.mark(func(snap *Snapshot) { snap.Retried++ })
 	return true
+}
+
+// takeOrphanSweep consumes the sweep request, reporting whether one was
+// pending.
+func (s *Scheduler) takeOrphanSweep() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	due := s.needOrphanSweep
+	s.needOrphanSweep = false
+	return due
+}
+
+// requestOrphanSweep asks the next drain to collect unreferenced content.
+func (s *Scheduler) requestOrphanSweep() {
+	s.mu.Lock()
+	s.needOrphanSweep = true
+	s.mu.Unlock()
 }
 
 // contentGone reports whether a store error means the content was swept (or

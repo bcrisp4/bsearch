@@ -50,6 +50,13 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   ([#34](https://github.com/bcrisp4/bsearch/issues/34)), so the initial index
   of a big folder spends its time hashing and embedding, not committing.
 
+- **Deleted and edited-away content is collected in the background.** When a
+  file is deleted its search hits disappear immediately; the chunks, vectors
+  and summaries its bytes produced are garbage-collected by a sweep that runs
+  after deletions and edits (and once at startup), never on quiet cycles.
+  Nothing observable changes when it runs — that is the point: search never
+  waits on it.
+
 ### Added
 
 - **Save a file, and it is searchable in seconds.** The daemon now watches
