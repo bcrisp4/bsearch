@@ -264,11 +264,12 @@ func indexingStatus(sched *scheduler.Scheduler, offReason string) server.Indexin
 			Ignored:    snap.WatchIgnored,
 		},
 		Totals: server.IndexingTotals{
-			Indexed: snap.Indexed,
-			Failed:  snap.Failed,
-			Skipped: snap.Skipped,
-			Retried: snap.Retried,
-			Swept:   snap.Swept,
+			Indexed:    snap.Indexed,
+			Failed:     snap.Failed,
+			Skipped:    snap.Skipped,
+			Retried:    snap.Retried,
+			Swept:      snap.Swept,
+			Superseded: snap.Superseded,
 		},
 	}
 	for _, pe := range snap.PathErrors {

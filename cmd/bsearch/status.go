@@ -206,6 +206,14 @@ func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now ti
 		// an indexed corpus is being worked through again.
 		fields = append(fields, field{"re-queued", count(t.Swept) + " (superseded pipeline stage)"})
 	}
+	if t.Superseded > 0 {
+		// Never expected. One goroutine writes the catalog (ADR 0014), so any
+		// count here means something else did — and the documents involved are
+		// being re-attempted rather than indexed. Worth a line that says so
+		// plainly rather than a number the reader has to interpret.
+		fields = append(fields, field{"superseded",
+			count(t.Superseded) + " — the index was written by something other than the daemon's indexer (please report)"})
+	}
 	if indexing.LastError != "" {
 		fields = append(fields, field{"last error", search.Preview(indexing.LastError, maxProseRunes)})
 	}

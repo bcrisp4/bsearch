@@ -155,6 +155,10 @@ type IndexingTotals struct {
 	Skipped int `json:"skipped"`
 	Retried int `json:"retried"`
 	Swept   int `json:"swept"`
+	// Superseded counts documents whose catalog row changed while the
+	// pipeline was working on them. Only one goroutine writes the catalog
+	// (ADR 0014), so a non-zero value means that stopped being true.
+	Superseded int `json:"superseded,omitempty"`
 }
 
 // handleStatus answers even when nothing works: a status endpoint that fails

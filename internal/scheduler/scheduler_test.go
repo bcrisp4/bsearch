@@ -1350,3 +1350,43 @@ func TestSnapshotIsSafeConcurrently(t *testing.T) {
 		synctest.Wait()
 	})
 }
+
+// OutcomeSuperseded stopped being routine when the catalog gained a single
+// writer (ADR 0014): the document is re-read immediately before processing, so
+// for its row to change while the pipeline holds it, something other than this
+// goroutine must have written the catalog — and there is nothing else.
+//
+// Left as it was — Debug, counted nowhere, row untouched — it would be the
+// quietest failure in the daemon: re-claimed and superseded every cycle
+// forever, with `bsearch status` reporting no failures, no skips and an empty
+// gate over a permanently unsearchable document.
+func TestASupersededDocumentIsReportedAndRescheduled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredDoc("d_1"))
+		ix := newFakeIndexer()
+		ix.outcomes["d_1"] = pipeline.Result{
+			Outcome: pipeline.OutcomeSuperseded,
+			Err:     domain.ErrDocumentGone,
+		}
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		if snap := s.Snapshot(); snap.Superseded != 1 {
+			t.Errorf("Superseded = %d, want 1 — a broken invariant must be counted", snap.Superseded)
+		}
+		if len(q.reschedules) != 1 {
+			t.Fatalf("reschedules = %+v, want the row put on the retry schedule rather than left hot", q.reschedules)
+		}
+		if got := q.reschedules[0]; got.docID != "d_1" || got.attempts != 1 {
+			t.Errorf("reschedule = %+v, want d_1 charged one attempt", got)
+		}
+
+		// No health probe: the embedding endpoint is not implicated, so
+		// retry's fault-attribution probe would answer a question nobody
+		// asked. One probe for the drain itself, none for this.
+		if got := ix.prepareCount(); got != 1 {
+			t.Errorf("probes = %d, want only the drain's own", got)
+		}
+	})
+}

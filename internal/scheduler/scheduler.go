@@ -201,6 +201,11 @@ type Snapshot struct {
 	Skipped int // documents unreadable at the time since start
 	Retried int // transient failures rescheduled since start
 	Swept   int // documents re-queued by a stale sweep since start
+	// Superseded counts documents whose row changed under the pipeline
+	// mid-document. Since ADR 0014 that can only happen if something other
+	// than the scheduler goroutine wrote the catalog, so any non-zero value
+	// is a broken invariant rather than a busy daemon.
+	Superseded int
 	// ScanErrs counts per-path problems (TCC, unreadable) the daemon has met
 	// since the last walk: the walk replaces the count, and each reconcile in
 	// between adds to it. Both sources on purpose — a permission error the
@@ -922,13 +927,31 @@ func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[
 			skipped++
 			s.mark(func(snap *Snapshot) { snap.Skipped++ })
 		case pipeline.OutcomeSuperseded:
-			// Deleted or saved again while it was being indexed. Deliberately
-			// counted nowhere: it is not unreadable (which would make
-			// idleGate blame Full Disk Access for a working daemon) and not a
-			// failure. The reconcile that overtook this pass has already
-			// recorded what happened under the watcher's own counters.
-			s.log.Debug("document moved on while it was being indexed",
+			// Since ADR 0014 this can only mean the single-writer invariant
+			// broke. The document was re-read a moment ago, so its row was
+			// there; for it to be gone or rewritten by the time the pipeline
+			// wrote, something other than this goroutine must have written the
+			// catalog while this goroutine was inside ProcessDocument — and
+			// there is nothing else.
+			//
+			// It used to be routine, which is why it was logged at Debug and
+			// counted nowhere. Left that way it is now the quietest failure in
+			// the daemon: the row keeps its state and its unset next_retry_at,
+			// so it is re-claimed and superseded every cycle forever, while
+			// `bsearch status` reports no failures, no skips, and an empty
+			// gate over a permanently unsearchable document. That is precisely
+			// the shape ADR 0014 exists to rule out, so it reports, it counts,
+			// and it goes on the retry schedule rather than staying hot.
+			//
+			// reschedule rather than retry: the embedding endpoint is not
+			// implicated, so its health probe would be answering a question
+			// nobody asked.
+			s.log.Warn("a document was superseded mid-flight; only this goroutine should be writing the catalog (ADR 0014)",
 				"path", doc.Path, "error", res.Err)
+			s.mark(func(snap *Snapshot) { snap.Superseded++ })
+			if !s.reschedule(ctx, doc, res.Err) {
+				return skipped, false
+			}
 		case pipeline.OutcomeTransient:
 			if !s.retry(ctx, doc, res.Err) {
 				return skipped, false
@@ -976,7 +999,15 @@ func (s *Scheduler) retry(ctx context.Context, doc domain.Document, cause error)
 		s.mark(func(snap *Snapshot) { snap.LastError = err.Error() })
 		return false
 	}
+	return s.reschedule(ctx, doc, cause)
+}
 
+// reschedule charges an attempt and sets when the document is next due,
+// giving up on it at the cap. Split from retry because not every caller needs
+// retry's health probe: that probe exists to decide whether a failure belongs
+// to the document or to the embedding endpoint, and a caller that already
+// knows the endpoint is not involved would only be paying for it.
+func (s *Scheduler) reschedule(ctx context.Context, doc domain.Document, cause error) bool {
 	reason := "unknown error"
 	if cause != nil {
 		reason = cause.Error()
