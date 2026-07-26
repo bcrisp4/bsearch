@@ -113,14 +113,22 @@ func TestFailureReasonsCountsDistinctContents(t *testing.T) {
 	}
 }
 
-// Failed content whose every path is gone (sweep pending) still has to
-// report — dropping it would make the failure total disagree with the state
-// counts. There is no path to show, so the example is empty.
-func TestFailureReasonsReportsOrphanedFailedContent(t *testing.T) {
+// Failed content whose every path is gone (sweep pending) is invisible:
+// CatalogCounts' EXISTS scope excludes it from the failed count, so
+// reporting it here would make the failure list disagree with its own
+// heading — and there is no path a user could act on anyway.
+func TestFailureReasonsExcludesOrphanedFailedContent(t *testing.T) {
 	store, db := newTestStore(t)
 
 	seedQueueContent(t, db, "h_orphan", domain.ContentStateDiscovered, 100, nil, "")
 	if err := store.MarkFailed(t.Context(), "h_orphan", "converter: boom"); err != nil {
+		t.Fatalf("MarkFailed: %v", err)
+	}
+	// A referenced failure alongside, so the exclusion is visible as an
+	// omission rather than as an empty result.
+	seedQueueContent(t, db, "h_live", domain.ContentStateDiscovered, 100, nil, "")
+	seedQueuePath(t, db, "h_live", "/tmp/live.md", 0)
+	if err := store.MarkFailed(t.Context(), "h_live", "not valid UTF-8"); err != nil {
 		t.Fatalf("MarkFailed: %v", err)
 	}
 
@@ -128,12 +136,9 @@ func TestFailureReasonsReportsOrphanedFailedContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FailureReasons: %v", err)
 	}
-	if len(groups) != 1 {
-		t.Fatalf("groups = %+v, want one", groups)
-	}
-	want := domain.FailureGroup{Reason: "converter: boom", Contents: 1, ExamplePath: ""}
-	if groups[0] != want {
-		t.Errorf("group = %+v, want %+v", groups[0], want)
+	want := []domain.FailureGroup{{Reason: "not valid UTF-8", Contents: 1, ExamplePath: "/tmp/live.md"}}
+	if len(groups) != 1 || groups[0] != want[0] {
+		t.Errorf("groups = %+v, want only the referenced failure %+v", groups, want)
 	}
 }
 
@@ -149,6 +154,7 @@ func TestFailureReasonsRespectsLimit(t *testing.T) {
 		for n := 0; n <= i; n++ {
 			hash := "h_" + reason + "_" + string(rune('a'+n))
 			seedQueueContent(t, db, hash, domain.ContentStateDiscovered, 100, nil, "")
+			seedQueuePath(t, db, hash, "/tmp/"+hash+".md", 0)
 			if err := store.MarkFailed(ctx, hash, reason); err != nil {
 				t.Fatalf("MarkFailed %s: %v", hash, err)
 			}
@@ -178,6 +184,7 @@ func TestFailureReasonsCountsRowsWithNoReason(t *testing.T) {
 	store, db := newTestStore(t)
 
 	seedQueueContent(t, db, "h_silent", domain.ContentStateFailed, 100, nil, "")
+	seedQueuePath(t, db, "h_silent", "/tmp/silent.md", 0)
 
 	groups, err := store.FailureReasons(t.Context(), 5)
 	if err != nil {
@@ -200,5 +207,107 @@ func TestFailureReasonsEmptyWhenNothingFailed(t *testing.T) {
 	}
 	if len(groups) != 0 {
 		t.Errorf("groups = %+v, want none", groups)
+	}
+}
+
+// The reconciliation identity — files − unread readable, contents distinct —
+// must hold at ALL times, not just after a sweep: an edit orphans the old
+// hash's row instantly, and counting it would read as more contents than
+// files the moment a user edits anything.
+func TestCatalogCountsExcludesOrphanedContent(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := t.Context()
+
+	if err := store.UpsertDocuments(ctx, []domain.Document{{
+		Path: "/notes/a.md", ContentHash: "hash-old", Size: 1, MTime: time.Unix(100, 0),
+	}}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// The edit: the path re-points, orphaning hash-old until the sweep.
+	if err := store.UpsertDocuments(ctx, []domain.Document{{
+		Path: "/notes/a.md", ContentHash: "hash-new", Size: 2, MTime: time.Unix(200, 0),
+	}}); err != nil {
+		t.Fatalf("re-point: %v", err)
+	}
+
+	counts, err := store.CatalogCounts(ctx)
+	if err != nil {
+		t.Fatalf("CatalogCounts: %v", err)
+	}
+	if counts.Files != 2 { // /notes/a.md + the unread seed
+		t.Errorf("Files = %d, want 2", counts.Files)
+	}
+	if got := counts.Content[domain.ContentStateDiscovered]; got != 1 {
+		t.Errorf("Content[discovered] = %d, want 1 — the orphaned hash-old row must be invisible", got)
+	}
+	total := 0
+	for _, n := range counts.Content {
+		total += n
+	}
+	if total != 1 {
+		t.Errorf("sum(Content) = %d, want 1 distinct referenced content", total)
+	}
+}
+
+// One read transaction for all of status: counts, depth, and failure groups
+// must describe the same snapshot, and the failures query only runs when the
+// counts show something failed.
+func TestStatusSnapshotReconcilesAndGatesFailures(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := t.Context()
+
+	seedQueueContent(t, db, "h_pending", domain.ContentStateDiscovered, 100, nil, "")
+	seedQueuePath(t, db, "h_pending", "/tmp/pending.md", 0)
+
+	counts, depth, groups, err := store.StatusSnapshot(ctx, time.Unix(1000, 0), 5)
+	if err != nil {
+		t.Fatalf("StatusSnapshot: %v", err)
+	}
+	if counts.Content[domain.ContentStateDiscovered] != 1 {
+		t.Errorf("Content = %v, want one discovered", counts.Content)
+	}
+	if depth.Pending != 1 || depth.Retrying != 0 {
+		t.Errorf("depth = %+v, want one pending", depth)
+	}
+	if groups != nil {
+		t.Errorf("groups = %+v, want nil — nothing failed, so the query must not run", groups)
+	}
+
+	if err := store.MarkFailed(ctx, "h_pending", "converter: boom"); err != nil {
+		t.Fatalf("MarkFailed: %v", err)
+	}
+	counts, depth, groups, err = store.StatusSnapshot(ctx, time.Unix(1000, 0), 5)
+	if err != nil {
+		t.Fatalf("StatusSnapshot: %v", err)
+	}
+	if counts.Content[domain.ContentStateFailed] != 1 || depth.Pending != 0 {
+		t.Errorf("counts = %v, depth = %+v, want the failure reflected in both", counts.Content, depth)
+	}
+	want := domain.FailureGroup{Reason: "converter: boom", Contents: 1, ExamplePath: "/tmp/pending.md"}
+	if len(groups) != 1 || groups[0] != want {
+		t.Errorf("groups = %+v, want %+v", groups, want)
+	}
+}
+
+// An orphaned failed content is invisible to the snapshot as a whole: not in
+// the counts, so the failure query is not even run for it.
+func TestStatusSnapshotIgnoresOrphanedFailures(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := t.Context()
+
+	seedQueueContent(t, db, "h_orphan", domain.ContentStateDiscovered, 100, nil, "")
+	if err := store.MarkFailed(ctx, "h_orphan", "converter: boom"); err != nil {
+		t.Fatalf("MarkFailed: %v", err)
+	}
+
+	counts, _, groups, err := store.StatusSnapshot(ctx, time.Unix(1000, 0), 5)
+	if err != nil {
+		t.Fatalf("StatusSnapshot: %v", err)
+	}
+	if counts.Content[domain.ContentStateFailed] != 0 {
+		t.Errorf("Content[failed] = %d, want 0 for an orphaned failure", counts.Content[domain.ContentStateFailed])
+	}
+	if groups != nil {
+		t.Errorf("groups = %+v, want nil", groups)
 	}
 }

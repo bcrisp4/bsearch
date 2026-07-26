@@ -7,6 +7,13 @@ import "sort"
 // document with the newest mtime, tie-broken by path ascending — the rule
 // DESIGN.md fixes so the same corpus always yields the same answer); AlsoAt
 // is the other paths, ascending, nil when the content is unique.
+//
+// AlsoAt is deliberately uncapped — the complete copy list, however many
+// there are. A cap would leave "which other files hold this" unanswerable
+// for exactly the heavily-duplicated content that raises the question, and
+// the expensive half of the fan-out (chunk text re-materialised once per
+// path) was removed by the store's two-query assembly, leaving each entry
+// one path string (decision recorded on PR #79).
 type ContentHit struct {
 	Hit    Hit
 	AlsoAt []string

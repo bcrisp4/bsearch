@@ -203,11 +203,17 @@ func (ix *Indexer) Run(ctx context.Context, items []domain.WorkItem) (Summary, e
 			sum.Failed++
 		case OutcomeSkipped:
 			sum.Skipped++
-		case OutcomeChanged, OutcomeSuperseded:
+		case OutcomeChanged:
+			// One-shot runs are eval's completeness guarantee — "a golden
+			// corpus must index completely or not at all" — and a file
+			// changing mid-run means the corpus is not what the caller
+			// thinks it is. Folding it into "nothing to count" would let a
+			// partially-indexed corpus score clean, so it aborts instead.
+			return sum, fmt.Errorf("corpus changed while indexing: %w", res.Err)
+		case OutcomeSuperseded:
 			// Nothing to count: the content this run was working on is not
-			// what the catalog (or the filesystem) holds any more, and
-			// whatever replaced it is already queued or will be at the next
-			// scan.
+			// what the catalog holds any more, and whatever replaced it is
+			// already queued or will be at the next scan.
 		case OutcomeTransient:
 			// One-shot has nowhere to put a retry, so endpoint trouble ends
 			// the run. The content stays chunked and resumes next time;
@@ -290,33 +296,9 @@ func (ix *Indexer) ProcessContent(ctx context.Context, item domain.WorkItem, sv 
 	}
 	c.StageVersions = merged
 
-	raw, err := os.ReadFile(item.Path)
-	if err != nil {
-		// Environmental, not the content's fault: the file vanished after
-		// the scan, or reading is denied (TCC). Leave the row alone — it
-		// retries next run, and granting access or restoring the file
-		// needs no content change to take effect.
-		if errors.Is(err, fs.ErrNotExist) {
-			fmt.Fprintf(ix.opts.Progress, "skipped %s: file no longer exists\n", item.Path)
-		} else {
-			fmt.Fprintf(ix.opts.Progress, "skipped %s: %v (will retry next run)\n", item.Path, err)
-		}
-		return Result{Outcome: OutcomeSkipped, Err: err}, nil
-	}
-
-	// The pipeline hashes what it actually read and writes under *that*
-	// identity, never trusting the hash discovery recorded earlier
-	// (ADR 0015). A mismatch means the file changed between the claim and
-	// this read: abandon — writing chunks under c.Hash would attach the new
-	// bytes' chunks to the old bytes' identity, everywhere that content is
-	// referenced from.
-	digest := sha256.Sum256(raw)
-	if got := hex.EncodeToString(digest[:]); got != c.Hash {
-		fmt.Fprintf(ix.opts.Progress, "abandoned %s: changed while queued\n", item.Path)
-		return Result{
-			Outcome: OutcomeChanged,
-			Err:     fmt.Errorf("content at %s changed while queued", item.Path),
-		}, nil
+	raw, path, res0 := ix.readVerified(item, c.Hash)
+	if raw == nil {
+		return res0, nil
 	}
 
 	text, err := chunker.Normalize(raw)
@@ -324,7 +306,7 @@ func (ix *Indexer) ProcessContent(ctx context.Context, item domain.WorkItem, sv 
 		// Undecodable — permanent, and under content addressing permanent
 		// forever: these exact bytes cannot decode differently tomorrow
 		// (DESIGN.md: Chunking/Encoding).
-		return ix.fail(ctx, c, item.Path, fmt.Sprintf("normalize: %v", err))
+		return ix.fail(ctx, c, path, fmt.Sprintf("normalize: %v", err))
 	}
 
 	res := chunker.Chunk(text, ix.spec.CeilingTokens)
@@ -332,7 +314,7 @@ func (ix *Indexer) ProcessContent(ctx context.Context, item domain.WorkItem, sv 
 	for _, w := range res.Warnings {
 		// Path, ordinal, and reason only — the heading path is document
 		// content and must stay out of default output (DESIGN.md: Privacy).
-		fmt.Fprintf(ix.opts.Progress, "warning: %s: %s (chunk %d)\n", item.Path, w.Reason, w.Ordinal)
+		fmt.Fprintf(ix.opts.Progress, "warning: %s: %s (chunk %d)\n", path, w.Reason, w.Ordinal)
 	}
 
 	// Short write transaction before any network call (DESIGN.md:
@@ -340,10 +322,10 @@ func (ix *Indexer) ProcessContent(ctx context.Context, item domain.WorkItem, sv 
 	c.State = domain.ContentStateChunked
 	chunkIDs, err := ix.opts.Store.StoreChunks(ctx, c, res.Chunks)
 	if err != nil {
-		if gone, r := ix.movedOn(item.Path, err); gone {
+		if gone, r := ix.movedOn(path, err); gone {
 			return r, nil
 		}
-		return Result{}, fmt.Errorf("store %s: %w", item.Path, err)
+		return Result{}, fmt.Errorf("store %s: %w", path, err)
 	}
 
 	// Zero chunks is a legitimate terminal outcome — an empty or
@@ -361,30 +343,81 @@ func (ix *Indexer) ProcessContent(ctx context.Context, item domain.WorkItem, sv 
 				// whenever the caller comes back to it — nothing is burned
 				// and nothing is redone.
 				out.Outcome = OutcomeTransient
-				out.Err = fmt.Errorf("embed %s: %w", item.Path, err)
+				out.Err = fmt.Errorf("embed %s: %w", path, err)
 				return out, nil
 			}
-			return ix.failWith(ctx, c, item.Path, out, fmt.Sprintf("embed: %v", err))
+			return ix.failWith(ctx, c, path, out, fmt.Sprintf("embed: %v", err))
 		}
 		if err := ix.opts.Vectors.UpsertVectors(ctx, chunkIDs, vectors); err != nil {
 			// The widest window in the pipeline: an embed is seconds of
 			// network, and both a sweep and a re-chunk inside it land here as
 			// chunk IDs that no longer exist.
-			if gone, r := ix.movedOn(item.Path, err); gone {
+			if gone, r := ix.movedOn(path, err); gone {
 				return r, nil
 			}
-			return Result{}, fmt.Errorf("store vectors for %s: %w", item.Path, err)
+			return Result{}, fmt.Errorf("store vectors for %s: %w", path, err)
 		}
 	}
 
 	if err := ix.opts.Store.UpdateContentState(ctx, c.Hash, domain.ContentStateIndexed); err != nil {
-		if gone, r := ix.movedOn(item.Path, err); gone {
+		if gone, r := ix.movedOn(path, err); gone {
 			return r, nil
 		}
-		return Result{}, fmt.Errorf("finalize %s: %w", item.Path, err)
+		return Result{}, fmt.Errorf("finalize %s: %w", path, err)
 	}
-	fmt.Fprintf(ix.opts.Progress, "indexed %s (%d chunks)\n", item.Path, len(res.Chunks))
+	fmt.Fprintf(ix.opts.Progress, "indexed %s (%d chunks)\n", path, len(res.Chunks))
 	return out, nil
+}
+
+// readVerified reads the claimed content's bytes, trying each referencing
+// path in WorkItem order (newest mtime first) until one is readable and
+// hashes to hash. The pipeline writes under what it actually read, never
+// trusting the hash discovery recorded earlier (ADR 0015) — and because the
+// hash is verified, any copy is as good as another, so an unreadable
+// primary (unmounted volume, revoked grant) must not block a readable
+// duplicate.
+//
+// nil bytes mean nothing usable was read, and res says why:
+//   - every copy unreadable → OutcomeSkipped (environmental; the row is
+//     left alone and retries next run)
+//   - at least one copy readable but none matching → OutcomeChanged (the
+//     file changed under the claim; abandon, writing chunks under hash
+//     would attach the new bytes' chunks to the old bytes' identity)
+func (ix *Indexer) readVerified(item domain.WorkItem, hash string) (raw []byte, path string, res Result) {
+	paths := item.Paths
+	if len(paths) == 0 {
+		paths = []string{item.Path}
+	}
+	var firstErr error
+	mismatched := false
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		digest := sha256.Sum256(b)
+		if hex.EncodeToString(digest[:]) != hash {
+			mismatched = true
+			continue
+		}
+		return b, p, Result{}
+	}
+	if mismatched {
+		fmt.Fprintf(ix.opts.Progress, "abandoned %s: changed while queued\n", item.Path)
+		return nil, "", Result{
+			Outcome: OutcomeChanged,
+			Err:     fmt.Errorf("content at %s changed while queued", item.Path),
+		}
+	}
+	if errors.Is(firstErr, fs.ErrNotExist) {
+		fmt.Fprintf(ix.opts.Progress, "skipped %s: file no longer exists\n", item.Path)
+	} else {
+		fmt.Fprintf(ix.opts.Progress, "skipped %s: %v (will retry next run)\n", item.Path, firstErr)
+	}
+	return nil, "", Result{Outcome: OutcomeSkipped, Err: firstErr}
 }
 
 // movedOn classifies a store error as "the content moved on while we were

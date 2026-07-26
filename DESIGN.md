@@ -380,7 +380,12 @@ The queue is a SQLite-backed state machine — no external queue infrastructure.
   "With the service healthy" is enforced by re-probing after a transient
   failure: a failed re-probe means the service went down mid-batch, so the
   batch is deferred and no attempt is charged. Permanent failures (unparseable
-  document) → `failed` immediately. A file change resets `failed`.
+  document) → `failed` immediately. `failed` is permanent for those exact
+  bytes — a changed file is a different content hash with a fresh row; a
+  chunker or model change re-queues failed content via the stale sweep; and
+  `bsearch reindex` (#24) is the planned manual escape hatch. Reaching
+  `failed` also clears the content's chunks and vectors, so failed content
+  can never serve stale search hits.
 - **Power-aware gate:** the scheduler consults power state before dispatching
   heavy stages (convert/summarize/embed); on battery it lengthens intervals,
   shrinks batches, or defers entirely, per config. Cheap stages (catalog scan)

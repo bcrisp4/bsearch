@@ -197,6 +197,13 @@ type Snapshot struct {
 	Skipped int // documents unreadable at the time since start
 	Retried int // transient failures rescheduled since start
 	Swept   int // documents re-queued by a stale sweep since start
+	// Changed counts claims abandoned because no copy of the file still
+	// held the claimed bytes. Counted because the pathological shape — a
+	// file rewritten continuously, or an edit that preserves size and
+	// mtime so discovery never re-points it — would otherwise re-read and
+	// re-hash the file on a schedule with nothing in status to show for
+	// it.
+	Changed int
 	// Superseded counts documents whose row changed under the pipeline
 	// mid-document. Since ADR 0014 that can only happen if something other
 	// than the scheduler goroutine wrote the catalog, so any non-zero value
@@ -922,21 +929,43 @@ func (s *Scheduler) process(ctx context.Context, contents []domain.Content, sv m
 			skipped++
 			s.mark(func(snap *Snapshot) { snap.Skipped++ })
 		case pipeline.OutcomeChanged:
-			// The file changed between the claim and the pipeline's read —
-			// the bytes at the path no longer hash to this content. Nothing
-			// was written, nothing is charged, and nothing is counted:
-			// discovery's next pass re-points the path at the new hash, and
-			// the row this claim was for is either still referenced by a
-			// duplicate (worked next drain) or orphaned (swept). seen is
-			// what bounds a hot-edited file to one abandoned read per drain.
+			// No copy of the file still holds the claimed bytes — the
+			// content changed under the claim (the pipeline already tried
+			// every referencing path). Discovery's next pass re-points the
+			// path and the sweep collects this row; until then it is pushed
+			// onto the retry schedule at the backoff cap WITHOUT charging
+			// an attempt (the file is not at fault, but the row must not
+			// stay hot). The defer is what bounds the pathological shapes —
+			// a continuously-rewritten file, or an edit that preserves size
+			// and mtime so discovery never notices — to one full read and
+			// hash per cap interval instead of per drain, and the counter
+			// is what makes that loop visible in status.
 			s.log.Debug("content changed while queued, abandoned", "path", item.Path)
+			s.mark(func(snap *Snapshot) { snap.Changed++ })
+			if err := s.queue.Reschedule(ctx, c.Hash, item.Content.Attempts,
+				s.now().Add(defaultBackoffCap), "content changed on disk while queued; awaiting rediscovery"); err != nil {
+				if !s.contentGone(item.Path, err) && !s.storeFailure(ctx, "defer changed content", err) {
+					return skipped, false
+				}
+			}
 		case pipeline.OutcomeSuperseded:
-			// Since ADR 0014 this can only mean the single-writer invariant
-			// broke. The content was re-read a moment ago, so its row was
-			// there; for it to be swept or re-chunked by the time the
-			// pipeline wrote, something other than this goroutine must have
-			// written the catalog while this goroutine was inside
-			// ProcessContent — and there is nothing else.
+			// Two arms share this outcome and mean opposite things —
+			// pipeline.movedOn says the caller tells them apart, and this
+			// is that split. Gone is routine: the row was swept (every
+			// referencing path deleted mid-flight, collected between the
+			// re-read and the pipeline's write) — same handling as
+			// contentGone at the re-read, counted nowhere.
+			if errors.Is(res.Err, domain.ErrContentGone) {
+				s.log.Debug("content was deleted while it was being indexed", "path", item.Path)
+				continue
+			}
+			// Superseded proper: since ADR 0014 this can only mean the
+			// single-writer invariant broke. The content was re-read a
+			// moment ago, so its row was there; for its chunk rows to be
+			// rewritten by the time the pipeline wrote, something other
+			// than this goroutine must have written the catalog while this
+			// goroutine was inside ProcessContent — and there is nothing
+			// else.
 			//
 			// It used to be routine, which is why it was logged at Debug and
 			// counted nowhere. Left that way it is now the quietest failure in

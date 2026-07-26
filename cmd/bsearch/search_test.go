@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bcrisp4/bsearch/internal/search"
 )
 
 func TestRunSearchRequiresQuery(t *testing.T) {
@@ -240,8 +242,8 @@ func TestRunSearchJSON(t *testing.T) {
 		if h.Path == "" {
 			t.Errorf("hit %d missing path", i)
 		}
-		if h.ContentHash == "" {
-			t.Errorf("hit %d missing content_hash", i)
+		if !strings.HasPrefix(h.ContentHash, "sha256:") {
+			t.Errorf("hit %d content_hash = %q, want the published sha256: prefix (DESIGN.md)", i, h.ContentHash)
 		}
 		if h.Modified == "" {
 			t.Errorf("hit %d missing modified", i)
@@ -355,6 +357,32 @@ func TestRunSearchStatusIsReachableWhileSearching(t *testing.T) {
 	}
 	if status, body := f.get(t, "/v1/status"); status != 200 {
 		t.Fatalf("status = %d (%s)", status, body)
+	}
+}
+
+// Duplicate copies fold into one hit; the human renderer has to say where
+// the other copies live, or the collapse reads as results going missing.
+// The paths are untrusted display text like the primary's.
+func TestWriteSearchHumanRendersAlsoAt(t *testing.T) {
+	resp := search.Response{Hits: []search.Hit{{
+		Path:         "/notes/primary.md",
+		ChunkPreview: "shared text",
+		AlsoAt:       []string{"/archive/co\x1bpy.md", "/backup/copy.md"},
+	}}}
+
+	var out strings.Builder
+	writeSearchHuman(&out, resp)
+	got := out.String()
+	for _, want := range []string{
+		"also at: /archive/copy.md", // ESC stripped
+		"also at: /backup/copy.md",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.ContainsAny(got, "\x1b") {
+		t.Errorf("output carries an escape sequence to the terminal:\n%q", got)
 	}
 }
 

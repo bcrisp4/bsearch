@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -568,5 +569,29 @@ func TestResetStaleMakesContentClaimable(t *testing.T) {
 	}
 	if len(after) != 1 || after[0].Hash != "h_1" {
 		t.Errorf("claimed %v after the sweep, want [h_1]", claimedHashes(t, after))
+	}
+}
+
+// Every referencing path rides along, primary first, so the pipeline can
+// fall back to a readable duplicate when the newest copy's volume is gone —
+// one dead path must not block a readable copy of the same bytes.
+func TestGetWorkCarriesEveryPathInPrimaryOrder(t *testing.T) {
+	store, db := newTestStore(t)
+
+	seedQueueContent(t, db, "h_1", domain.ContentStateChunked, 100, nil, "")
+	seedQueuePath(t, db, "h_1", "/notes/b-old.md", 100)
+	seedQueuePath(t, db, "h_1", "/notes/a-old.md", 100)
+	seedQueuePath(t, db, "h_1", "/vol/new.md", 200)
+
+	item, err := store.GetWork(t.Context(), "h_1")
+	if err != nil {
+		t.Fatalf("GetWork: %v", err)
+	}
+	want := []string{"/vol/new.md", "/notes/a-old.md", "/notes/b-old.md"}
+	if !slices.Equal(item.Paths, want) {
+		t.Errorf("Paths = %v, want %v (mtime DESC, then path ASC)", item.Paths, want)
+	}
+	if item.Path != item.Paths[0] {
+		t.Errorf("Path = %q, want the head of Paths (%q)", item.Path, item.Paths[0])
 	}
 }

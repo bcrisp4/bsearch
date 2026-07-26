@@ -226,12 +226,56 @@ func TestUpsertDocumentsDeduplicatesContent(t *testing.T) {
 	if err := store.UpdateContentState(ctx, "hash-dup", domain.ContentStateIndexed); err != nil {
 		t.Fatalf("UpdateContentState: %v", err)
 	}
+	if _, err := db.Writer().Exec(
+		"UPDATE content SET updated_at = 100 WHERE content_hash = 'hash-dup'"); err != nil {
+		t.Fatal(err)
+	}
 	// A third copy of the same bytes appears.
 	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-dup", "/notes/c.md")}); err != nil {
 		t.Fatalf("third discovery: %v", err)
 	}
 	if got := contentState(t, db, "hash-dup"); got != string(domain.ContentStateIndexed) {
-		t.Errorf("state = %q after re-discovery, want indexed — existing content is never touched", got)
+		t.Errorf("state = %q after re-discovery, want indexed — terminal content is never touched", got)
+	}
+	if got := contentUpdatedAt(t, db, "hash-dup"); got != 100 {
+		t.Errorf("updated_at = %d after re-discovering indexed content, want 100 untouched", got)
+	}
+}
+
+func contentUpdatedAt(t *testing.T, db *DB, hash string) int64 {
+	t.Helper()
+	var updatedAt int64
+	if err := db.Reader().QueryRow(
+		"SELECT updated_at FROM content WHERE content_hash = ?", hash).Scan(&updatedAt); err != nil {
+		t.Fatalf("read updated_at of %s: %v", hash, err)
+	}
+	return updatedAt
+}
+
+// Re-referencing a non-terminal hash bumps its updated_at: an undo, a `git
+// checkout` restoring an old revision, or a new copy of not-yet-indexed
+// bytes must land in the claim's recency slice, not wait out the aging
+// quarter behind rows that never stop being older.
+func TestUpsertDocumentsReheatsNonTerminalContent(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-1", "/notes/a.md")}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if _, err := db.Writer().Exec(
+		"UPDATE content SET updated_at = 100 WHERE content_hash = 'hash-1'"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-1", "/notes/copy.md")}); err != nil {
+		t.Fatalf("re-reference: %v", err)
+	}
+	if got := contentUpdatedAt(t, db, "hash-1"); got <= 100 {
+		t.Errorf("updated_at = %d after re-referencing non-terminal content, want it bumped past 100", got)
+	}
+	if got := contentState(t, db, "hash-1"); got != string(domain.ContentStateDiscovered) {
+		t.Errorf("state = %q, want discovered — only updated_at moves", got)
 	}
 }
 
@@ -420,6 +464,43 @@ func TestMarkFailed(t *testing.T) {
 	err := store.MarkFailed(ctx, "hash-missing", "x")
 	if !errors.Is(err, domain.ErrContentGone) {
 		t.Errorf("MarkFailed(unknown hash) = %v, want domain.ErrContentGone", err)
+	}
+}
+
+// Both routes to failed — the pipeline's failWith and the scheduler's
+// attempt cap — must leave identical state: no chunks, no vectors in any
+// generation. The cap route arrives here with chunks already committed
+// (StoreChunks lands before the embed call), so MarkFailed has to clean up
+// what failWith would have; failed content must not serve stale chunks.
+func TestMarkFailedRemovesChunksAndVectors(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+
+	// Chunk + embed under model A, then make model B current: the vectors
+	// live in a non-current generation, which MarkFailed must still reach.
+	if err := store.EnsureVecTable(ctx, vecSpec("model-a"), 3); err != nil {
+		t.Fatal(err)
+	}
+	ids := seedChunked(t, store, testDoc("hash-1", "/notes/a.md"), testChunks("alpha", "beta"))
+	if err := store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0}, {0, 1, 0}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EnsureVecTable(ctx, vecSpec("model-b"), 3); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.MarkFailed(ctx, "hash-1", "embed: gave up after 5 attempts"); err != nil {
+		t.Fatalf("MarkFailed: %v", err)
+	}
+
+	if got := contentState(t, db, "hash-1"); got != "failed" {
+		t.Errorf("state = %q, want failed", got)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM chunks WHERE content_hash = 'hash-1'"); n != 0 {
+		t.Errorf("chunks after MarkFailed = %d, want 0 — failed content must not serve stale chunks", n)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM vec_chunks_1"); n != 0 {
+		t.Errorf("vectors after MarkFailed = %d, want 0 across every generation", n)
 	}
 }
 
