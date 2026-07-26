@@ -169,8 +169,25 @@ rename+edit failure case, which was only a failure because it destroyed work.
 Today only discovery hashes (`discovery.go:409`); the pipeline reads the file
 again (`pipeline.go:276`) and stamps the chunks with the earlier hash. Once the
 hash is the key that is unusable, and it is already wrong. The pipeline hashes
-the bytes it read and writes under that hash. Costs no I/O — sha256 over bytes
-already in memory.
+the bytes it read and writes under that hash.
+
+This adds **no I/O today**: `pipeline.go:276` is `os.ReadFile`, so the bytes are
+already in memory, and sha256 is hardware-accelerated on Apple Silicon
+(~1–2 GB/s) — negligible against the embed round trip that follows, though not
+literally free.
+
+**It stays true only if `ConverterPort` is shaped to keep it true.** That port
+does not exist yet (M6), and the obvious signature — `Convert(ctx, path)
+(markdown, error)` — would move the read *inside* the adapter, leaving the
+pipeline holding converted markdown and no source bytes. Hashing would then
+need a second full read, precisely for the PDFs and office documents where
+files are largest.
+
+So the constraint, recorded here because M6 is where it will be decided: **the
+converter takes bytes the caller already holds, or returns the hash of what it
+read.** What must never happen is the pipeline hashing the *converted markdown*
+— that is a different byte sequence from the source, so it would not match what
+discovery recorded and every file would look permanently changed.
 
 If the hash differs from the one it was dispatched for, the file changed under
 us: the pipeline abandons the claim (that content row stays where it is) and
