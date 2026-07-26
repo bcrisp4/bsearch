@@ -95,29 +95,25 @@ const (
 )
 
 // Queue is the catalog access the scheduler needs. Composed from the domain
-// port plus the one DocumentStore method that belongs to the same story:
-// exhausting a document's attempts is a queue decision, not a pipeline one.
+// port plus the one ContentStore method that belongs to the same story:
+// exhausting a content's attempts is a queue decision, not a pipeline one.
 type Queue interface {
 	domain.Queue
-	// MarkFailed records a document as permanently failed with a reason.
-	MarkFailed(ctx context.Context, docID, reason string) error
-	// GetByID re-reads a claimed document. ClaimBatch hands out copies read
-	// once, and a batch is worked through over the minutes that follow, so a
-	// reconcile landing between documents can move a row out from under the
-	// copy of it still waiting its turn (ADR 0014).
-	GetByID(ctx context.Context, docID string) (domain.Document, error)
+	// MarkFailed records a content as permanently failed with a reason.
+	MarkFailed(ctx context.Context, hash, reason string) error
 }
 
-// Indexer is the per-document work, as implemented by *pipeline.Indexer.
+// Indexer is the per-content work, as implemented by *pipeline.Indexer.
 type Indexer interface {
 	// Prepare proves the embedding endpoint is up and returns its dimension
 	// count, creating the vector table if needed. It is the health gate.
 	Prepare(ctx context.Context) (int, error)
-	// StageVersions is what documents processed now are stamped with.
+	// StageVersions is what content processed now is stamped with.
 	StageVersions(dims int) map[string]string
-	// ProcessDocument runs one document through the pipeline. Its error
-	// return is fatal; everything about the document arrives as a Result.
-	ProcessDocument(ctx context.Context, doc domain.Document, sv map[string]string) (pipeline.Result, error)
+	// ProcessContent runs one claimed work item through the pipeline. Its
+	// error return is fatal; everything about the content arrives as a
+	// Result.
+	ProcessContent(ctx context.Context, item domain.WorkItem, sv map[string]string) (pipeline.Result, error)
 }
 
 // Scanner reconciles the catalog with the filesystem, as implemented by
@@ -611,7 +607,7 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 	// pattern, few enough that neither turns into a haystack.
 	sample := s.logPathErrors(res.PathErrors, "scan could not read a path",
 		"further scan path errors suppressed", maxLoggedPathErrors)
-	reached := res.Discovered + res.Unchanged + res.Renamed + res.Dataless
+	reached := res.Discovered + res.Unchanged + res.Dataless
 	if len(res.PathErrors) > 0 && reached == 0 {
 		// Every root failed and nothing was reachable. That is a permissions
 		// problem — almost always a missing or revoked Full Disk Access grant
@@ -628,7 +624,7 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 	s.log.Info("scan complete",
 		"discovered", res.Discovered,
 		"unchanged", res.Unchanged,
-		"renamed", res.Renamed,
+		"changed", res.Changed,
 		"dataless", res.Dataless,
 		"path_errors", len(res.PathErrors),
 		"duration_ms", s.now().Sub(start).Milliseconds())
@@ -703,7 +699,7 @@ func (s *Scheduler) drain(ctx context.Context) {
 			continue
 		}
 
-		docs, err := s.queue.ClaimBatch(ctx, s.now(), s.batchSize)
+		contents, err := s.queue.ClaimBatch(ctx, s.now(), s.batchSize)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -715,12 +711,12 @@ func (s *Scheduler) drain(ctx context.Context) {
 		}
 		// Filtered here, recorded in process: a batch can be claimed and then
 		// set aside (the dims sweep re-claims from scratch), and marking a
-		// document seen before it has actually been through the pipeline
+		// content seen before it has actually been through the pipeline
 		// would drop it for the rest of the drain.
-		fresh := docs[:0]
-		for _, doc := range docs {
-			if _, dup := seen[doc.ID]; !dup {
-				fresh = append(fresh, doc)
+		fresh := contents[:0]
+		for _, c := range contents {
+			if _, dup := seen[c.Hash]; !dup {
+				fresh = append(fresh, c)
 			}
 		}
 
@@ -858,52 +854,51 @@ func (s *Scheduler) sweep(ctx context.Context, current map[string]string) bool {
 	return true
 }
 
-// process works one batch, reporting how many documents were unreadable and
-// whether the drain should continue. Each document is recorded in seen as it
-// is handled, which is what bounds the drain to one pass per document however
+// process works one batch, reporting how many contents were unreadable and
+// whether the drain should continue. Each content is recorded in seen as it
+// is handled, which is what bounds the drain to one pass per content however
 // the outcome leaves the row.
-func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[string]string, seen map[string]struct{}) (skipped int, ok bool) {
-	for _, doc := range docs {
+func (s *Scheduler) process(ctx context.Context, contents []domain.Content, sv map[string]string, seen map[string]struct{}) (skipped int, ok bool) {
+	for _, c := range contents {
 		if ctx.Err() != nil {
 			return skipped, false
 		}
-		// Between documents, never inside one. Both halves of this matter and
+		// Between contents, never inside one. Both halves of this matter and
 		// they are the same constraint (ADR 0014): a saved file waits at most
-		// one document to be noticed, and — because nothing else writes the
-		// catalog — the re-read below cannot go stale between here and the end
-		// of ProcessDocument.
+		// one content to be noticed, and — because nothing else writes the
+		// catalog — the re-read below cannot go stale between here and the
+		// end of ProcessContent.
 		s.reconcilePending(ctx)
 		if ctx.Err() != nil {
 			return skipped, false
 		}
 
-		// The copy in docs was read when the batch was claimed, which may be
-		// many documents and several reconciles ago. Working from it would
-		// send the pipeline to whatever path this document had *then* — and a
-		// rename since reconciled has given that path to a different file
-		// (issue #63).
-		fresh, err := s.queue.GetByID(ctx, doc.ID)
+		// The copy in contents was read when the batch was claimed, which may
+		// be many contents and several reconciles ago. GetWork re-reads the
+		// row and picks the path to read bytes from *now* — working from the
+		// claimed copy would use a stale attempt count, and there was no path
+		// in it to begin with (issue #63's lesson, rebuilt for ADR 0015).
+		item, err := s.queue.GetWork(ctx, c.Hash)
 		if err != nil {
 			if ctx.Err() != nil {
 				return skipped, false
 			}
-			if s.documentGone(doc, err) {
-				seen[doc.ID] = struct{}{}
+			if s.contentGone(c.Hash, err) {
+				seen[c.Hash] = struct{}{}
 				continue
 			}
-			return skipped, s.storeFailure(ctx, "re-read document", err)
+			return skipped, s.storeFailure(ctx, "re-read content", err)
 		}
-		doc = fresh
 
-		seen[doc.ID] = struct{}{}
-		res, err := s.indexer.ProcessDocument(ctx, doc, sv)
+		seen[c.Hash] = struct{}{}
+		res, err := s.indexer.ProcessContent(ctx, item, sv)
 		if err != nil {
 			if ctx.Err() != nil {
 				return skipped, false
 			}
-			// The machinery failed, not the document: a store write that did
+			// The machinery failed, not the content: a store write that did
 			// not land says nothing about this file, so nothing is charged.
-			s.log.Error("indexing failed", "path", doc.Path, "error", err)
+			s.log.Error("indexing failed", "path", item.Path, "error", err)
 			s.gate(GateStoreFail, false)
 			s.mark(func(snap *Snapshot) { snap.LastError = err.Error() })
 			return skipped, false
@@ -911,49 +906,58 @@ func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[
 
 		switch res.Outcome {
 		case pipeline.OutcomeIndexed:
-			s.log.Debug("indexed", "path", doc.Path)
+			s.log.Debug("indexed", "path", item.Path)
 			s.mark(func(snap *Snapshot) {
 				snap.Indexed++
 				snap.LastProgress = s.now()
 			})
 		case pipeline.OutcomeFailed:
-			s.log.Warn("document cannot be indexed", "path", doc.Path, "error", res.Err)
+			s.log.Warn("content cannot be indexed", "path", item.Path, "error", res.Err)
 			s.mark(func(snap *Snapshot) { snap.Failed++ })
 		case pipeline.OutcomeSkipped:
 			// Unreadable right now — vanished, or TCC. The row is untouched
 			// on purpose: restoring the file or granting access must take
 			// effect without the file having to change.
-			s.log.Debug("document unreadable, leaving it alone", "path", doc.Path, "error", res.Err)
+			s.log.Debug("content unreadable, leaving it alone", "path", item.Path, "error", res.Err)
 			skipped++
 			s.mark(func(snap *Snapshot) { snap.Skipped++ })
+		case pipeline.OutcomeChanged:
+			// The file changed between the claim and the pipeline's read —
+			// the bytes at the path no longer hash to this content. Nothing
+			// was written, nothing is charged, and nothing is counted:
+			// discovery's next pass re-points the path at the new hash, and
+			// the row this claim was for is either still referenced by a
+			// duplicate (worked next drain) or orphaned (swept). seen is
+			// what bounds a hot-edited file to one abandoned read per drain.
+			s.log.Debug("content changed while queued, abandoned", "path", item.Path)
 		case pipeline.OutcomeSuperseded:
 			// Since ADR 0014 this can only mean the single-writer invariant
-			// broke. The document was re-read a moment ago, so its row was
-			// there; for it to be gone or rewritten by the time the pipeline
-			// wrote, something other than this goroutine must have written the
-			// catalog while this goroutine was inside ProcessDocument — and
-			// there is nothing else.
+			// broke. The content was re-read a moment ago, so its row was
+			// there; for it to be swept or re-chunked by the time the
+			// pipeline wrote, something other than this goroutine must have
+			// written the catalog while this goroutine was inside
+			// ProcessContent — and there is nothing else.
 			//
 			// It used to be routine, which is why it was logged at Debug and
 			// counted nowhere. Left that way it is now the quietest failure in
 			// the daemon: the row keeps its state and its unset next_retry_at,
 			// so it is re-claimed and superseded every cycle forever, while
 			// `bsearch status` reports no failures, no skips, and an empty
-			// gate over a permanently unsearchable document. That is precisely
+			// gate over permanently unsearchable content. That is precisely
 			// the shape ADR 0014 exists to rule out, so it reports, it counts,
 			// and it goes on the retry schedule rather than staying hot.
 			//
 			// reschedule rather than retry: the embedding endpoint is not
 			// implicated, so its health probe would be answering a question
 			// nobody asked.
-			s.log.Warn("a document was superseded mid-flight; only this goroutine should be writing the catalog (ADR 0014)",
-				"path", doc.Path, "error", res.Err)
+			s.log.Warn("content was superseded mid-flight; only this goroutine should be writing the catalog (ADR 0014)",
+				"path", item.Path, "error", res.Err)
 			s.mark(func(snap *Snapshot) { snap.Superseded++ })
-			if !s.reschedule(ctx, doc, res.Err) {
+			if !s.reschedule(ctx, item, res.Err) {
 				return skipped, false
 			}
 		case pipeline.OutcomeTransient:
-			if !s.retry(ctx, doc, res.Err) {
+			if !s.retry(ctx, item, res.Err) {
 				return skipped, false
 			}
 		}
@@ -989,7 +993,7 @@ func idleGate(skipped int) string {
 // That is the whole of "attempts are only counted while the service is
 // healthy": without the re-probe, an inference server switched off overnight
 // would quietly mark a chunk of the corpus permanently failed.
-func (s *Scheduler) retry(ctx context.Context, doc domain.Document, cause error) bool {
+func (s *Scheduler) retry(ctx context.Context, item domain.WorkItem, cause error) bool {
 	if _, err := s.indexer.Prepare(ctx); err != nil {
 		if ctx.Err() != nil {
 			return false
@@ -999,70 +1003,74 @@ func (s *Scheduler) retry(ctx context.Context, doc domain.Document, cause error)
 		s.mark(func(snap *Snapshot) { snap.LastError = err.Error() })
 		return false
 	}
-	return s.reschedule(ctx, doc, cause)
+	return s.reschedule(ctx, item, cause)
 }
 
-// reschedule charges an attempt and sets when the document is next due,
+// reschedule charges an attempt and sets when the content is next due,
 // giving up on it at the cap. Split from retry because not every caller needs
 // retry's health probe: that probe exists to decide whether a failure belongs
-// to the document or to the embedding endpoint, and a caller that already
+// to the content or to the embedding endpoint, and a caller that already
 // knows the endpoint is not involved would only be paying for it.
-func (s *Scheduler) reschedule(ctx context.Context, doc domain.Document, cause error) bool {
+func (s *Scheduler) reschedule(ctx context.Context, item domain.WorkItem, cause error) bool {
 	reason := "unknown error"
 	if cause != nil {
 		reason = cause.Error()
 	}
-	attempts := doc.Attempts + 1
+	hash := item.Content.Hash
+	attempts := item.Content.Attempts + 1
 	if attempts >= s.maxAttempts {
-		s.log.Warn("giving up on a document after repeated failures",
-			"path", doc.Path, "attempts", attempts, "error", cause)
+		s.log.Warn("giving up on a content after repeated failures",
+			"path", item.Path, "attempts", attempts, "error", cause)
 		// Record the final count before flipping the state, so the row does
 		// not end up claiming "after 5 attempts" in last_error while the
 		// attempts column still reads 4 — MarkFailed writes state and reason
 		// only. The next_retry_at this also sets is inert once the second
 		// write lands: the row is terminal, so dispatch stops looking at it,
-		// and anything that revives it (a file change, a stale sweep) clears
-		// it. A crash between the two writes leaves the row claimable with
-		// attempts already at the cap, so it is re-claimed and goes terminal
-		// one attempt later — self-correcting, and the reason collapsing this
+		// and anything that revives it (a stale sweep) clears it. A crash
+		// between the two writes leaves the row claimable with attempts
+		// already at the cap, so it is re-claimed and goes terminal one
+		// attempt later — self-correcting, and the reason collapsing this
 		// into one transaction is not worth a new store method.
-		if err := s.queue.Reschedule(ctx, doc.ID, attempts, s.now(), reason); err != nil {
-			return s.documentGone(doc, err) || s.storeFailure(ctx, "record final attempt", err)
+		if err := s.queue.Reschedule(ctx, hash, attempts, s.now(), reason); err != nil {
+			return s.contentGone(item.Path, err) || s.storeFailure(ctx, "record final attempt", err)
 		}
-		if err := s.queue.MarkFailed(ctx, doc.ID,
+		if err := s.queue.MarkFailed(ctx, hash,
 			fmt.Sprintf("%s (after %d attempts)", reason, attempts)); err != nil {
-			return s.documentGone(doc, err) || s.storeFailure(ctx, "mark failed", err)
+			return s.contentGone(item.Path, err) || s.storeFailure(ctx, "mark failed", err)
 		}
 		s.mark(func(snap *Snapshot) { snap.Failed++ })
 		return true
 	}
 
 	wait := fullJitter(attempts, defaultBackoffBase, defaultBackoffCap, s.rnd)
-	if err := s.queue.Reschedule(ctx, doc.ID, attempts, s.now().Add(wait), reason); err != nil {
-		return s.documentGone(doc, err) || s.storeFailure(ctx, "reschedule", err)
+	if err := s.queue.Reschedule(ctx, hash, attempts, s.now().Add(wait), reason); err != nil {
+		return s.contentGone(item.Path, err) || s.storeFailure(ctx, "reschedule", err)
 	}
-	s.log.Debug("retrying a document later",
-		"path", doc.Path, "attempts", attempts, "retry_in_s", int(wait.Seconds()))
+	s.log.Debug("retrying a content later",
+		"path", item.Path, "attempts", attempts, "retry_in_s", int(wait.Seconds()))
 	s.mark(func(snap *Snapshot) { snap.Retried++ })
 	return true
 }
 
-// documentGone reports whether a store error means the document was deleted
-// while the drain was working on it, in which case the drain carries on.
+// contentGone reports whether a store error means the content was swept (or
+// every path referencing it deleted) while the drain was working on it, in
+// which case the drain carries on. ref is for the log line — a path where
+// one was resolved, the content hash at the GetWork call site, which fails
+// precisely because there is no path.
 //
 // It is the difference between "the index is broken" and "the file is gone",
 // which look identical from a failed write and are opposite situations:
 // gating the drain on the second would let one deleted file stop indexing
 // for everything behind it, and would report the deletion as an index write
 // failure in `bsearch status`.
-func (s *Scheduler) documentGone(doc domain.Document, err error) bool {
-	if !errors.Is(err, domain.ErrDocumentGone) {
+func (s *Scheduler) contentGone(ref string, err error) bool {
+	if !errors.Is(err, domain.ErrContentGone) {
 		return false
 	}
 	// Counted nowhere, for the same reason OutcomeSuperseded is: Skipped
 	// means "could not be read", which `bsearch status` reports as a
 	// permissions problem. A deleted file is not one.
-	s.log.Debug("document was deleted while it was being indexed", "path", doc.Path)
+	s.log.Debug("content was deleted while it was being indexed", "ref", ref)
 	return true
 }
 
