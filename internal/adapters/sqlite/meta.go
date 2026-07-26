@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/bcrisp4/bsearch/internal/domain"
@@ -41,64 +40,79 @@ func getMeta(ctx context.Context, q queryer, key string) (value string, ok bool,
 	return value, true, nil
 }
 
-// docColumns is the canonical documents column list, paired with docRow.
-// One definition so every query path (GetByPath, SearchVectors, future FTS)
-// hydrates identical domain.Documents.
+// documentColumns is the canonical documents column list, paired with
+// documentRow. One definition so every query path hydrates identical
+// domain.Documents. prefixedDocumentColumns is the same list under the
+// alias every join in this package gives the documents table — the two
+// must stay in documentRow.targets order together.
+const (
+	documentColumns         = "path, content_hash, unread_reason, size, mtime"
+	prefixedDocumentColumns = "d.path, d.content_hash, d.unread_reason, d.size, d.mtime"
+)
+
+// documentRow holds the raw documents column values that need conversion
+// after Scan: the nullable pair (content_hash XOR unread_reason — the
+// schema's CHECK) and the nanosecond mtime.
+type documentRow struct {
+	contentHash  sql.NullString
+	unreadReason sql.NullString
+	mtimeNS      int64
+}
+
+// targets returns Scan destinations matching documentColumns order.
+func (r *documentRow) targets(doc *domain.Document) []any {
+	return []any{&doc.Path, &r.contentHash, &r.unreadReason, &doc.Size, &r.mtimeNS}
+}
+
+// finish converts the raw values into their domain form ("" is the Go
+// spelling of NULL for both halves of the exclusive pair).
+func (r *documentRow) finish(doc *domain.Document) {
+	doc.ContentHash = r.contentHash.String
+	doc.UnreadReason = domain.UnreadReason(r.unreadReason.String)
+	doc.MTime = time.Unix(0, r.mtimeNS)
+}
+
+// contentColumns is the canonical content column list, paired with
+// contentRow.
 //
 // The retry columns are projected here rather than only on the queue path so
-// that "which document is this" has one answer. The hazard that buys is in
-// the other direction: UpsertDocument resets attempts, next_retry_at and
-// last_error by design (a file change earns a fresh budget), so a queue write
-// must never round-trip a Document through it — see queue.go.
-var docColumns = []string{
-	"id", "path", "content_hash", "size", "mtime", "state", "stage_versions",
-	"attempts", "next_retry_at", "last_error",
-}
+// that "which content is this" has one answer. The hazard that buys is in
+// the other direction: a queue write must never round-trip a Content through
+// a blanket upsert that would reset attempts, next_retry_at or last_error —
+// see queue.go.
+const contentColumns = "content_hash, state, stage_versions, attempts, next_retry_at, last_error"
 
-// prefixDocColumns renders docColumns with a table alias ("d.id, d.path, …").
-func prefixDocColumns(alias string) string {
-	cols := make([]string, len(docColumns))
-	for i, c := range docColumns {
-		cols[i] = alias + "." + c
-	}
-	return strings.Join(cols, ", ")
-}
-
-// docRow holds the raw column values that need conversion after Scan.
-type docRow struct {
-	mtimeNS   int64
+// contentRow holds the raw content column values that need conversion after
+// Scan.
+type contentRow struct {
 	state     string
 	stageRaw  string
 	nextRetry sql.NullInt64  // unix seconds; NULL = not scheduled
 	lastError sql.NullString // NULL = no failure recorded
 }
 
-// targets returns Scan destinations matching docColumns order.
-func (r *docRow) targets(doc *domain.Document) []any {
-	return []any{
-		&doc.ID, &doc.Path, &doc.ContentHash, &doc.Size, &r.mtimeNS, &r.state, &r.stageRaw,
-		&doc.Attempts, &r.nextRetry, &r.lastError,
-	}
+// targets returns Scan destinations matching contentColumns order.
+func (r *contentRow) targets(c *domain.Content) []any {
+	return []any{&c.Hash, &r.state, &r.stageRaw, &c.Attempts, &r.nextRetry, &r.lastError}
 }
 
 // finish converts the raw values into their domain form.
-func (r *docRow) finish(doc *domain.Document) error {
-	doc.MTime = time.Unix(0, r.mtimeNS)
-	doc.State = domain.DocState(r.state)
+func (r *contentRow) finish(c *domain.Content) error {
+	c.State = domain.ContentState(r.state)
 	// NULL next_retry_at means "due now", which is the zero Time: the
 	// scheduler compares with !After(now), so zero is always due.
 	if r.nextRetry.Valid {
-		doc.NextRetryAt = time.Unix(r.nextRetry.Int64, 0)
+		c.NextRetryAt = time.Unix(r.nextRetry.Int64, 0)
 	} else {
-		doc.NextRetryAt = time.Time{}
+		c.NextRetryAt = time.Time{}
 	}
-	doc.LastError = r.lastError.String
+	c.LastError = r.lastError.String
 	if r.stageRaw == "" || r.stageRaw == "{}" {
-		doc.StageVersions = nil
+		c.StageVersions = nil
 		return nil
 	}
-	if err := json.Unmarshal([]byte(r.stageRaw), &doc.StageVersions); err != nil {
-		return fmt.Errorf("corrupt stage_versions for %s: %w", doc.ID, err)
+	if err := json.Unmarshal([]byte(r.stageRaw), &c.StageVersions); err != nil {
+		return fmt.Errorf("corrupt stage_versions for %s: %w", c.Hash, err)
 	}
 	return nil
 }
@@ -113,4 +127,13 @@ func marshalStageVersions(sv map[string]string) (string, error) {
 		return "", fmt.Errorf("marshal stage_versions: %w", err)
 	}
 	return string(b), nil
+}
+
+// nullable renders "" as SQL NULL — the write-side counterpart of the
+// documentRow pair.
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

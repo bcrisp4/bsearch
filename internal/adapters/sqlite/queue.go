@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -14,112 +15,148 @@ import (
 var _ domain.Queue = (*Store)(nil)
 
 // agingShare is the fraction of every claimed batch reserved for the oldest
-// due documents rather than the newest. One in four: enough that a 100k
+// due content rather than the newest. One in four: enough that a 100k
 // initial backlog drains steadily while a file saved a moment ago still
 // reaches the embedder in the same cycle (DESIGN.md: priority is recency
 // ordering, with aging so the backlog and due retries can't be starved).
 const agingShare = 4
 
-// terminalStatesSQL renders domain.TerminalDocStates as a SQL literal list.
+// terminalStatesSQL renders domain.TerminalContentStates as a SQL literal
+// list.
 //
 // It is not parameterised. SQLite can only use the partial claim index when
 // the query's WHERE clause literally implies the index's, and a bound
-// parameter is opaque to that analysis — an `IN (?, ?, ?)` would silently
+// parameter is opaque to that analysis — an `IN (?, ?)` would silently
 // demote every claim to a full table scan. TestClaimBatchUsesThePartialIndex
 // is what keeps this honest.
 func terminalStatesSQL() string {
-	quoted := make([]string, len(domain.TerminalDocStates))
-	for i, s := range domain.TerminalDocStates {
+	quoted := make([]string, len(domain.TerminalContentStates))
+	for i, s := range domain.TerminalContentStates {
 		quoted[i] = "'" + string(s) + "'"
 	}
 	return strings.Join(quoted, ", ")
 }
 
-// ClaimBatch returns up to limit documents due for work at now.
+// ClaimBatch returns up to limit content rows due for work at now.
 //
 // Nothing is reserved — the name is DESIGN.md's, but with one indexing worker
 // in one process there is no contention to arbitrate, so this is a plain read
 // and a crash needs no release path (ADR 0011).
 //
 // The batch is composed, not merely ordered: three quarters of it are the
-// most recently changed documents and one quarter the least, so a save lands
+// most recently changed contents and one quarter the least, so a save lands
 // in the current cycle without a bulk backlog ever aging out of reach. The
 // two slices are deduplicated, which is why a near-empty queue returns fewer
-// than limit rows — there is genuinely no more work, not a lost document.
-func (s *Store) ClaimBatch(ctx context.Context, now time.Time, limit int) ([]domain.Document, error) {
+// than limit rows — there is genuinely no more work, not lost content.
+func (s *Store) ClaimBatch(ctx context.Context, now time.Time, limit int) ([]domain.Content, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 	aging := limit / agingShare
 	recent := limit - aging
 
-	// id is the tiebreak: updated_at has one-second resolution, so a bulk
-	// discovery pass writes thousands of rows sharing a timestamp, and
+	// content_hash is the tiebreak: updated_at has one-second resolution, so
+	// a bulk discovery pass writes thousands of rows sharing a timestamp, and
 	// without it the claim could return the same arbitrary subset forever
 	// while the rest of that second's work never came up.
-	query := "SELECT " + strings.Join(docColumns, ", ") + `
-		FROM documents
+	query := "SELECT " + contentColumns + `
+		FROM content
 		WHERE state NOT IN (` + terminalStatesSQL() + `)
 		  AND (next_retry_at IS NULL OR next_retry_at <= ?)
-		ORDER BY updated_at %s, id %s
+		ORDER BY updated_at %s, content_hash %s
 		LIMIT ?`
 
-	docs, err := s.queryDocs(ctx, "claim batch",
+	contents, err := s.queryContents(ctx, "claim batch",
 		fmt.Sprintf(query, "DESC", "DESC"), now.Unix(), recent)
 	if err != nil {
 		return nil, err
 	}
 	if aging > 0 {
-		old, err := s.queryDocs(ctx, "claim batch (aging)",
+		old, err := s.queryContents(ctx, "claim batch (aging)",
 			fmt.Sprintf(query, "ASC", "ASC"), now.Unix(), aging)
 		if err != nil {
 			return nil, err
 		}
-		seen := make(map[string]struct{}, len(docs))
-		for _, d := range docs {
-			seen[d.ID] = struct{}{}
+		seen := make(map[string]struct{}, len(contents))
+		for _, c := range contents {
+			seen[c.Hash] = struct{}{}
 		}
-		for _, d := range old {
-			if _, dup := seen[d.ID]; !dup {
-				docs = append(docs, d)
+		for _, c := range old {
+			if _, dup := seen[c.Hash]; !dup {
+				contents = append(contents, c)
 			}
 		}
 	}
-	return docs, nil
+	return contents, nil
+}
+
+// GetWork re-reads one claimed content row immediately before working it and
+// picks the path the pipeline should read bytes from: the referencing
+// document with the newest mtime, tie-broken by path ascending — the same
+// rule that picks a search hit's primary path (see SearchVectors), so "which
+// path does bsearch mean by this content" has one answer everywhere.
+//
+// ErrContentGone covers both "swept" and "no live path references it" —
+// deleted while in flight, with the sweep still to run. Either way the
+// content is not workable and the caller moves on.
+func (s *Store) GetWork(ctx context.Context, hash string) (domain.WorkItem, error) {
+	var (
+		item domain.WorkItem
+		raw  contentRow
+	)
+	targets := append(raw.targets(&item.Content), &item.Path)
+	err := s.db.Reader().QueryRowContext(ctx, `
+		SELECT `+prefixedContentColumns+`, d.path
+		FROM content c
+		JOIN documents d ON d.content_hash = c.content_hash
+		WHERE c.content_hash = ?
+		ORDER BY d.mtime DESC, d.path ASC
+		LIMIT 1`, hash).Scan(targets...)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return domain.WorkItem{}, fmt.Errorf("get work %s: %w", hash, domain.ErrContentGone)
+	case err != nil:
+		return domain.WorkItem{}, fmt.Errorf("get work %s: %w", hash, err)
+	}
+	if err := raw.finish(&item.Content); err != nil {
+		return domain.WorkItem{}, err
+	}
+	return item, nil
 }
 
 // Reschedule records a transient failure: the attempt count, when the
-// document is next due, and why the last try failed.
+// content is next due, and why the last try failed.
 //
-// State is deliberately untouched. A document that failed while embedding is
+// State is deliberately untouched. Content that failed while embedding is
 // still chunked, and its chunks are still in the database — resetting it to
 // discovered would throw away work that is fine and re-read, re-normalize and
 // re-chunk the file for nothing.
-func (s *Store) Reschedule(ctx context.Context, docID string, attempts int, at time.Time, reason string) error {
-	return s.updateDoc(ctx, "reschedule", docID,
-		"UPDATE documents SET attempts = ?, next_retry_at = ?, last_error = ?, updated_at = ? WHERE id = ?",
-		attempts, at.Unix(), reason, time.Now().Unix(), docID)
+func (s *Store) Reschedule(ctx context.Context, hash string, attempts int, at time.Time, reason string) error {
+	return s.updateContent(ctx, "reschedule", hash,
+		"UPDATE content SET attempts = ?, next_retry_at = ?, last_error = ?, updated_at = ? WHERE content_hash = ?",
+		attempts, at.Unix(), reason, time.Now().Unix(), hash)
 }
 
-// ResetStale moves documents whose derived data was produced by stage
-// versions other than current back to discovered, and reports how many moved.
+// ResetStale moves content whose derived data was produced by stage versions
+// other than current back to discovered, and reports how many moved.
 //
 // This is what makes changing the embedding model re-embed the corpus with no
-// command run. The dispatch predicate skips terminal states by design, so an
-// indexed document is invisible to the scheduler no matter how stale it is;
+// command run. The dispatch predicate skips terminal states by design, so
+// indexed content is invisible to the scheduler no matter how stale it is;
 // without this sweep a model change would leave the daemon serving vectors
 // from the old model indefinitely, with nothing in the logs to say so.
 //
-// Failed rows are swept too, matching what the one-shot pipeline used to do:
-// a document that failed under one configuration deserves a fresh attempt
-// under a different one, because the configuration may well have been the
-// problem.
+// Failed rows are swept too. failed is otherwise permanent by construction —
+// content is immutable, so the same bytes fail the same way tomorrow — but a
+// config change is precisely the variable that permanence conditions on:
+// content that failed under one chunker or model deserves a fresh attempt
+// under a different one.
 //
 // updated_at is *not* bumped, unlike every other write here. The sweep is a
-// bulk administrative reset rather than a per-document event, and stamping
+// bulk administrative reset rather than a per-content event, and stamping
 // the whole corpus with one timestamp would flatten the ordering signal the
 // claim depends on at precisely the moment it matters most — the point where
-// every document is queued at once and "which of these did I touch today"
+// every content is queued at once and "which of these did I touch today"
 // is the only thing distinguishing them.
 func (s *Store) ResetStale(ctx context.Context, current map[string]string) (int, error) {
 	if len(current) == 0 {
@@ -137,9 +174,9 @@ func (s *Store) ResetStale(ctx context.Context, current map[string]string) (int,
 	// constants rather than user input, but a JSON path spliced into SQL is
 	// the kind of thing that stops being true later.
 	//
-	// IS NOT, not <>: json_extract yields NULL for a key a document predates,
+	// IS NOT, not <>: json_extract yields NULL for a key a content predates,
 	// and <> evaluates NULL there — which would quietly exclude exactly the
-	// oldest documents, the ones most in need of the sweep.
+	// oldest content, the rows most in need of the sweep.
 	conds := make([]string, len(keys))
 	args := make([]any, 0, 2*len(keys))
 	for i, k := range keys {
@@ -152,7 +189,7 @@ func (s *Store) ResetStale(ctx context.Context, current map[string]string) (int,
 		//nolint:gosec // G202: the joined text is a fixed condition repeated
 		// once per key; every value, including the JSON path, is bound.
 		res, err := tx.ExecContext(ctx, `
-			UPDATE documents
+			UPDATE content
 			SET state = 'discovered', attempts = 0, next_retry_at = NULL, last_error = NULL
 			WHERE state IN ('indexed', 'failed')
 			  AND (`+strings.Join(conds, " OR ")+`)`, args...)

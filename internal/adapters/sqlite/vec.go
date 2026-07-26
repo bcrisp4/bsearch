@@ -277,11 +277,11 @@ func (s *Store) UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][
 			return fmt.Errorf("check chunk ids: %w", err)
 		}
 		if live != len(chunkIDs) {
-			// Re-chunked or purged under us. Wrapped so the caller can tell
+			// Re-chunked or swept under us. Wrapped so the caller can tell
 			// this apart from a broken store and stand down instead of
-			// failing the drain (domain.ErrDocumentSuperseded).
+			// failing the drain (domain.ErrContentSuperseded).
 			return fmt.Errorf("%d of %d chunk ids no longer exist: %w",
-				len(chunkIDs)-live, len(chunkIDs), domain.ErrDocumentSuperseded)
+				len(chunkIDs)-live, len(chunkIDs), domain.ErrContentSuperseded)
 		}
 
 		// vec0 has no upsert; delete-then-insert is the documented pattern.
@@ -317,7 +317,16 @@ func (s *Store) UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][
 	})
 }
 
-// SearchVectors returns the limit nearest chunks by ascending distance.
+// SearchVectors returns the limit nearest chunks by ascending distance,
+// fanned out per referencing path: the documents join is on the content
+// hash, so a chunk whose content lives at N paths yields N consecutive rows,
+// newest mtime first then path ascending — the ordering contract
+// CollapseBestPerContent's primary-path pick depends on. limit counts KNN
+// chunks (the vec subquery), not fanned-out rows.
+//
+// The join is deliberately inner: content no document references (deleted,
+// sweep pending) contributes nothing, so a deletion takes effect the moment
+// its documents row goes — and unread rows (NULL content_hash) never match.
 func (s *Store) SearchVectors(ctx context.Context, query []float32, limit int) ([]domain.Hit, error) {
 	table, desc, err := currentVecTable(ctx, s.db.Reader())
 	if err != nil {
@@ -333,12 +342,13 @@ func (s *Store) SearchVectors(ctx context.Context, query []float32, limit int) (
 	}
 
 	rows, err := s.db.Reader().QueryContext(ctx, fmt.Sprintf(`
-		SELECT c.id, c.doc_id, c.ordinal, c.text, c.heading_path, c.byte_start, c.byte_end,
+		SELECT c.ordinal, c.text, c.heading_path, c.byte_start, c.byte_end,
 		       %s, v.distance
 		FROM (SELECT rowid, distance FROM %s WHERE embedding MATCH ? AND k = ?) v
 		JOIN chunks c ON c.id = v.rowid
-		JOIN documents d ON d.id = c.doc_id
-		ORDER BY v.distance`, prefixDocColumns("d"), table), blob, limit)
+		JOIN documents d ON d.content_hash = c.content_hash
+		ORDER BY v.distance, c.id, d.mtime DESC, d.path ASC`,
+		prefixedDocumentColumns, table), blob, limit)
 	if err != nil {
 		// An indexer in another process can retire this generation between
 		// the lookup above and the query — the table is simply gone. That's
@@ -358,12 +368,11 @@ func (s *Store) SearchVectors(ctx context.Context, query []float32, limit int) (
 	var hits []domain.Hit
 	for rows.Next() {
 		var (
-			h       domain.Hit
-			chunkID int64
-			raw     docRow
+			h   domain.Hit
+			raw documentRow
 		)
 		targets := []any{
-			&chunkID, &h.Chunk.DocID, &h.Chunk.Ordinal, &h.Chunk.Text,
+			&h.Chunk.Ordinal, &h.Chunk.Text,
 			&h.Chunk.HeadingPath, &h.Chunk.ByteStart, &h.Chunk.ByteEnd,
 		}
 		targets = append(targets, raw.targets(&h.Doc)...)
@@ -371,9 +380,7 @@ func (s *Store) SearchVectors(ctx context.Context, query []float32, limit int) (
 		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}
-		if err := raw.finish(&h.Doc); err != nil {
-			return nil, err
-		}
+		raw.finish(&h.Doc)
 		hits = append(hits, h)
 	}
 	return hits, rows.Err()

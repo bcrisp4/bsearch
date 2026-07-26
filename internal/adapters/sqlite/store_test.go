@@ -11,43 +11,56 @@ import (
 	"github.com/bcrisp4/bsearch/internal/domain"
 )
 
-func testDoc(id, path string) domain.Document {
+// seedUnreadPath is the path of the unread document newTestStore always
+// plants.
+const seedUnreadPath = "/seed/denied.md"
+
+// newTestStore opens a fresh test database and always upserts one unread
+// document — a documents row whose content_hash is NULL. The seed is a trap:
+// any future query written `... NOT IN (SELECT content_hash FROM documents)`
+// silently matches nothing when a NULL is present in that subquery, so the
+// seed makes that class of bug fail on arrival (ADR 0015). Tests asserting
+// counts must account for it (CatalogCounts.Files and Unread[denied] both
+// include it).
+func newTestStore(t *testing.T) (*Store, *DB) {
+	t.Helper()
+	db := openTestDB(t)
+	store := NewStore(db)
+	seed := domain.Document{
+		Path:         seedUnreadPath,
+		UnreadReason: domain.UnreadDenied,
+		Size:         1,
+		MTime:        time.Unix(1600000000, 0),
+	}
+	if err := store.UpsertDocuments(context.Background(), []domain.Document{seed}); err != nil {
+		t.Fatalf("seed unread document: %v", err)
+	}
+	return store, db
+}
+
+func testDoc(hash, path string) domain.Document {
 	return domain.Document{
-		ID:          id,
 		Path:        path,
-		ContentHash: "hash-" + id,
+		ContentHash: hash,
 		Size:        42,
 		MTime:       time.Unix(1700000000, 123456789),
-		State:       domain.DocStateChunked,
 	}
 }
 
-// seedUpsert is UpsertDocument with discovery's create in front of it, and
-// it exists because only discovery creates catalog rows: a pipeline-shaped
-// write (any state but discovered) against a row that is not there reports
-// domain.ErrDocumentGone rather than conjuring one. Production always gets
-// there in two steps — discovery announces the file, the pipeline works on
-// it — so a test that wants a chunked or failed document has to as well.
-func seedUpsert(t *testing.T, store *Store, doc domain.Document, chunks []domain.Chunk) ([]int64, error) {
-	t.Helper()
-	ctx := context.Background()
-	create := doc
-	create.State = domain.DocStateDiscovered
-	if _, err := store.UpsertDocument(ctx, create, nil); err != nil {
-		t.Fatalf("seed %s at %s: %v", doc.ID, doc.Path, err)
+func unreadDoc(path string, reason domain.UnreadReason) domain.Document {
+	return domain.Document{
+		Path:         path,
+		UnreadReason: reason,
+		Size:         42,
+		MTime:        time.Unix(1700000000, 0),
 	}
-	if doc.State == domain.DocStateDiscovered && len(chunks) == 0 {
-		return nil, nil
-	}
-	return store.UpsertDocument(ctx, doc, chunks)
 }
 
-func testChunks(docID string, texts ...string) []domain.Chunk {
+func testChunks(texts ...string) []domain.Chunk {
 	chunks := make([]domain.Chunk, len(texts))
 	pos := 0
 	for i, text := range texts {
 		chunks[i] = domain.Chunk{
-			DocID:       docID,
 			Ordinal:     i,
 			Text:        text,
 			HeadingPath: "Doc > Section",
@@ -59,17 +72,52 @@ func testChunks(docID string, texts ...string) []domain.Chunk {
 	return chunks
 }
 
-func TestUpsertDocumentInsertsDocAndChunks(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+// seedChunked walks production's two steps: discovery announces the file
+// (UpsertDocuments creates the content row at discovered), then the pipeline
+// commits chunks and advances the content to chunked. Only discovery creates
+// content rows, so a test that wants a chunked content has to do both.
+func seedChunked(t *testing.T, store *Store, doc domain.Document, chunks []domain.Chunk) []int64 {
+	t.Helper()
+	ctx := context.Background()
+	if err := store.UpsertDocuments(ctx, []domain.Document{doc}); err != nil {
+		t.Fatalf("seed %s at %s: %v", doc.ContentHash, doc.Path, err)
+	}
+	if len(chunks) == 0 {
+		return nil
+	}
+	c := domain.Content{Hash: doc.ContentHash, State: domain.ContentStateChunked}
+	ids, err := store.StoreChunks(ctx, c, chunks)
+	if err != nil {
+		t.Fatalf("seed chunks for %s: %v", doc.ContentHash, err)
+	}
+	return ids
+}
+
+func countRows(t *testing.T, db *DB, query string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := db.Reader().QueryRow(query, args...).Scan(&n); err != nil {
+		t.Fatalf("count (%s): %v", query, err)
+	}
+	return n
+}
+
+func contentState(t *testing.T, db *DB, hash string) string {
+	t.Helper()
+	var state string
+	if err := db.Reader().QueryRow(
+		"SELECT state FROM content WHERE content_hash = ?", hash).Scan(&state); err != nil {
+		t.Fatalf("read state of %s: %v", hash, err)
+	}
+	return state
+}
+
+func TestUpsertDocumentsCreatesDocumentAndContent(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	ids, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha", "beta"))
-	if err != nil {
-		t.Fatalf("UpsertDocument: %v", err)
-	}
-	if len(ids) != 2 {
-		t.Fatalf("chunk ids = %v, want 2", ids)
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-1", "/notes/a.md")}); err != nil {
+		t.Fatalf("UpsertDocuments: %v", err)
 	}
 
 	doc, ok, err := store.GetByPath(ctx, "/notes/a.md")
@@ -79,120 +127,152 @@ func TestUpsertDocumentInsertsDocAndChunks(t *testing.T) {
 	if !ok {
 		t.Fatal("GetByPath: not found after upsert")
 	}
-	if doc.ID != "d_1" || doc.ContentHash != "hash-d_1" || doc.Size != 42 {
+	if doc.ContentHash != "hash-1" || doc.Size != 42 || doc.UnreadReason != "" {
 		t.Errorf("GetByPath = %+v", doc)
 	}
 	if !doc.MTime.Equal(time.Unix(1700000000, 123456789)) {
 		t.Errorf("MTime = %v, want ns-precision round-trip", doc.MTime)
 	}
-	if doc.State != domain.DocStateChunked {
-		t.Errorf("State = %q, want %q", doc.State, domain.DocStateChunked)
+	if got := contentState(t, db, "hash-1"); got != string(domain.ContentStateDiscovered) {
+		t.Errorf("content state = %q, want discovered (the eager insert)", got)
 	}
 }
 
-func TestUpsertDocumentReplacesChunks(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+func TestUpsertDocumentsBatch(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	first, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha", "beta"))
-	if err != nil {
-		t.Fatalf("first upsert: %v", err)
+	docs := []domain.Document{
+		testDoc("hash-1", "/notes/a.md"),
+		testDoc("hash-2", "/notes/b.md"),
+		testDoc("hash-3", "/notes/c.md"),
+	}
+	if err := store.UpsertDocuments(ctx, docs); err != nil {
+		t.Fatalf("UpsertDocuments(batch): %v", err)
 	}
 
-	doc := testDoc("d_1", "/notes/a.md")
-	doc.ContentHash = "hash-v2"
-	second, err := store.UpsertDocument(ctx, doc, testChunks("d_1", "gamma", "delta", "epsilon"))
-	if err != nil {
-		t.Fatalf("second upsert: %v", err)
-	}
-	if len(second) != 3 {
-		t.Fatalf("second chunk ids = %v, want 3", second)
-	}
-	for _, oldID := range first {
-		for _, newID := range second {
-			if oldID == newID {
-				t.Errorf("chunk id %d survived replacement", oldID)
-			}
+	for _, doc := range docs {
+		got, ok, err := store.GetByPath(ctx, doc.Path)
+		if err != nil || !ok {
+			t.Fatalf("GetByPath(%s): ok=%v err=%v", doc.Path, ok, err)
+		}
+		if got.ContentHash != doc.ContentHash {
+			t.Errorf("%s hash = %q, want %q", doc.Path, got.ContentHash, doc.ContentHash)
 		}
 	}
-
-	var count int
-	if err := db.Reader().QueryRow("SELECT count(*) FROM chunks WHERE doc_id = 'd_1'").Scan(&count); err != nil {
-		t.Fatalf("count chunks: %v", err)
+	if n := countRows(t, db, "SELECT count(*) FROM content"); n != 3 {
+		t.Errorf("content rows = %d, want 3", n)
 	}
-	if count != 3 {
-		t.Errorf("chunk count = %d, want 3 (old chunks must be gone)", count)
-	}
-
-	got, _, err := store.GetByPath(ctx, "/notes/a.md")
-	if err != nil {
-		t.Fatalf("GetByPath: %v", err)
-	}
-	if got.ContentHash != "hash-v2" {
-		t.Errorf("ContentHash = %q, want hash-v2", got.ContentHash)
+	// The batch plus the helper's unread seed.
+	if n := countRows(t, db, "SELECT count(*) FROM documents"); n != 4 {
+		t.Errorf("documents rows = %d, want 4", n)
 	}
 }
 
-func TestGetByID(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+// A changed file is the same path-keyed write with a new hash: the document
+// re-points, and the old content row is not this write's to clean up — it
+// stays, in whatever state it reached, until the orphan sweep collects it.
+func TestUpsertDocumentsRepointsPathAndLeavesOldContent(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	want := testDoc("d_1", "/notes/a.md")
-	if _, err := seedUpsert(t, store, want, testChunks("d_1", "alpha")); err != nil {
-		t.Fatalf("seed: %v", err)
+	old := testDoc("hash-old", "/notes/a.md")
+	oldIDs := seedChunked(t, store, old, testChunks("alpha", "beta"))
+	if len(oldIDs) != 2 {
+		t.Fatalf("seed chunk ids = %v, want 2", oldIDs)
 	}
 
-	got, err := store.GetByID(ctx, "d_1")
-	if err != nil {
-		t.Fatalf("GetByID: %v", err)
-	}
-	if got.Path != want.Path || got.ContentHash != want.ContentHash || got.State != want.State {
-		t.Errorf("GetByID = %+v, want path/hash/state from %+v", got, want)
+	changed := testDoc("hash-new", "/notes/a.md")
+	if err := store.UpsertDocuments(ctx, []domain.Document{changed}); err != nil {
+		t.Fatalf("re-upsert: %v", err)
 	}
 
-	// A missing id is ErrDocumentGone, not an ok=false — the id came out of a
-	// claim, so its absence is a purge and the caller stands down.
-	if _, err := store.GetByID(ctx, "d_missing"); !errors.Is(err, domain.ErrDocumentGone) {
-		t.Errorf("GetByID(unknown) = %v, want domain.ErrDocumentGone", err)
+	doc, ok, err := store.GetByPath(ctx, "/notes/a.md")
+	if err != nil || !ok {
+		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
+	}
+	if doc.ContentHash != "hash-new" {
+		t.Errorf("hash = %q, want hash-new", doc.ContentHash)
+	}
+	if got := contentState(t, db, "hash-old"); got != string(domain.ContentStateChunked) {
+		t.Errorf("old content state = %q, want chunked — untouched until the sweep", got)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM chunks WHERE content_hash = 'hash-old'"); n != 2 {
+		t.Errorf("old content chunks = %d, want 2 (the sweep's job, not this write's)", n)
+	}
+	if got := contentState(t, db, "hash-new"); got != string(domain.ContentStateDiscovered) {
+		t.Errorf("new content state = %q, want discovered", got)
 	}
 }
 
-// Why the scheduler re-reads at all: a document claimed minutes ago must be
-// worked on at the path it has now, not the path it had then. Issue #63's
-// second half is exactly this — a stale copy sends the pipeline to a path a
-// rename has since given to a different file.
-func TestGetByIDSeesAPathChangedSinceTheClaim(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+// One content row per distinct byte sequence: a second identical file
+// schedules no work, and re-discovering already-indexed content must not
+// drag it back to discovered.
+func TestUpsertDocumentsDeduplicatesContent(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	claimed := testDoc("d_1", "/notes/a.md")
-	if _, err := seedUpsert(t, store, claimed, testChunks("d_1", "alpha")); err != nil {
-		t.Fatalf("seed: %v", err)
+	pair := []domain.Document{
+		testDoc("hash-dup", "/notes/a.md"),
+		testDoc("hash-dup", "/notes/b.md"),
+	}
+	if err := store.UpsertDocuments(ctx, pair); err != nil {
+		t.Fatalf("UpsertDocuments: %v", err)
+	}
+	if n := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'hash-dup'"); n != 1 {
+		t.Fatalf("content rows = %d, want 1 for two paths sharing a hash", n)
 	}
 
-	// The write discovery makes for a rename: same id, new path, back to
-	// discovered.
-	renamed := claimed
-	renamed.Path, renamed.State = "/notes/b.md", domain.DocStateDiscovered
-	if _, err := store.UpsertDocument(ctx, renamed, nil); err != nil {
-		t.Fatalf("rename: %v", err)
+	if err := store.UpdateContentState(ctx, "hash-dup", domain.ContentStateIndexed); err != nil {
+		t.Fatalf("UpdateContentState: %v", err)
+	}
+	// A third copy of the same bytes appears.
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-dup", "/notes/c.md")}); err != nil {
+		t.Fatalf("third discovery: %v", err)
+	}
+	if got := contentState(t, db, "hash-dup"); got != string(domain.ContentStateIndexed) {
+		t.Errorf("state = %q after re-discovery, want indexed — existing content is never touched", got)
+	}
+}
+
+func TestUpsertDocumentsUnreadAndTransition(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.UpsertDocuments(ctx, []domain.Document{
+		unreadDoc("/notes/locked.md", domain.UnreadDataless),
+	}); err != nil {
+		t.Fatalf("upsert unread: %v", err)
+	}
+	doc, ok, err := store.GetByPath(ctx, "/notes/locked.md")
+	if err != nil || !ok {
+		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
+	}
+	if doc.ContentHash != "" || doc.UnreadReason != domain.UnreadDataless {
+		t.Errorf("unread doc = %+v, want no hash and reason dataless", doc)
+	}
+	// An unread doc creates no content row.
+	if n := countRows(t, db, "SELECT count(*) FROM content"); n != 0 {
+		t.Errorf("content rows = %d after unread upsert, want 0", n)
 	}
 
-	got, err := store.GetByID(ctx, "d_1")
-	if err != nil {
-		t.Fatalf("GetByID: %v", err)
+	// The file becomes readable: the hash fills in as the reason NULLs out.
+	if err := store.UpsertDocuments(ctx, []domain.Document{
+		testDoc("hash-1", "/notes/locked.md"),
+	}); err != nil {
+		t.Fatalf("upsert readable: %v", err)
 	}
-	if got.Path != "/notes/b.md" {
-		t.Errorf("path = %q, want the post-rename path — the claimed copy is stale", got.Path)
+	doc, ok, err = store.GetByPath(ctx, "/notes/locked.md")
+	if err != nil || !ok {
+		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
+	}
+	if doc.ContentHash != "hash-1" || doc.UnreadReason != "" {
+		t.Errorf("doc after transition = %+v, want hash set and reason cleared", doc)
 	}
 }
 
 func TestGetByPathMissing(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, _ := newTestStore(t)
 
 	_, ok, err := store.GetByPath(context.Background(), "/no/such/file.md")
 	if err != nil {
@@ -203,269 +283,86 @@ func TestGetByPathMissing(t *testing.T) {
 	}
 }
 
-func TestDeleteDocumentCascades(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+func TestStoreChunksReplacesChunksAndReturnsOrdinalOrder(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
-		t.Fatalf("upsert: %v", err)
+	first := seedChunked(t, store, testDoc("hash-1", "/notes/a.md"), testChunks("alpha", "beta"))
+	if len(first) != 2 {
+		t.Fatalf("first chunk ids = %v, want 2", first)
 	}
-	if _, err := db.Writer().Exec(
-		"INSERT INTO summaries (doc_id, level, text) VALUES ('d_1', 4, 'short summary')"); err != nil {
-		t.Fatalf("insert summary: %v", err)
-	}
-
-	if err := store.DeleteDocument(ctx, "d_1"); err != nil {
-		t.Fatalf("DeleteDocument: %v", err)
+	if !slices.IsSorted(first) {
+		t.Errorf("chunk ids %v not in ordinal order", first)
 	}
 
-	for _, table := range []string{"documents", "chunks", "summaries"} {
-		var count int
-		if err := db.Reader().QueryRow("SELECT count(*) FROM " + table).Scan(&count); err != nil {
-			t.Fatalf("count %s: %v", table, err)
-		}
-		if count != 0 {
-			t.Errorf("%s has %d rows after delete, want 0", table, count)
-		}
-	}
-}
-
-func TestDeleteByPathPrefix(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	// /notes/sub is the target; /notes/sub.md and /notes/subway/ are the
-	// near misses a naive LIKE 'prefix%' would take with it.
-	paths := map[string]string{
-		"d_dir":     "/notes/sub",
-		"d_inside":  "/notes/sub/a.md",
-		"d_deeper":  "/notes/sub/deep/b.md",
-		"d_sibling": "/notes/sub.md",
-		"d_subway":  "/notes/subway/c.md",
-		"d_other":   "/notes/other.md",
-	}
-	for id, path := range paths {
-		if _, err := seedUpsert(t, store, testDoc(id, path), testChunks(id, "text")); err != nil {
-			t.Fatalf("upsert %s: %v", id, err)
-		}
-	}
-
-	removed, err := store.DeleteByPathPrefix(ctx, "/notes/sub")
+	second, err := store.StoreChunks(ctx,
+		domain.Content{Hash: "hash-1", State: domain.ContentStateChunked},
+		testChunks("gamma", "delta", "epsilon"))
 	if err != nil {
-		t.Fatalf("DeleteByPathPrefix: %v", err)
+		t.Fatalf("second StoreChunks: %v", err)
 	}
-	if removed != 3 {
-		t.Errorf("removed = %d, want 3 (the directory row and the two under it)", removed)
+	if len(second) != 3 {
+		t.Fatalf("second chunk ids = %v, want 3", second)
 	}
-
-	for _, id := range []string{"d_sibling", "d_subway", "d_other"} {
-		if _, ok, err := store.GetByPath(ctx, paths[id]); err != nil || !ok {
-			t.Errorf("%s (%s) was removed; only the prefix and its descendants should go", id, paths[id])
+	if !slices.IsSorted(second) {
+		t.Errorf("chunk ids %v not in ordinal order", second)
+	}
+	for _, oldID := range first {
+		if slices.Contains(second, oldID) {
+			t.Errorf("chunk id %d survived replacement", oldID)
 		}
 	}
-	for _, id := range []string{"d_dir", "d_inside", "d_deeper"} {
-		if _, ok, err := store.GetByPath(ctx, paths[id]); err != nil || ok {
-			t.Errorf("%s (%s) survived the prefix delete", id, paths[id])
-		}
-	}
-	// Chunks cascade with their documents, as with DeleteDocument.
-	var chunks int
-	if err := db.Reader().QueryRow(
-		"SELECT count(*) FROM chunks WHERE doc_id IN ('d_dir','d_inside','d_deeper')").Scan(&chunks); err != nil {
-		t.Fatalf("count chunks: %v", err)
-	}
-	if chunks != 0 {
-		t.Errorf("chunks = %d after prefix delete, want 0", chunks)
+	if n := countRows(t, db, "SELECT count(*) FROM chunks WHERE content_hash = 'hash-1'"); n != 3 {
+		t.Errorf("chunk count = %d, want 3 (old chunks must be gone)", n)
 	}
 }
 
-func TestDeleteByPathPrefixRefusesToEmptyTheCatalog(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
+// The window this closes: the pipeline claims a content, every path
+// referencing it vanishes, the sweep collects the row, and the pipeline then
+// commits its chunks. An INSERT there would make content whose every source
+// is gone permanently searchable.
+func TestStoreChunksNeverCreatesTheContentRow(t *testing.T) {
+	store, db := newTestStore(t)
 
-	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
-		t.Fatalf("upsert: %v", err)
+	_, err := store.StoreChunks(context.Background(),
+		domain.Content{Hash: "hash-never", State: domain.ContentStateChunked},
+		testChunks("alpha"))
+	if !errors.Is(err, domain.ErrContentGone) {
+		t.Errorf("StoreChunks(missing content) = %v, want domain.ErrContentGone", err)
 	}
-	for _, prefix := range []string{"", "/"} {
-		if _, err := store.DeleteByPathPrefix(ctx, prefix); err == nil {
-			t.Errorf("DeleteByPathPrefix(%q) = nil error, want a refusal", prefix)
-		}
-	}
-	if _, ok, err := store.GetByPath(ctx, "/notes/a.md"); err != nil || !ok {
-		t.Error("the document was removed by a refused prefix delete")
+	if n := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'hash-never'"); n != 0 {
+		t.Error("StoreChunks resurrected a swept content row")
 	}
 }
 
-// The window this closes: the drain claims a document, the file is deleted,
-// the watcher's reconcile purges the row, and the pipeline then commits its
-// chunks. An INSERT there would put the document back and go on to embed and
-// finalize it, leaving a deleted file permanently searchable with nothing to
-// notice — the index would be serving content whose source is gone.
-func TestPipelineWritesDoNotResurrectAPurgedDocument(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+// The pipeline commits chunks with state=chunked *before* the embed network
+// call. Resetting the retry columns there would park the row at attempts=0
+// for the whole duration of that call — a crash in the window would hand the
+// content a fresh budget, and content that can never be embedded would never
+// reach the attempt cap.
+func TestStoreChunksKeepsRetryColumns(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	if _, err := store.DeleteByPathPrefix(ctx, "/notes/a.md"); err != nil {
-		t.Fatalf("purge: %v", err)
-	}
-
-	// Every write the pipeline makes after the purge, in the order it makes
-	// them. All of them must refuse.
-	chunked := testDoc("d_1", "/notes/a.md")
-	chunked.State = domain.DocStateChunked
-	failed := testDoc("d_1", "/notes/a.md")
-	failed.State = domain.DocStateFailed
-	for name, write := range map[string]func() error{
-		"commit chunks": func() error {
-			_, err := store.UpsertDocument(ctx, chunked, testChunks("d_1", "alpha"))
-			return err
-		},
-		"record failure": func() error {
-			_, err := store.UpsertDocument(ctx, failed, nil)
-			return err
-		},
-		"finalize":    func() error { return store.UpdateDocumentState(ctx, "d_1", domain.DocStateIndexed) },
-		"mark failed": func() error { return store.MarkFailed(ctx, "d_1", "embed: boom") },
-		"refresh stat": func() error {
-			return store.UpdateDocumentStat(ctx, "d_1", 99, time.Unix(1700000001, 0))
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if err := write(); !errors.Is(err, domain.ErrDocumentGone) {
-				t.Errorf("err = %v, want domain.ErrDocumentGone", err)
-			}
-			if _, ok, err := store.GetByPath(ctx, "/notes/a.md"); err != nil || ok {
-				t.Error("the purged document is back in the catalog")
-			}
-		})
-	}
-
-	// And nothing derived from it survived either.
-	var chunks int
-	if err := db.Reader().QueryRow("SELECT count(*) FROM chunks WHERE doc_id = 'd_1'").Scan(&chunks); err != nil {
-		t.Fatal(err)
-	}
-	if chunks != 0 {
-		t.Errorf("chunks = %d for a purged document, want 0", chunks)
-	}
-}
-
-// Discovery is the exception, and has to be: it is the thing that announces
-// a file exists, so its create cannot depend on the row already being there.
-func TestDiscoveryStillCreatesRows(t *testing.T) {
-	store := NewStore(openTestDB(t))
-	ctx := context.Background()
-
-	doc := testDoc("d_1", "/notes/a.md")
-	doc.State = domain.DocStateDiscovered
-	if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
-		t.Fatalf("discovery upsert: %v", err)
-	}
-	if _, ok, err := store.GetByPath(ctx, "/notes/a.md"); err != nil || !ok {
-		t.Error("discovery did not create the row")
-	}
-}
-
-func TestUpsertDocumentDisplacesPathOwner(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	if _, err := seedUpsert(t, store, testDoc("d_old", "/notes/a.md"), testChunks("d_old", "alpha")); err != nil {
-		t.Fatalf("upsert d_old: %v", err)
-	}
-	// New document ID claims the same path (deleted-and-recreated file).
-	if _, err := seedUpsert(t, store, testDoc("d_new", "/notes/a.md"), testChunks("d_new", "beta")); err != nil {
-		t.Fatalf("upsert d_new over same path: %v", err)
-	}
-
-	doc, ok, err := store.GetByPath(ctx, "/notes/a.md")
-	if err != nil || !ok {
-		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
-	}
-	if doc.ID != "d_new" {
-		t.Errorf("path owner = %s, want d_new", doc.ID)
-	}
-	var oldRows int
-	if err := db.Reader().QueryRow("SELECT count(*) FROM documents WHERE id = 'd_old'").Scan(&oldRows); err != nil {
-		t.Fatal(err)
-	}
-	if oldRows != 0 {
-		t.Error("displaced document row survived")
-	}
-}
-
-// Discovery upserts with state=discovered when a file is new or its content
-// changed, and that is what earns a fresh retry budget: the previous failures
-// were about content that no longer exists.
-func TestUpsertDocumentResetsRetryColumnsForAChangedFile(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-1", "/notes/a.md")}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	if _, err := db.Writer().Exec(
-		"UPDATE documents SET attempts = 5, next_retry_at = 123, last_error = 'boom' WHERE id = 'd_1'"); err != nil {
+		"UPDATE content SET attempts = 3, next_retry_at = 123, last_error = 'embed: boom' WHERE content_hash = 'hash-1'"); err != nil {
 		t.Fatal(err)
 	}
 
-	changed := testDoc("d_1", "/notes/a.md")
-	changed.State = domain.DocStateDiscovered
-	if _, err := store.UpsertDocument(ctx, changed, nil); err != nil {
-		t.Fatalf("re-upsert: %v", err)
-	}
-	var attempts int
-	var nextRetry, lastError sql.NullString
-	if err := db.Reader().QueryRow(
-		"SELECT attempts, next_retry_at, last_error FROM documents WHERE id = 'd_1'").
-		Scan(&attempts, &nextRetry, &lastError); err != nil {
-		t.Fatal(err)
-	}
-	if attempts != 0 || nextRetry.Valid || lastError.Valid {
-		t.Errorf("retry columns not reset: attempts=%d next_retry=%v last_error=%v",
-			attempts, nextRetry, lastError)
-	}
-}
-
-// The pipeline commits chunks through UpsertDocument with state=chunked
-// *before* the embed network call. Resetting the retry columns there would
-// park the row at attempts=0 for the whole duration of that call, so a crash
-// in the window would hand the document a fresh budget — and a document that
-// can never be embedded would never reach the attempt cap.
-func TestUpsertDocumentKeepsRetryColumnsMidPipeline(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	if _, err := db.Writer().Exec(
-		"UPDATE documents SET attempts = 3, next_retry_at = 123, last_error = 'embed: boom' WHERE id = 'd_1'"); err != nil {
-		t.Fatal(err)
-	}
-
-	// A retry: same content, re-chunked and committed ahead of embedding.
-	chunked := testDoc("d_1", "/notes/a.md")
-	chunked.State = domain.DocStateChunked
-	if _, err := store.UpsertDocument(ctx, chunked, testChunks("d_1", "hello")); err != nil {
-		t.Fatalf("re-upsert: %v", err)
+	if _, err := store.StoreChunks(ctx,
+		domain.Content{Hash: "hash-1", State: domain.ContentStateChunked},
+		testChunks("hello")); err != nil {
+		t.Fatalf("StoreChunks: %v", err)
 	}
 
 	var attempts int
 	var nextRetry sql.NullInt64
 	var lastError sql.NullString
 	if err := db.Reader().QueryRow(
-		"SELECT attempts, next_retry_at, last_error FROM documents WHERE id = 'd_1'").
+		"SELECT attempts, next_retry_at, last_error FROM content WHERE content_hash = 'hash-1'").
 		Scan(&attempts, &nextRetry, &lastError); err != nil {
 		t.Fatal(err)
 	}
@@ -480,333 +377,266 @@ func TestUpsertDocumentKeepsRetryColumnsMidPipeline(t *testing.T) {
 	}
 }
 
-// Recording a permanent failure must not wipe the count that justified it,
-// or a failed row reads as though it were never tried.
-func TestUpsertDocumentKeepsRetryColumnsWhenRecordingFailure(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+func TestUpdateContentState(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-1", "/notes/a.md")}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if _, err := db.Writer().Exec(
-		"UPDATE documents SET attempts = 4 WHERE id = 'd_1'"); err != nil {
-		t.Fatal(err)
+	if err := store.UpdateContentState(ctx, "hash-1", domain.ContentStateIndexed); err != nil {
+		t.Fatalf("UpdateContentState: %v", err)
+	}
+	if got := contentState(t, db, "hash-1"); got != string(domain.ContentStateIndexed) {
+		t.Errorf("state = %q, want indexed", got)
 	}
 
-	failed := testDoc("d_1", "/notes/a.md")
-	failed.State = domain.DocStateFailed
-	if _, err := store.UpsertDocument(ctx, failed, nil); err != nil {
-		t.Fatalf("upsert failed doc: %v", err)
-	}
-	if err := store.MarkFailed(ctx, "d_1", "embed: poison (after 5 attempts)"); err != nil {
-		t.Fatalf("MarkFailed: %v", err)
-	}
-
-	var attempts int
-	if err := db.Reader().QueryRow(
-		"SELECT attempts FROM documents WHERE id = 'd_1'").Scan(&attempts); err != nil {
-		t.Fatal(err)
-	}
-	if attempts != 4 {
-		t.Errorf("attempts = %d, want the count that led to the failure preserved", attempts)
-	}
-}
-
-func TestGetByContentHash(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	docA := testDoc("d_a", "/notes/a.md")
-	docB := testDoc("d_b", "/notes/b.md")
-	docB.ContentHash = docA.ContentHash // duplicate content
-	docC := testDoc("d_c", "/notes/c.md")
-	docC.ContentHash = "hash-other"
-	for _, doc := range []domain.Document{docA, docB, docC} {
-		if _, err := seedUpsert(t, store, doc, nil); err != nil {
-			t.Fatalf("upsert %s: %v", doc.ID, err)
-		}
-	}
-
-	docs, err := store.GetByContentHash(ctx, docA.ContentHash)
-	if err != nil {
-		t.Fatalf("GetByContentHash: %v", err)
-	}
-	if len(docs) != 2 || docs[0].ID != "d_a" || docs[1].ID != "d_b" {
-		t.Fatalf("GetByContentHash = %+v, want d_a and d_b", docs)
-	}
-	// Hydration parity with GetByPath.
-	want, _, err := store.GetByPath(ctx, "/notes/a.md")
-	if err != nil {
-		t.Fatalf("GetByPath: %v", err)
-	}
-	if docs[0].Path != want.Path || docs[0].Size != want.Size ||
-		!docs[0].MTime.Equal(want.MTime) || docs[0].State != want.State {
-		t.Errorf("hydration mismatch: GetByContentHash %+v vs GetByPath %+v", docs[0], want)
-	}
-
-	none, err := store.GetByContentHash(ctx, "hash-none")
-	if err != nil {
-		t.Fatalf("GetByContentHash(miss): %v", err)
-	}
-	if len(none) != 0 {
-		t.Errorf("GetByContentHash(miss) = %+v, want empty", none)
-	}
-}
-
-func TestUpdateDocumentStat(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), testChunks("d_1", "alpha")); err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	if _, err := db.Writer().Exec(
-		"UPDATE documents SET attempts = 5, next_retry_at = 123, last_error = 'boom' WHERE id = 'd_1'"); err != nil {
-		t.Fatal(err)
-	}
-
-	newMTime := time.Unix(1800000000, 987654321)
-	if err := store.UpdateDocumentStat(ctx, "d_1", 99, newMTime); err != nil {
-		t.Fatalf("UpdateDocumentStat: %v", err)
-	}
-
-	doc, ok, err := store.GetByPath(ctx, "/notes/a.md")
-	if err != nil || !ok {
-		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
-	}
-	if doc.Size != 99 || !doc.MTime.Equal(newMTime) {
-		t.Errorf("size/mtime = %d/%v, want 99/%v (ns round-trip)", doc.Size, doc.MTime, newMTime)
-	}
-	if doc.State != domain.DocStateChunked || doc.ContentHash != "hash-d_1" {
-		t.Errorf("state/hash touched: %+v", doc)
-	}
-	// Chunks and retry columns untouched.
-	var chunks, attempts int
-	if err := db.Reader().QueryRow(
-		"SELECT count(*), (SELECT attempts FROM documents WHERE id = 'd_1') FROM chunks WHERE doc_id = 'd_1'").
-		Scan(&chunks, &attempts); err != nil {
-		t.Fatal(err)
-	}
-	if chunks != 1 || attempts != 5 {
-		t.Errorf("chunks=%d attempts=%d, want 1/5 (untouched)", chunks, attempts)
-	}
-
-	if err := store.UpdateDocumentStat(ctx, "d_missing", 1, newMTime); err == nil {
-		t.Error("UpdateDocumentStat(unknown id) = nil, want error")
-	}
-}
-
-func TestStageVersionsRoundTrip(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	doc := testDoc("d_1", "/notes/a.md")
-	doc.StageVersions = map[string]string{"chunker": "1", "embedder": "test-model"}
-	if _, err := seedUpsert(t, store, doc, nil); err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	got, ok, err := store.GetByPath(ctx, "/notes/a.md")
-	if err != nil || !ok {
-		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
-	}
-	if got.StageVersions["chunker"] != "1" || got.StageVersions["embedder"] != "test-model" {
-		t.Errorf("StageVersions = %v", got.StageVersions)
-	}
-}
-
-func TestListIndexable(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	seed := []struct {
-		id, path string
-		state    domain.DocState
-	}{
-		{"d_1", "/notes/b.md", domain.DocStateIndexed},
-		{"d_2", "/notes/a.md", domain.DocStateDiscovered},
-		{"d_3", "/notes/c.md", domain.DocStateFailed},
-		{"d_4", "/notes/d.md", domain.DocStateDeleted},
-		{"d_5", "/notes/e.md", domain.DocStateChunked},
-	}
-	for _, s := range seed {
-		doc := testDoc(s.id, s.path)
-		doc.State = s.state
-		if _, err := seedUpsert(t, store, doc, nil); err != nil {
-			t.Fatalf("seed %s: %v", s.id, err)
-		}
-	}
-
-	docs, err := store.ListIndexable(ctx)
-	if err != nil {
-		t.Fatalf("ListIndexable: %v", err)
-	}
-	var got []string
-	for _, d := range docs {
-		got = append(got, d.ID)
-	}
-	// deleted excluded, failed included (config changes give failed docs a
-	// fresh attempt); ordered by path (a, b, c, e).
-	want := []string{"d_2", "d_1", "d_3", "d_5"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("ListIndexable ids = %v, want %v", got, want)
-	}
-}
-
-func TestUpdateDocumentState(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	doc := testDoc("d_1", "/notes/a.md")
-	doc.StageVersions = map[string]string{"chunker": "1"}
-	ids, err := seedUpsert(t, store, doc, testChunks("d_1", "alpha"))
-	if err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	spec := domain.EmbeddingSpec{Model: "test-model"}
-	if err := store.EnsureVecTable(ctx, spec, 3); err != nil {
-		t.Fatalf("EnsureVecTable: %v", err)
-	}
-	if err := store.UpsertVectors(ctx, ids, [][]float32{{1, 2, 3}}); err != nil {
-		t.Fatalf("UpsertVectors: %v", err)
-	}
-
-	if err := store.UpdateDocumentState(ctx, "d_1", domain.DocStateIndexed); err != nil {
-		t.Fatalf("UpdateDocumentState: %v", err)
-	}
-
-	got, ok, err := store.GetByPath(ctx, "/notes/a.md")
-	if err != nil || !ok {
-		t.Fatalf("GetByPath: ok=%v err=%v", ok, err)
-	}
-	if got.State != domain.DocStateIndexed {
-		t.Errorf("state = %q, want indexed", got.State)
-	}
-	if got.StageVersions["chunker"] != "1" {
-		t.Errorf("stage versions touched: %v", got.StageVersions)
-	}
-	// Chunks and vectors survive the state flip (the reason this method
-	// exists instead of a second UpsertDocument).
-	hits, err := store.SearchVectors(ctx, []float32{1, 2, 3}, 1)
-	if err != nil {
-		t.Fatalf("SearchVectors: %v", err)
-	}
-	if len(hits) != 1 || hits[0].Chunk.Text != "alpha" {
-		t.Fatalf("vectors gone after state flip: %+v", hits)
-	}
-
-	if err := store.UpdateDocumentState(ctx, "d_missing", domain.DocStateIndexed); err == nil {
-		t.Error("UpdateDocumentState(unknown id) = nil, want error")
+	err := store.UpdateContentState(ctx, "hash-missing", domain.ContentStateIndexed)
+	if !errors.Is(err, domain.ErrContentGone) {
+		t.Errorf("UpdateContentState(unknown hash) = %v, want domain.ErrContentGone", err)
 	}
 }
 
 func TestMarkFailed(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	if _, err := seedUpsert(t, store, testDoc("d_1", "/notes/a.md"), nil); err != nil {
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-1", "/notes/a.md")}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if err := store.MarkFailed(ctx, "d_1", "undecodable: invalid UTF-8"); err != nil {
+	if err := store.MarkFailed(ctx, "hash-1", "undecodable: invalid UTF-8"); err != nil {
 		t.Fatalf("MarkFailed: %v", err)
 	}
 
 	var state, lastErr string
 	if err := db.Reader().QueryRow(
-		"SELECT state, last_error FROM documents WHERE id = 'd_1'").Scan(&state, &lastErr); err != nil {
+		"SELECT state, last_error FROM content WHERE content_hash = 'hash-1'").Scan(&state, &lastErr); err != nil {
 		t.Fatal(err)
 	}
 	if state != "failed" || lastErr != "undecodable: invalid UTF-8" {
 		t.Errorf("state=%q last_error=%q", state, lastErr)
 	}
 
-	// A file change (discovery re-upserting as discovered) clears the failure.
-	changed := testDoc("d_1", "/notes/a.md")
-	changed.State = domain.DocStateDiscovered
-	if _, err := store.UpsertDocument(ctx, changed, nil); err != nil {
-		t.Fatalf("re-upsert: %v", err)
-	}
-	var cleared sql.NullString
-	if err := db.Reader().QueryRow(
-		"SELECT last_error FROM documents WHERE id = 'd_1'").Scan(&cleared); err != nil {
-		t.Fatal(err)
-	}
-	if cleared.Valid {
-		t.Errorf("last_error = %q after re-upsert, want NULL", cleared.String)
-	}
-
-	if err := store.MarkFailed(ctx, "d_missing", "x"); err == nil {
-		t.Error("MarkFailed(unknown id) = nil, want error")
+	err := store.MarkFailed(ctx, "hash-missing", "x")
+	if !errors.Is(err, domain.ErrContentGone) {
+		t.Errorf("MarkFailed(unknown hash) = %v, want domain.ErrContentGone", err)
 	}
 }
 
-func TestCountsByStateReportsEveryStateIncludingZeros(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+func TestDeleteByPathPrefix(t *testing.T) {
+	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	for _, tc := range []struct {
-		id    string
-		path  string
-		state domain.DocState
-	}{
-		{"d_1", "/notes/a.md", domain.DocStateIndexed},
-		{"d_2", "/notes/b.md", domain.DocStateIndexed},
-		{"d_3", "/notes/c.md", domain.DocStateFailed},
-	} {
-		doc := testDoc(tc.id, tc.path)
-		doc.State = tc.state
-		if _, err := seedUpsert(t, store, doc, testChunks(tc.id, "text")); err != nil {
-			t.Fatalf("UpsertDocument(%s): %v", tc.id, err)
+	// /notes/sub is the target; /notes/sub.md and /notes/subway/ are the
+	// near misses a naive LIKE 'prefix%' would take with it.
+	paths := map[string]string{
+		"hash-dir":     "/notes/sub",
+		"hash-inside":  "/notes/sub/a.md",
+		"hash-deeper":  "/notes/sub/deep/b.md",
+		"hash-sibling": "/notes/sub.md",
+		"hash-subway":  "/notes/subway/c.md",
+		"hash-other":   "/notes/other.md",
+	}
+	for hash, path := range paths {
+		seedChunked(t, store, testDoc(hash, path), testChunks("text"))
+	}
+
+	removed, err := store.DeleteByPathPrefix(ctx, "/notes/sub")
+	if err != nil {
+		t.Fatalf("DeleteByPathPrefix: %v", err)
+	}
+	if removed != 3 {
+		t.Errorf("removed = %d, want 3 (the directory row and the two under it)", removed)
+	}
+
+	for _, hash := range []string{"hash-sibling", "hash-subway", "hash-other"} {
+		if _, ok, err := store.GetByPath(ctx, paths[hash]); err != nil || !ok {
+			t.Errorf("%s was removed; only the prefix and its descendants should go", paths[hash])
+		}
+	}
+	for _, hash := range []string{"hash-dir", "hash-inside", "hash-deeper"} {
+		if _, ok, err := store.GetByPath(ctx, paths[hash]); err != nil || ok {
+			t.Errorf("%s survived the prefix delete", paths[hash])
 		}
 	}
 
-	counts, err := store.CountsByState(ctx)
-	if err != nil {
-		t.Fatalf("CountsByState: %v", err)
-	}
-
-	// Every state must be present: a consumer must never have to tell
-	// "no documents in this state" apart from "this build forgot the state".
-	if len(counts) != len(domain.DocStates) {
-		t.Errorf("CountsByState returned %d states, want %d", len(counts), len(domain.DocStates))
-	}
-	want := map[domain.DocState]int{
-		domain.DocStateDiscovered: 0,
-		domain.DocStateConverted:  0,
-		domain.DocStateChunked:    0,
-		domain.DocStateEmbedded:   0,
-		domain.DocStateIndexed:    2,
-		domain.DocStateFailed:     1,
-		domain.DocStateDeleted:    0,
-	}
-	for state, n := range want {
-		if got, ok := counts[state]; !ok {
-			t.Errorf("CountsByState missing state %q", state)
-		} else if got != n {
-			t.Errorf("CountsByState[%q] = %d, want %d", state, got, n)
+	// Documents only: the removed rows' content and chunks stay until the
+	// orphan sweep collects them (and contribute nothing to search meanwhile
+	// — result assembly inner-joins documents).
+	for _, hash := range []string{"hash-dir", "hash-inside", "hash-deeper"} {
+		if n := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = ?", hash); n != 1 {
+			t.Errorf("content row for %s gone after prefix delete; that is the sweep's job", hash)
+		}
+		if n := countRows(t, db, "SELECT count(*) FROM chunks WHERE content_hash = ?", hash); n != 1 {
+			t.Errorf("chunks for %s gone after prefix delete; that is the sweep's job", hash)
 		}
 	}
 }
 
-func TestCountsByStateOnEmptyIndexIsAllZeros(t *testing.T) {
-	db := openTestDB(t)
-	store := NewStore(db)
+func TestDeleteByPathPrefixRefusesToEmptyTheCatalog(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
 
-	counts, err := store.CountsByState(context.Background())
-	if err != nil {
-		t.Fatalf("CountsByState: %v", err)
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-1", "/notes/a.md")}); err != nil {
+		t.Fatalf("upsert: %v", err)
 	}
-	for _, state := range domain.DocStates {
-		if got, ok := counts[state]; !ok || got != 0 {
-			t.Errorf("CountsByState[%q] = %d (present %t), want 0 present", state, got, ok)
+	for _, prefix := range []string{"", "/"} {
+		if _, err := store.DeleteByPathPrefix(ctx, prefix); err == nil {
+			t.Errorf("DeleteByPathPrefix(%q) = nil error, want a refusal", prefix)
 		}
+	}
+	if _, ok, err := store.GetByPath(ctx, "/notes/a.md"); err != nil || !ok {
+		t.Error("the document was removed by a refused prefix delete")
+	}
+}
+
+func TestListWorkItems(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+
+	// hash-1 lives at two paths; the newer mtime is the primary.
+	older := testDoc("hash-1", "/w/a-old.md")
+	older.MTime = time.Unix(100, 0)
+	newer := testDoc("hash-1", "/w/b-new.md")
+	newer.MTime = time.Unix(200, 0)
+	solo := testDoc("hash-2", "/w/c.md")
+	if err := store.UpsertDocuments(ctx, []domain.Document{older, newer, solo}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// Terminal rows are included — stale-vs-current is the caller's call.
+	if err := store.UpdateContentState(ctx, "hash-2", domain.ContentStateIndexed); err != nil {
+		t.Fatalf("UpdateContentState: %v", err)
+	}
+	// Orphaned content (sweep pending) has no path to read from: omitted.
+	if _, err := db.Writer().Exec(
+		"INSERT INTO content (content_hash, state, created_at, updated_at) VALUES ('hash-orphan', 'discovered', 0, 0)"); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := store.ListWorkItems(ctx)
+	if err != nil {
+		t.Fatalf("ListWorkItems: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items = %+v, want 2", items)
+	}
+	if items[0].Content.Hash != "hash-1" || items[0].Path != "/w/b-new.md" {
+		t.Errorf("items[0] = %+v, want hash-1 at its newest-mtime path", items[0])
+	}
+	if items[1].Content.Hash != "hash-2" || items[1].Path != "/w/c.md" {
+		t.Errorf("items[1] = %+v, want hash-2 at /w/c.md", items[1])
+	}
+	if items[1].Content.State != domain.ContentStateIndexed {
+		t.Errorf("items[1].State = %q, want indexed rows included", items[1].Content.State)
+	}
+}
+
+func TestStageVersionsRoundTrip(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("hash-1", "/notes/a.md")}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	c := domain.Content{
+		Hash:          "hash-1",
+		State:         domain.ContentStateChunked,
+		StageVersions: map[string]string{"chunker": "1", "embedding": "test-model"},
+	}
+	if _, err := store.StoreChunks(ctx, c, testChunks("alpha")); err != nil {
+		t.Fatalf("StoreChunks: %v", err)
+	}
+
+	item, err := store.GetWork(ctx, "hash-1")
+	if err != nil {
+		t.Fatalf("GetWork: %v", err)
+	}
+	got := item.Content.StageVersions
+	if got["chunker"] != "1" || got["embedding"] != "test-model" {
+		t.Errorf("StageVersions = %v", got)
+	}
+}
+
+func TestCatalogCountsZeroFilledOnFreshStore(t *testing.T) {
+	store, _ := newTestStore(t)
+
+	counts, err := store.CatalogCounts(context.Background())
+	if err != nil {
+		t.Fatalf("CatalogCounts: %v", err)
+	}
+	if counts.Files != 1 {
+		t.Errorf("Files = %d, want 1 (the helper's unread seed)", counts.Files)
+	}
+	// Every state and reason present, zero included: a consumer must never
+	// have to tell "none here" apart from "this build forgot it".
+	if len(counts.Content) != len(domain.ContentStates) {
+		t.Errorf("Content has %d states, want %d", len(counts.Content), len(domain.ContentStates))
+	}
+	for _, state := range domain.ContentStates {
+		if got, ok := counts.Content[state]; !ok || got != 0 {
+			t.Errorf("Content[%q] = %d (present %t), want 0 present", state, got, ok)
+		}
+	}
+	if len(counts.Unread) != len(domain.UnreadReasons) {
+		t.Errorf("Unread has %d reasons, want %d", len(counts.Unread), len(domain.UnreadReasons))
+	}
+	want := map[domain.UnreadReason]int{
+		domain.UnreadDenied:   1, // the seed
+		domain.UnreadDataless: 0,
+		domain.UnreadIOError:  0,
+	}
+	for reason, n := range want {
+		if got, ok := counts.Unread[reason]; !ok || got != n {
+			t.Errorf("Unread[%q] = %d (present %t), want %d present", reason, got, ok, n)
+		}
+	}
+}
+
+func TestCatalogCountsReconciles(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+
+	// A duplicate pair, one solo readable, one more unread — plus the seed.
+	if err := store.UpsertDocuments(ctx, []domain.Document{
+		testDoc("hash-dup", "/notes/a.md"),
+		testDoc("hash-dup", "/notes/b.md"),
+		testDoc("hash-solo", "/notes/c.md"),
+		unreadDoc("/notes/d.md", domain.UnreadDataless),
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := store.UpdateContentState(ctx, "hash-solo", domain.ContentStateIndexed); err != nil {
+		t.Fatalf("UpdateContentState: %v", err)
+	}
+
+	counts, err := store.CatalogCounts(ctx)
+	if err != nil {
+		t.Fatalf("CatalogCounts: %v", err)
+	}
+	if counts.Files != 5 {
+		t.Errorf("Files = %d, want 5 (4 + seed)", counts.Files)
+	}
+	if counts.Unread[domain.UnreadDenied] != 1 || counts.Unread[domain.UnreadDataless] != 1 {
+		t.Errorf("Unread = %v, want denied=1 (seed) dataless=1", counts.Unread)
+	}
+	if counts.Content[domain.ContentStateDiscovered] != 1 || counts.Content[domain.ContentStateIndexed] != 1 {
+		t.Errorf("Content = %v, want discovered=1 (the dup pair) indexed=1", counts.Content)
+	}
+
+	// The reconciliation the one-transaction read exists for: files that have
+	// content vs distinct contents, the gap being what deduplication saved.
+	unread := 0
+	for _, n := range counts.Unread {
+		unread += n
+	}
+	contents := 0
+	for _, n := range counts.Content {
+		contents += n
+	}
+	if readable := counts.Files - unread; readable != 3 {
+		t.Errorf("Files - sum(Unread) = %d, want 3", readable)
+	}
+	if contents != 2 {
+		t.Errorf("sum(Content) = %d, want 2 distinct contents for 3 readable files", contents)
 	}
 }
