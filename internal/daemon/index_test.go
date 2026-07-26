@@ -175,7 +175,7 @@ func TestIndexAppearingAfterStartupIsPickedUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search after the index appeared: %v", err)
 	}
-	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "h1" {
+	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "sha256:h1" {
 		t.Errorf("hits = %+v, want the indexed document", resp.Hits)
 	}
 }
@@ -192,7 +192,7 @@ func TestReplacedIndexFileIsPickedUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "h_old" {
+	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "sha256:h_old" {
 		t.Fatalf("hits = %+v, want the original document", resp.Hits)
 	}
 
@@ -207,7 +207,7 @@ func TestReplacedIndexFileIsPickedUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search after replacement: %v", err)
 	}
-	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "h_new" {
+	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "sha256:h_new" {
 		t.Errorf("hits = %+v, want the replacement index's document — the daemon is serving a ghost inode", resp.Hits)
 	}
 }

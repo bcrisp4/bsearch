@@ -705,3 +705,141 @@ func TestRunDuplicateContentIndexedOnce(t *testing.T) {
 		}
 	}
 }
+
+// An unreadable primary must not block a readable duplicate: the bytes at
+// any copy are the claimed bytes (the hash proves it), so the pipeline
+// falls back down the path list and indexes from whichever copy reads.
+func TestProcessContentFallsBackToReadableDuplicate(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; chmod 0 does not deny")
+	}
+	store, _ := openStore(t)
+	dir := t.TempDir()
+	content := []byte("# duplicated\n\nsame bytes at two paths\n")
+	seedFile(t, store, dir, "readable.md", content)
+	primary := seedFile(t, store, dir, "dead.md", content)
+	if err := os.Chmod(primary.Path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(primary.Path, 0o600) })
+
+	item, err := store.GetWork(context.Background(), primary.ContentHash)
+	if err != nil {
+		t.Fatalf("GetWork: %v", err)
+	}
+	// Both copies share one mtime in the fixture; force the dead one to be
+	// the primary so the fallback is what indexes.
+	if item.Paths[0] != primary.Path {
+		item.Paths = []string{primary.Path, filepath.Join(dir, "readable.md")}
+		item.Path = primary.Path
+	}
+
+	ix := newIndexer(t, store, &fakeEmbedder{spec: testSpec("test-model")}, nil)
+	dims, err := ix.Prepare(context.Background())
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+
+	res, err := ix.ProcessContent(context.Background(), item, ix.StageVersions(dims))
+	if err != nil {
+		t.Fatalf("ProcessContent: %v", err)
+	}
+	if res.Outcome != OutcomeIndexed {
+		t.Fatalf("Outcome = %v, want OutcomeIndexed via the readable copy", res.Outcome)
+	}
+	if got := contentState(t, store, primary.Path); got != domain.ContentStateIndexed {
+		t.Errorf("state = %v, want indexed", got)
+	}
+}
+
+// Every copy unreadable is Skipped (environmental, retried); a readable
+// copy that no longer matches the hash is Changed (abandoned).
+func TestProcessContentAllCopiesUnreadableIsSkipped(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; chmod 0 does not deny")
+	}
+	store, _ := openStore(t)
+	dir := t.TempDir()
+	content := []byte("locked everywhere\n")
+	a := seedFile(t, store, dir, "a.md", content)
+	b := seedFile(t, store, dir, "b.md", content)
+	for _, p := range []string{a.Path, b.Path} {
+		if err := os.Chmod(p, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(a.Path, 0o600)
+		_ = os.Chmod(b.Path, 0o600)
+	})
+
+	item, err := store.GetWork(context.Background(), a.ContentHash)
+	if err != nil {
+		t.Fatalf("GetWork: %v", err)
+	}
+	ix := newIndexer(t, store, &fakeEmbedder{spec: testSpec("test-model")}, nil)
+	res, err := ix.ProcessContent(context.Background(), item, ix.StageVersions(3))
+	if err != nil {
+		t.Fatalf("ProcessContent: %v", err)
+	}
+	if res.Outcome != OutcomeSkipped {
+		t.Errorf("Outcome = %v, want OutcomeSkipped when no copy reads", res.Outcome)
+	}
+}
+
+func TestProcessContentReadableMismatchIsChanged(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; chmod 0 does not deny")
+	}
+	store, _ := openStore(t)
+	dir := t.TempDir()
+	content := []byte("original bytes\n")
+	a := seedFile(t, store, dir, "a.md", content)
+	b := seedFile(t, store, dir, "b.md", content)
+
+	item, err := store.GetWork(context.Background(), a.ContentHash)
+	if err != nil {
+		t.Fatalf("GetWork: %v", err)
+	}
+	// One copy unreadable, the other rewritten: something was readable and
+	// nothing matched, so the claim is abandoned as changed — not blamed
+	// on permissions.
+	if err := os.Chmod(a.Path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(a.Path, 0o600) })
+	if err := os.WriteFile(b.Path, []byte("rewritten bytes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ix := newIndexer(t, store, &fakeEmbedder{spec: testSpec("test-model")}, nil)
+	res, err := ix.ProcessContent(context.Background(), item, ix.StageVersions(3))
+	if err != nil {
+		t.Fatalf("ProcessContent: %v", err)
+	}
+	if res.Outcome != OutcomeChanged {
+		t.Errorf("Outcome = %v, want OutcomeChanged", res.Outcome)
+	}
+}
+
+// A file changing under a one-shot run is a corpus that is not what the
+// caller thinks it is — eval's completeness guarantee — so Run aborts
+// loudly instead of folding the abandonment into "nothing to count".
+func TestRunAbortsWhenTheCorpusChangesMidRun(t *testing.T) {
+	store, _ := openStore(t)
+	dir := t.TempDir()
+	doc := seedFile(t, store, dir, "a.md", []byte("before\n"))
+	if err := os.WriteFile(doc.Path, []byte("after\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ix := newIndexer(t, store, &fakeEmbedder{spec: testSpec("test-model")}, nil)
+	items, err := store.ListWorkItems(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ix.Run(context.Background(), items); err == nil ||
+		!strings.Contains(err.Error(), "corpus changed") {
+		t.Fatalf("Run = %v, want a corpus-changed abort", err)
+	}
+}

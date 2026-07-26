@@ -129,11 +129,27 @@ func writeIndexSection(out io.Writer, index server.IndexStatus) {
 		}
 		fields = append(fields, field{"model", model})
 	}
+	if index.Documents != nil && index.Content == nil {
+		// The retired pre-ADR-0015 wire names: an older daemon is answering.
+		// Its counts are in fields this build no longer reads, and rendering
+		// zeros would report an empty-looking index on the one command
+		// reached for when something already seems wrong — say what is
+		// actually happening instead.
+		fields = append(fields, field{
+			"warning",
+			"the daemon is older than this CLI — restart it (`bsearch serve`) to see index counts",
+		})
+	}
 	if index.Content != nil {
-		fields = append(fields, field{"documents", fmt.Sprintf("%s files · %s indexed · %s failed",
-			count(index.Files),
-			count(index.Content[string(domain.ContentStateIndexed)]),
-			count(index.Content[string(domain.ContentStateFailed)]))})
+		// Two lines for two populations (ADR 0015): files counts paths,
+		// contents counts distinct byte sequences by state. Folded into one
+		// line they read as a comparable triple, and on a deduplicated
+		// corpus "1,000 files · 400 indexed" reads as 600 failures.
+		fields = append(fields,
+			field{"files", count(index.Files)},
+			field{"contents", fmt.Sprintf("%s indexed · %s failed",
+				count(index.Content[string(domain.ContentStateIndexed)]),
+				count(index.Content[string(domain.ContentStateFailed)]))})
 	}
 	if unread := sumCounts(index.Unread); unread > 0 {
 		// All three reasons whenever any is non-zero: denied is the Full
@@ -218,12 +234,27 @@ func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now ti
 		fields = append(fields, field{"last cycle", ago(*indexing.LastCycle, now)})
 	}
 	t := indexing.Totals
-	fields = append(fields, field{"since start", fmt.Sprintf("%s indexed · %s failed · %s skipped · %s retried",
-		count(t.Indexed), count(t.Failed), count(t.Skipped), count(t.Retried))})
+	sinceStart := fmt.Sprintf("%s indexed · %s failed · %s skipped · %s retried",
+		count(t.Indexed), count(t.Failed), count(t.Skipped), count(t.Retried))
+	if t.Changed > 0 {
+		// Only when it happened, like the re-queued and superseded lines
+		// below: a claim abandoned because the file changed under it is
+		// rare, and a steady climb here is the one visible trace of a file
+		// being rewritten continuously.
+		sinceStart += fmt.Sprintf(" · %s changed", count(t.Changed))
+	}
+	fields = append(fields, field{"since start", sinceStart})
 	if t.Swept > 0 {
 		// Only worth a line when it happened: it is the daemon explaining why
 		// an indexed corpus is being worked through again.
 		fields = append(fields, field{"re-queued", count(t.Swept) + " (superseded pipeline stage)"})
+	}
+	if t.Collected > 0 {
+		// Garbage collection after deletions and edits. Only when it
+		// happened — and worth a line when it did, because a corpus where
+		// files keep being deleted while this number never moves is the
+		// sweep silently failing.
+		fields = append(fields, field{"collected", count(t.Collected) + " (orphaned content)"})
 	}
 	if t.Superseded > 0 {
 		// Never expected. One goroutine writes the catalog (ADR 0014), so any

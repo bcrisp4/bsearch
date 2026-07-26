@@ -42,13 +42,8 @@ func getMeta(ctx context.Context, q queryer, key string) (value string, ok bool,
 
 // documentColumns is the canonical documents column list, paired with
 // documentRow. One definition so every query path hydrates identical
-// domain.Documents. prefixedDocumentColumns is the same list under the
-// alias every join in this package gives the documents table — the two
-// must stay in documentRow.targets order together.
-const (
-	documentColumns         = "path, content_hash, unread_reason, size, mtime"
-	prefixedDocumentColumns = "d.path, d.content_hash, d.unread_reason, d.size, d.mtime"
-)
+// domain.Documents.
+const documentColumns = "path, content_hash, unread_reason, size, mtime"
 
 // documentRow holds the raw documents column values that need conversion
 // after Scan: the nullable pair (content_hash XOR unread_reason — the

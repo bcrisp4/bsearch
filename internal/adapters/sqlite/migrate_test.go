@@ -265,6 +265,47 @@ func TestMigrateRefusesADatabaseFromANewerBuild(t *testing.T) {
 	}
 }
 
+// Folding the old migration list into a single entry (ADR 0015) means a
+// database created under the old schema's v1 records the same version number
+// as the rebuilt schema — the version comparison alone accepts it, and the
+// daemon would die on the first catalog touch with a raw "no such table:
+// content" instead of the remedy. The content-table probe is what refuses it.
+func TestMigrateRefusesAPreRewriteDatabaseWithTheSameVersion(t *testing.T) {
+	// Hand-built old-v1 shape: doc_id-keyed documents, no content table,
+	// schema_migrations recording version 1 — what 7e16a6a's migration left
+	// behind.
+	db, err := openPools(filepath.Join(t.TempDir(), "old-v1.db"))
+	if err != nil {
+		t.Fatalf("openPools: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	for _, ddl := range []string{
+		`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL) STRICT`,
+		`INSERT INTO schema_migrations (version, applied_at) VALUES (1, '2026-01-01T00:00:00Z')`,
+		`CREATE TABLE documents (id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE,
+			content_hash TEXT, state TEXT NOT NULL, size INTEGER, mtime INTEGER) STRICT`,
+	} {
+		if _, err := db.Writer().Exec(ddl); err != nil {
+			t.Fatalf("build old-v1 shape: %v", err)
+		}
+	}
+
+	err = migrate(db.Writer())
+	if err == nil {
+		t.Fatal("migrate() on an old-v1 database = nil, want a refusal")
+	}
+	if !strings.Contains(err.Error(), "delete the index database") {
+		t.Errorf("error %q does not name the remedy (delete the index database)", err)
+	}
+
+	// The read-only opener must refuse the same database the same way.
+	if err := checkSchema(db.Reader()); err == nil {
+		t.Error("checkSchema on an old-v1 database = nil, want a refusal")
+	} else if !strings.Contains(err.Error(), "delete the index database") {
+		t.Errorf("checkSchema error %q does not name the remedy", err)
+	}
+}
+
 func TestCheckSchemaAcceptsTheCurrentSchema(t *testing.T) {
 	db := openTestDB(t)
 	if err := checkSchema(db.Reader()); err != nil {

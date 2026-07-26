@@ -161,6 +161,38 @@ func TestTheHandoffWakesTheSchedulerAndTheReconcileDoesNot(t *testing.T) {
 	})
 }
 
+// A deletion the watcher reported arms the orphan sweep. This is the
+// feature's primary trigger and the only path that can produce
+// Result.Deleted in production — purge lives in ScanPaths, so the walk's arm
+// can never fire on Deleted (review 3653204119: dropping recordReconcile's
+// noteOrphanProducers call must fail a test, and this is that test).
+func TestAWatcherReportedDeletionArmsTheOrphanSweep(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		sc.pathResult = discovery.Result{Deleted: 1}
+		q := newFakeQueue()
+		s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+		s.cycle(t.Context()) // consumes the construction full-scope arm
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Fatalf("orphan sweeps = %d, want the startup sweep only", got)
+		}
+
+		// A closed debounce window carrying a deletion; the cycle's own
+		// reconcile purges it and must arm the sweep that collects what the
+		// purge orphaned.
+		seedPending(s, "/root/gone.md")
+		s.cycle(t.Context())
+
+		if got := q.orphanSweepCount(); got != 2 {
+			t.Fatalf("orphan sweeps = %d, want 2 — a watcher-reported deletion is the sweep's primary trigger", got)
+		}
+		if scopes := q.scopes(); scopes[1] != domain.SweepScopeQueue {
+			t.Errorf("sweep scope = %v, want SweepScopeQueue", scopes[1])
+		}
+	})
+}
+
 // An unreachable endpoint is probed on the recheck interval, not on every
 // wake. Since ADR 0014 a closed debounce window wakes a cycle, so ordinary
 // churn under a watched root would otherwise set the probe rate — a connect

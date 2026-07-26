@@ -16,7 +16,10 @@ import (
 // so the old shape is unreachable and re-deriving it migration-by-migration
 // would reject nothing and document nothing. A database recording a higher
 // version than this build carries is from before the rewrite (or from a
-// newer build) and is refused by migrate() with the remedy.
+// newer build) and is refused by migrate() with the remedy. Higher is not
+// enough: the replacement also shrank the list, so an old-shape database
+// can record the same version number as the rebuilt schema —
+// checkNotPreRewrite probes for the content table to refuse those too.
 //
 // Static tables only. Vector tables are per-embedding-model and created
 // lazily by the adapter once model+dims are known (see vec.go): vec0
@@ -121,6 +124,29 @@ func checkSchema(reader *sql.DB) error {
 	case current > schemaVersion:
 		return fmt.Errorf("index schema is version %d, newer than this build supports (%d) — %s", current, schemaVersion, schemaRemedy)
 	}
+	return checkNotPreRewrite(reader, current)
+}
+
+// checkNotPreRewrite refuses a database from before the ADR 0015 rebuild.
+// Replacing the migration list wholesale reset the version count, so an
+// old-shape database can record the very version number this build carries
+// — the version comparison accepts it and every later query dies on a raw
+// "no such table" instead of the remedy. The content table is the
+// discriminator: the old shape never had one, and this build creates it in
+// the same transaction that records version 1, so any recorded version
+// without it is pre-rewrite.
+func checkNotPreRewrite(db *sql.DB, current int) error {
+	if current == 0 {
+		return nil // nothing recorded yet, nothing to probe
+	}
+	var n int
+	if err := db.QueryRow(
+		"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'content'").Scan(&n); err != nil {
+		return fmt.Errorf("probe for the content table: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("index schema records version %d but has no content table, so it is from before the ADR 0015 rebuild — there is no in-place migration; delete the index database and let the daemon reindex", current)
+	}
 	return nil
 }
 
@@ -156,6 +182,9 @@ func migrate(writer *sql.DB) error {
 	if current > len(migrations) {
 		return fmt.Errorf("index schema is version %d, newer than this build supports (%d) — %s",
 			current, len(migrations), schemaRemedy)
+	}
+	if err := checkNotPreRewrite(writer, current); err != nil {
+		return err
 	}
 
 	for v := current + 1; v <= len(migrations); v++ {

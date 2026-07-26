@@ -39,9 +39,10 @@ type StatusResponse struct {
 //
 // The populations reconcile by construction (ADR 0015): Files counts paths,
 // Unread counts the paths whose bytes were never obtained by reason, and
-// Content counts *distinct contents* by state — so Files − sum(Unread) is
-// the files that have content, and its gap against sum(Content) is what
-// deduplication saved. Unread's "denied" is the Full Disk Access signal and
+// Content counts *distinct contents* by state — only contents some document
+// still references, so orphans awaiting the sweep never skew it. Files −
+// sum(Unread) is the files that have content, and its gap against
+// sum(Content) is what deduplication saved. Unread's "denied" is the Full Disk Access signal and
 // is never folded into "dataless", which is an iCloud placeholder skipped
 // exactly as intended — one is broken, the other is working.
 type IndexStatus struct {
@@ -56,6 +57,12 @@ type IndexStatus struct {
 	Files   int            `json:"files"`
 	Content map[string]int `json:"content,omitempty"`
 	Unread  map[string]int `json:"unread,omitempty"`
+	// Documents is the pre-identity-split combined count map (ADR 0015
+	// retired it). Deprecated, detect-only: this build never writes it —
+	// it is decoded so the CLI can recognise an older daemon by its wire
+	// names and say "restart the daemon" instead of rendering an
+	// empty-looking index from fields the old daemon never sent.
+	Documents map[string]int `json:"documents,omitempty"`
 	// Queue is the dispatchable backlog. Absent when the database could not
 	// be read.
 	Queue *QueueStatus `json:"queue,omitempty"`
@@ -77,8 +84,9 @@ type QueueStatus struct {
 
 // FailureGroup is one reason contents were given up on, with a count of
 // distinct contents and one path to reproduce it with. Reason is untrusted
-// display text. ExamplePath is absent when the failed content is orphaned
-// (no path references it yet or any more).
+// display text. Orphaned failed content (no path references it any more) is
+// not reported at all — it is excluded from the counts too — so ExamplePath
+// is always present.
 type FailureGroup struct {
 	Reason      string `json:"reason"`
 	Contents    int    `json:"contents"`
@@ -171,6 +179,16 @@ type IndexingTotals struct {
 	Skipped int `json:"skipped"`
 	Retried int `json:"retried"`
 	Swept   int `json:"swept"`
+	// Collected counts orphaned contents removed by the background sweep —
+	// content no path references any more, after deletions and edits. Zero
+	// on a quiet daemon; a value that never moves while files are being
+	// deleted is the sweep silently failing, which is why it is reported.
+	Collected int `json:"collected,omitempty"`
+	// Changed counts claims abandoned because no copy of the file still
+	// held the claimed bytes — awaiting rediscovery, not failed. Its
+	// non-zero steady state is the signature of a file being rewritten
+	// continuously, or edited in a way discovery cannot see.
+	Changed int `json:"changed,omitempty"`
 	// Superseded counts documents whose catalog row changed while the
 	// pipeline was working on them. Only one goroutine writes the catalog
 	// (ADR 0014), so a non-zero value means that stopped being true.

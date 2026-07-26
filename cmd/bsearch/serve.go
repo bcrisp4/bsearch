@@ -269,6 +269,8 @@ func indexingStatus(sched *scheduler.Scheduler, offReason string) server.Indexin
 			Skipped:    snap.Skipped,
 			Retried:    snap.Retried,
 			Swept:      snap.Swept,
+			Collected:  snap.Collected,
+			Changed:    snap.Changed,
 			Superseded: snap.Superseded,
 		},
 	}

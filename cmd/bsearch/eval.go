@@ -194,15 +194,15 @@ func runEvalRun(args []string, out io.Writer) error {
 	for _, pe := range scanRes.PathErrors {
 		fmt.Fprintf(out, "warning: %s: %v\n", stripControl(pe.Path), pe.Err)
 	}
-	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d skipped (iCloud placeholder)\n",
-		scanRes.Discovered, scanRes.Unchanged, scanRes.Dataless)
+	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d skipped (iCloud placeholder), %d unread\n",
+		scanRes.Discovered, scanRes.Unchanged, scanRes.Dataless, scanRes.Unread)
 	// Unlike index.go's equivalent guard (which only fires alongside
 	// PathErrors, since a live filesystem scan legitimately turning up zero
 	// files elsewhere is not by itself suspicious), a golden corpus must
 	// contain files regardless of whether any PathErrors were reported —
 	// an empty corpus/ scores every query against nothing and reports
 	// misleadingly clean zeros instead of failing loudly.
-	if scanRes.Discovered+scanRes.Unchanged+scanRes.Dataless == 0 {
+	if scanRes.Reached() == 0 {
 		return errors.New("scan reached no files — check --corpus points at a corpus directory with a corpus/ subtree (see warnings above, if any)")
 	}
 
@@ -298,10 +298,15 @@ func runEvalRun(args []string, out io.Writer) error {
 			// relativizing, keeping the result a clean corpus-relative path
 			// that matches golden.yaml regardless of whether corpus/ itself
 			// was a symlink.
-			//
-			// The primary path alone is scored: eval corpora hold no
-			// duplicate-content files (a duplicate would make golden.yaml's
-			// expected path ambiguous), so AlsoAt is empty by construction.
+
+			// The primary path alone is scored, so a duplicate-content pair
+			// would make golden.yaml's expected path ambiguous — refused
+			// rather than assumed, since a silently mis-scored query is
+			// indistinguishable from a genuine retrieval miss.
+			if len(ch.AlsoAt) > 0 {
+				return fmt.Errorf("query %s: %q has duplicate-content copies at %v — an eval corpus must hold no duplicate files",
+					q.ID, ch.Hit.Doc.Path, ch.AlsoAt)
+			}
 			rel, err := filepath.Rel(resolvedDocsDir, ch.Hit.Doc.Path)
 			if err != nil {
 				return fmt.Errorf("query %s: relativize %q: %w", q.ID, ch.Hit.Doc.Path, err)

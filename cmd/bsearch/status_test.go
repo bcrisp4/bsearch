@@ -78,7 +78,10 @@ func TestStatusRendersAHealthyDaemon(t *testing.T) {
 		"~/data/bsearch.db  (412 MiB)",
 		"ready", "yes",
 		"embeddinggemma-300m (768d)",
-		"1,268 files · 1,204 indexed · 2 failed",
+		// Two lines for two populations (ADR 0015): paths and distinct
+		// contents rendered side by side would read as a comparable triple.
+		"files     1,268",
+		"contents  1,204 indexed · 2 failed",
 		"pending  37",
 		"discovered 35 · chunked 2",
 		"idle — nothing to index",
@@ -97,6 +100,86 @@ func TestStatusRendersAHealthyDaemon(t *testing.T) {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("report mentions %q with nothing to report:\n%s", unwanted, got)
 		}
+	}
+}
+
+// A pre-identity-split daemon reports the retired `documents` map and none of
+// the fields this build reads. Rendering zeros would report a healthy-looking
+// empty index on the one command reached for when something already seems
+// wrong — the CLI must say what is actually happening instead.
+func TestStatusWarnsWhenTheDaemonIsOlder(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.1.0", PID: 1,
+		Index: server.IndexStatus{
+			Ready:     true,
+			Documents: map[string]int{"indexed": 1204, "failed": 2},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	got := out.String()
+	if !strings.Contains(got, "older than this CLI") || !strings.Contains(got, "bsearch serve") {
+		t.Errorf("report does not warn about the old daemon:\n%s", got)
+	}
+	// The retired counts must not be rendered as if this build understood
+	// them, and there are no new-style counts to show.
+	if strings.Contains(got, "contents") {
+		t.Errorf("report renders a contents line an old daemon never sent:\n%s", got)
+	}
+}
+
+// The changed total only earns a line when it is non-zero: it is the visible
+// trace of a claim abandoned because the file changed under it.
+func TestStatusRendersTheChangedTotalOnlyWhenNonZero(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Index: server.IndexStatus{Ready: true},
+		Indexing: &server.IndexingStatus{
+			Running: true,
+			Totals:  server.IndexingTotals{Indexed: 7, Changed: 3},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); !strings.Contains(got, "7 indexed · 0 failed · 0 skipped · 0 retried · 3 changed") {
+		t.Errorf("since-start line does not carry the changed total:\n%s", got)
+	}
+
+	resp.Indexing.Totals.Changed = 0
+	out.Reset()
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); strings.Contains(got, "changed") {
+		t.Errorf("since-start line mentions changed with nothing to report:\n%s", got)
+	}
+}
+
+// The collected total only earns a line when it is non-zero — like the
+// re-queued line, it is the daemon explaining background work, and here it
+// is the one visible trace of the orphan sweep. A corpus where files keep
+// being deleted while this number never moves is the sweep silently failing.
+func TestStatusRendersTheCollectedTotalOnlyWhenNonZero(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Index: server.IndexStatus{Ready: true},
+		Indexing: &server.IndexingStatus{
+			Running: true,
+			Totals:  server.IndexingTotals{Indexed: 7, Collected: 5},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); !strings.Contains(got, "5 (orphaned content)") || !strings.Contains(got, "collected") {
+		t.Errorf("report does not carry the collected line:\n%s", got)
+	}
+
+	resp.Indexing.Totals.Collected = 0
+	out.Reset()
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); strings.Contains(got, "collected") || strings.Contains(got, "orphaned") {
+		t.Errorf("report mentions the sweep with nothing collected:\n%s", got)
 	}
 }
 

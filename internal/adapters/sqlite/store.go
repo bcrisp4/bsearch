@@ -39,14 +39,17 @@ func (s *Store) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 }
 
 // UpsertDocuments writes the batch in one short IMMEDIATE transaction (#34):
-// content rows first (created at discovered if absent, never touched if
-// present — a second identical file schedules no work), then the documents
+// content rows first (created at discovered if absent), then the documents
 // rows, wholesale.
 //
 // The eager content insert is what keeps dispatch a plain predicate over
-// content rather than an anti-join (ADR 0015). Its updated_at is the insert
-// time, which is what makes a just-changed file hot in the claim's recency
-// ordering.
+// content rather than an anti-join (ADR 0015). A re-referenced hash splits
+// on whether the row is terminal: non-terminal content gets its updated_at
+// bumped, so an undo, a `git checkout`, or a copy of not-yet-indexed bytes
+// is hot in the claim's recency ordering rather than stranded behind the
+// aging slice; terminal content is never touched — a second identical file
+// schedules no work, and re-discovering indexed or failed bytes must not
+// drag them back through the pipeline.
 //
 // The documents upsert replaces the row completely: a rename is the same
 // path-keyed write as an edit, an unread→readable transition is the hash
@@ -60,10 +63,12 @@ func (s *Store) UpsertDocuments(ctx context.Context, docs []domain.Document) err
 	return s.withTx(ctx, func(tx *sql.Tx) error {
 		now := time.Now().Unix()
 
+		//nolint:gosec // G202: the spliced text is domain.TerminalContentStates, not input
 		insContent, err := tx.PrepareContext(ctx, `
 			INSERT INTO content (content_hash, state, created_at, updated_at)
 			VALUES (?, 'discovered', ?, ?)
-			ON CONFLICT (content_hash) DO NOTHING`)
+			ON CONFLICT (content_hash) DO UPDATE SET updated_at = excluded.updated_at
+				WHERE state NOT IN (`+terminalStatesSQL()+`)`)
 		if err != nil {
 			return err
 		}
@@ -245,13 +250,43 @@ func (s *Store) UpdateContentState(ctx context.Context, hash string, state domai
 		string(state), time.Now().Unix(), hash)
 }
 
-// MarkFailed sets state=failed and records the reason in last_error.
+// MarkFailed sets state=failed, records the reason in last_error, and
+// deletes the content's chunks and vectors (every generation) in the same
+// transaction. Failed content must not serve stale chunks, and there are two
+// routes to failed — the pipeline's normalize failure and the scheduler's
+// attempt cap — which must leave identical state behind, or M4's FTS5
+// external-content table would turn the cap route's leftovers into live
+// BM25 hits.
+//
 // Permanent by construction — content is immutable, so nothing resets it;
 // a config change re-queues it via ResetStale, which is a different event.
 func (s *Store) MarkFailed(ctx context.Context, hash, reason string) error {
-	return s.updateContent(ctx, "mark failed", hash,
-		"UPDATE content SET state = 'failed', last_error = ?, updated_at = ? WHERE content_hash = ?",
-		reason, time.Now().Unix(), hash)
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			"UPDATE content SET state = 'failed', last_error = ?, updated_at = ? WHERE content_hash = ?",
+			reason, time.Now().Unix(), hash)
+		if err != nil {
+			return fmt.Errorf("mark failed for %s: %w", hash, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			// Not a bug in the caller: the row can be swept between claiming
+			// content and giving up on it — see updateContent.
+			return fmt.Errorf("mark failed for %s: %w", hash, domain.ErrContentGone)
+		}
+		// Vectors first, while the chunk IDs still exist to find them by —
+		// the same discipline as StoreChunks' replacement path.
+		if err := deleteVectorsTx(ctx, tx, hash); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM chunks WHERE content_hash = ?", hash); err != nil {
+			return fmt.Errorf("delete chunks of failed %s: %w", hash, err)
+		}
+		return nil
+	})
 }
 
 // updateContent runs one UPDATE on a single content row inside a writer
@@ -322,6 +357,10 @@ func (s *Store) queryWorkItems(ctx context.Context, op, query string, args ...an
 		if err := raw.finish(&item.Content); err != nil {
 			return nil, err
 		}
+		// Primary only: the one-shot path (pipeline.Run, eval) works
+		// corpora with no duplicate files, so the fallback list is just
+		// the primary.
+		item.Paths = []string{item.Path}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -359,17 +398,30 @@ func (s *Store) queryContents(ctx context.Context, op, query string, args ...any
 	return contents, nil
 }
 
+// sweepBatch bounds one sweep transaction: enough that a big purge takes
+// tens of transactions rather than thousands, small enough that each stays
+// a short write under the busy-timeout discipline — the repo rule every
+// other writer here follows, and an unbounded `rm -rf` sweep would not.
+const sweepBatch = 256
+
 // SweepOrphans deletes content no documents row references — the other half
 // of deletion (DeleteByPathPrefix removes only the documents row) and of
-// edits (discovery re-points a path and leaves the old hash behind). One
-// transaction, vectors first across every generation while the chunk ids
-// still resolve to find them by, then the content rows; chunks and
-// summaries follow by FK cascade. Returns how many contents went.
+// edits (discovery re-points a path and leaves the old hash behind). scope
+// says whether terminal orphans are collected too (see domain.SweepScope).
+// Returns how many contents went; chunks and summaries follow by FK
+// cascade, vectors are deleted first, per hash, across every generation,
+// while the chunk ids still resolve to find them by.
 //
-// ONE transaction, never find-then-delete across two: a file restored to
-// prior content in the gap (editor undo, `git checkout`, a sync client)
-// would lose derived data its hash had started referencing again — issue
-// #63's signature, rebuilt from new machinery.
+// Shaped for the common case: a cheap EXISTS probe on the reader answers
+// "anything to do?" without touching the writer or scanning a vector
+// table — the armed-but-empty sweep costs one indexed anti-join, not a
+// full vec0 scan per generation. Real work is cursor-paginated batches of
+// sweepBatch hashes, one short IMMEDIATE transaction each, and every batch
+// RE-VERIFIES orphan-ness inside its own transaction — find-then-delete
+// across transactions is exactly what would let a file restored to prior
+// content in the gap (editor undo, `git checkout`, a sync client) lose
+// derived data its hash had started referencing again (issue #63's
+// signature), so the find inside the transaction is the one that counts.
 //
 // NOT EXISTS, never NOT IN. documents.content_hash is nullable (unread
 // rows), and `hash NOT IN (SELECT content_hash FROM documents)` goes
@@ -377,40 +429,130 @@ func (s *Store) queryContents(ctx context.Context, op, query string, args ...any
 // would delete zero rows, permanently, with no error and no log. The shared
 // store-test seed keeps a NULL-hash row planted precisely so a rewrite in
 // that direction fails on arrival (see newTestStore).
-func (s *Store) SweepOrphans(ctx context.Context) (int, error) {
-	var removed int
-	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		tables, err := listVecTables(ctx, tx)
-		if err != nil {
-			return err
-		}
-		for table := range tables {
-			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-				DELETE FROM %s WHERE rowid IN (
-					SELECT c.id FROM chunks c
-					WHERE NOT EXISTS (SELECT 1 FROM documents d
-						WHERE d.content_hash = c.content_hash))`, table)); err != nil {
-				return fmt.Errorf("sweep orphan vectors from %s: %w", table, err)
-			}
-		}
-		res, err := tx.ExecContext(ctx, `
-			DELETE FROM content WHERE NOT EXISTS (
-				SELECT 1 FROM documents d
-				WHERE d.content_hash = content.content_hash)`)
-		if err != nil {
-			return fmt.Errorf("sweep orphan content: %w", err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("sweep orphan content: %w", err)
-		}
-		removed = int(n)
-		return nil
-	})
-	if err != nil {
-		return 0, err
+func (s *Store) SweepOrphans(ctx context.Context, scope domain.SweepScope) (int, error) {
+	stateFilter := ""
+	if scope == domain.SweepScopeQueue {
+		//nolint:gosec // G202: the spliced text is domain.TerminalContentStates, not input
+		stateFilter = "state NOT IN (" + terminalStatesSQL() + ") AND "
 	}
-	return removed, nil
+	orphaned := `NOT EXISTS (
+		SELECT 1 FROM documents d WHERE d.content_hash = content.content_hash)`
+
+	var due bool
+	if err := s.db.Reader().QueryRowContext(ctx,
+		"SELECT EXISTS (SELECT 1 FROM content WHERE "+stateFilter+orphaned+")").
+		Scan(&due); err != nil {
+		return 0, fmt.Errorf("probe for orphaned content: %w", err)
+	}
+	if !due {
+		return 0, nil
+	}
+
+	removed, cursor := 0, ""
+	for {
+		// Candidates are read outside the transaction and re-verified
+		// inside it; the cursor advances over candidates regardless of the
+		// verify's answer, so a hash re-referenced in the gap is skipped
+		// without ever being re-collected into a spin.
+		batch, err := s.sweepCandidates(ctx, stateFilter+orphaned, cursor)
+		if err != nil {
+			return removed, fmt.Errorf("collect orphaned content: %w", err)
+		}
+		if len(batch) == 0 {
+			return removed, nil
+		}
+		cursor = batch[len(batch)-1]
+
+		err = s.withTx(ctx, func(tx *sql.Tx) error {
+			doomed, err := verifyOrphans(ctx, tx, stateFilter+orphaned, batch)
+			if err != nil {
+				return fmt.Errorf("verify orphaned content: %w", err)
+			}
+
+			for _, hash := range doomed {
+				if err := deleteVectorsTx(ctx, tx, hash); err != nil {
+					return err
+				}
+			}
+			if len(doomed) == 0 {
+				return nil
+			}
+			dp := strings.TrimSuffix(strings.Repeat("?,", len(doomed)), ",")
+			da := make([]any, len(doomed))
+			for i, h := range doomed {
+				da[i] = h
+			}
+			//nolint:gosec // G202: the spliced text is ?-placeholders, not input
+			res, err := tx.ExecContext(ctx,
+				"DELETE FROM content WHERE content_hash IN ("+dp+")", da...)
+			if err != nil {
+				return fmt.Errorf("sweep orphaned content: %w", err)
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return err
+			}
+			removed += int(n)
+			return nil
+		})
+		if err != nil {
+			return removed, err
+		}
+		if len(batch) < sweepBatch {
+			return removed, nil
+		}
+	}
+}
+
+// sweepCandidates reads the next batch of orphan candidates after cursor, in
+// hash order. A read on the reader pool, deliberately outside any write
+// transaction — SweepOrphans re-verifies each batch inside its own.
+func (s *Store) sweepCandidates(ctx context.Context, predicate, cursor string) ([]string, error) {
+	//nolint:gosec // G202: the spliced text is SweepOrphans' own predicate, not input
+	rows, err := s.db.Reader().QueryContext(ctx, `
+		SELECT content_hash FROM content
+		WHERE content_hash > ? AND `+predicate+`
+		ORDER BY content_hash LIMIT ?`, cursor, sweepBatch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
+	var batch []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		batch = append(batch, hash)
+	}
+	return batch, rows.Err()
+}
+
+// verifyOrphans re-evaluates the orphan predicate over batch inside tx —
+// the find that counts, because it holds the same lock as the delete.
+func verifyOrphans(ctx context.Context, tx *sql.Tx, predicate string, batch []string) ([]string, error) {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+	args := make([]any, len(batch))
+	for i, h := range batch {
+		args[i] = h
+	}
+	//nolint:gosec // G202: the spliced text is ?-placeholders and SweepOrphans' own predicate, not input
+	rows, err := tx.QueryContext(ctx, `
+		SELECT content_hash FROM content
+		WHERE content_hash IN (`+placeholders+`) AND `+predicate, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
+	var doomed []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		doomed = append(doomed, hash)
+	}
+	return doomed, rows.Err()
 }
 
 // deleteVectorsTx removes a content's vec rows from EVERY generation, not
