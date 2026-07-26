@@ -91,7 +91,7 @@ func (f *daemonFixture) stop(t *testing.T) {
 	f.wg.Wait()
 }
 
-// waitForIndexed blocks until the daemon has indexed at least n documents by
+// waitForIndexed blocks until the daemon has indexed at least n contents by
 // itself. Nothing runs an indexing command — that the daemon gets there on
 // its own is the property under test.
 func (f *daemonFixture) waitForIndexed(t *testing.T, n int) {
@@ -103,11 +103,11 @@ func (f *daemonFixture) waitForIndexed(t *testing.T, n int) {
 		if status == http.StatusOK {
 			var out struct {
 				Index struct {
-					Documents map[string]int `json:"documents"`
+					Content map[string]int `json:"content"`
 				} `json:"index"`
 			}
 			if err := json.Unmarshal(body, &out); err == nil {
-				if out.Index.Documents["indexed"] >= n {
+				if out.Index.Content["indexed"] >= n {
 					return
 				}
 			}
@@ -115,7 +115,7 @@ func (f *daemonFixture) waitForIndexed(t *testing.T, n int) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("daemon did not index %d documents on its own; last status was %s", n, last)
+	t.Fatalf("daemon did not index %d contents on its own; last status was %s", n, last)
 }
 
 // waitForReady blocks until the daemon reports a usable index. Distinct from
@@ -287,9 +287,10 @@ func TestServeOverAnEmptyCorpusIsReadyAndEmpty(t *testing.T) {
 		Version string `json:"version"`
 		PID     int    `json:"pid"`
 		Index   struct {
-			Ready     bool           `json:"ready"`
-			Reason    string         `json:"reason"`
-			Documents map[string]int `json:"documents"`
+			Ready   bool           `json:"ready"`
+			Reason  string         `json:"reason"`
+			Files   int            `json:"files"`
+			Content map[string]int `json:"content"`
 		} `json:"index"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
@@ -298,8 +299,8 @@ func TestServeOverAnEmptyCorpusIsReadyAndEmpty(t *testing.T) {
 	if out.Version == "" || out.PID == 0 {
 		t.Errorf("status = %+v, want version and pid", out)
 	}
-	if out.Index.Documents["indexed"] != 0 {
-		t.Errorf("documents = %v, want nothing indexed", out.Index.Documents)
+	if out.Index.Files != 0 || out.Index.Content["indexed"] != 0 {
+		t.Errorf("index = %+v, want nothing discovered or indexed", out.Index)
 	}
 	// The daemon owns the writer role, so it creates and migrates the
 	// database itself (ADR 0012) — there is no longer anything else that
@@ -341,10 +342,11 @@ func TestServeIndexesTheCorpusWithoutAnyCommand(t *testing.T) {
 	}
 	var st struct {
 		Index struct {
-			Ready     bool           `json:"ready"`
-			Model     string         `json:"model"`
-			Dims      int            `json:"dims"`
-			Documents map[string]int `json:"documents"`
+			Ready   bool           `json:"ready"`
+			Model   string         `json:"model"`
+			Dims    int            `json:"dims"`
+			Files   int            `json:"files"`
+			Content map[string]int `json:"content"`
 		} `json:"index"`
 	}
 	if err := json.Unmarshal(statusBody, &st); err != nil {
@@ -353,8 +355,8 @@ func TestServeIndexesTheCorpusWithoutAnyCommand(t *testing.T) {
 	if !st.Index.Ready || st.Index.Model != "test-model" || st.Index.Dims == 0 {
 		t.Errorf("index = %+v, want ready with model and dims", st.Index)
 	}
-	if st.Index.Documents["indexed"] == 0 {
-		t.Errorf("documents = %v, want at least one indexed", st.Index.Documents)
+	if st.Index.Files == 0 || st.Index.Content["indexed"] == 0 {
+		t.Errorf("index = %+v, want at least one file with indexed content", st.Index)
 	}
 }
 

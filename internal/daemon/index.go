@@ -162,13 +162,21 @@ func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
 	}
 	defer h.release()
 
-	status := server.IndexStatus{Documents: map[string]int{}, Disk: diskUsage(d.dbPath)}
-	counts, err := h.store.CountsByState(ctx)
+	status := server.IndexStatus{
+		Content: map[string]int{},
+		Unread:  map[string]int{},
+		Disk:    diskUsage(d.dbPath),
+	}
+	counts, err := h.store.CatalogCounts(ctx)
 	if err != nil {
 		return server.IndexStatus{}, err
 	}
-	for state, n := range counts {
-		status.Documents[string(state)] = n
+	status.Files = counts.Files
+	for state, n := range counts.Content {
+		status.Content[string(state)] = n
+	}
+	for reason, n := range counts.Unread {
+		status.Unread[string(reason)] = n
 	}
 
 	depth, err := h.store.QueueDepth(ctx, time.Now())
@@ -180,7 +188,7 @@ func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
 	// Only queried when the counts say there is something to report: the
 	// common case is a corpus with no failures at all, and status runs on
 	// every `bsearch status`.
-	if counts[domain.DocStateFailed] > 0 {
+	if counts.Content[domain.ContentStateFailed] > 0 {
 		groups, err := h.store.FailureReasons(ctx, maxFailureGroups)
 		if err != nil {
 			return server.IndexStatus{}, err
@@ -188,7 +196,7 @@ func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
 		for _, g := range groups {
 			status.Failures = append(status.Failures, server.FailureGroup{
 				Reason:      g.Reason,
-				Documents:   g.Documents,
+				Contents:    g.Contents,
 				ExamplePath: g.ExamplePath,
 			})
 		}

@@ -32,20 +32,34 @@ type StatusResponse struct {
 }
 
 // IndexStatus is the index half. Ready, Model and Dims describe the vector
-// generation search would use; Documents is the catalog breakdown, present
-// whenever the database can be read at all — a database full of
-// discovered-but-unindexed rows is exactly when the counts matter most, so
-// they do not depend on Ready.
+// generation search would use; the three populations — Files, Content,
+// Unread — are the catalog breakdown, present whenever the database can be
+// read at all: a database full of discovered-but-unindexed rows is exactly
+// when the counts matter most, so they do not depend on Ready.
+//
+// The populations reconcile by construction (ADR 0015): Files counts paths,
+// Unread counts the paths whose bytes were never obtained by reason, and
+// Content counts *distinct contents* by state — so Files − sum(Unread) is
+// the files that have content, and its gap against sum(Content) is what
+// deduplication saved. Unread's "denied" is the Full Disk Access signal and
+// is never folded into "dataless", which is an iCloud placeholder skipped
+// exactly as intended — one is broken, the other is working.
 type IndexStatus struct {
-	Ready     bool           `json:"ready"`
-	Reason    string         `json:"reason,omitempty"`
-	Model     string         `json:"model,omitempty"`
-	Dims      int            `json:"dims,omitempty"`
-	Documents map[string]int `json:"documents,omitempty"`
+	Ready  bool   `json:"ready"`
+	Reason string `json:"reason,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Dims   int    `json:"dims,omitempty"`
+	// Files counts documents rows (paths). Zero is reported once the
+	// database is readable, so it is not omitempty-able alongside Content —
+	// a pointer would say more than a zero does here, and Content's
+	// presence is the "database readable" signal.
+	Files   int            `json:"files"`
+	Content map[string]int `json:"content,omitempty"`
+	Unread  map[string]int `json:"unread,omitempty"`
 	// Queue is the dispatchable backlog. Absent when the database could not
 	// be read.
 	Queue *QueueStatus `json:"queue,omitempty"`
-	// Failures are the largest groups of permanently-failed documents,
+	// Failures are the largest groups of permanently-failed contents,
 	// largest first. Absent when nothing has failed.
 	Failures []FailureGroup `json:"failures,omitempty"`
 	// Disk is what the index costs on disk (DESIGN.md: footprint is reported
@@ -61,11 +75,13 @@ type QueueStatus struct {
 	Retrying int `json:"retrying"`
 }
 
-// FailureGroup is one reason documents were given up on, with a count and one
-// path to reproduce it with. Reason is untrusted display text.
+// FailureGroup is one reason contents were given up on, with a count of
+// distinct contents and one path to reproduce it with. Reason is untrusted
+// display text. ExamplePath is absent when the failed content is orphaned
+// (no path references it yet or any more).
 type FailureGroup struct {
 	Reason      string `json:"reason"`
-	Documents   int    `json:"documents"`
+	Contents    int    `json:"contents"`
 	ExamplePath string `json:"example_path,omitempty"`
 }
 

@@ -86,10 +86,17 @@ type Request struct {
 	MinScore     float64 `json:"min_score,omitempty"`
 }
 
-// Hit is one document in the response, built from its best-matching chunk.
+// Hit is one content in the response, built from its best-matching chunk.
+// Path is the identity — there is no doc_id (ADR 0015). One content can live
+// at several paths (duplicate files): Path names the primary (most recent
+// mtime, tie-broken by path ascending) and AlsoAt lists the rest, omitted
+// when there are none — the overwhelmingly common case.
 type Hit struct {
-	DocID string `json:"doc_id"`
-	Path  string `json:"path"`
+	Path string `json:"path"`
+	// ContentHash is what the hit is really about: two paths with one hash
+	// are one document as far as retrieval is concerned, and it is stable
+	// under renames.
+	ContentHash string `json:"content_hash"`
 	// Distance is the raw KNN distance: lower is better, uncalibrated.
 	// DESIGN.md reserves `score` for fused (RRF) ranking so the name never
 	// carries two meanings.
@@ -97,6 +104,7 @@ type Hit struct {
 	ChunkPreview string    `json:"chunk_preview"`
 	HeadingPath  string    `json:"heading_path,omitempty"`
 	Modified     time.Time `json:"modified"`
+	AlsoAt       []string  `json:"also_at,omitempty"`
 }
 
 // Response is the search result set.
@@ -159,16 +167,17 @@ func (s *Service) Search(ctx context.Context, req Request) (Response, error) {
 		return Response{}, err
 	}
 
-	docs := domain.CollapseBestPerDoc(hits, limit)
-	resp := Response{Hits: make([]Hit, 0, len(docs)), TookMS: time.Since(start).Milliseconds()}
-	for _, h := range docs {
+	contents := domain.CollapseBestPerContent(hits, limit)
+	resp := Response{Hits: make([]Hit, 0, len(contents)), TookMS: time.Since(start).Milliseconds()}
+	for _, ch := range contents {
 		resp.Hits = append(resp.Hits, Hit{
-			DocID:        h.Doc.ID,
-			Path:         h.Doc.Path,
-			Distance:     h.Distance,
-			ChunkPreview: Preview(h.Chunk.Text, PreviewRunes),
-			HeadingPath:  h.Chunk.HeadingPath,
-			Modified:     h.Doc.MTime.UTC(),
+			Path:         ch.Hit.Doc.Path,
+			ContentHash:  ch.Hit.Doc.ContentHash,
+			Distance:     ch.Hit.Distance,
+			ChunkPreview: Preview(ch.Hit.Chunk.Text, PreviewRunes),
+			HeadingPath:  ch.Hit.Chunk.HeadingPath,
+			Modified:     ch.Hit.Doc.MTime.UTC(),
+			AlsoAt:       ch.AlsoAt,
 		})
 	}
 	return resp, nil

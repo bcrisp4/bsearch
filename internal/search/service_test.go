@@ -64,10 +64,10 @@ func (f *fakeEmbedder) EmbedPassages(context.Context, []domain.Chunk) ([][]float
 
 func (f *fakeEmbedder) Spec() domain.EmbeddingSpec { return f.spec }
 
-func hit(docID, path, text string, distance float64) domain.Hit {
+func hit(hash, path, text string, distance float64) domain.Hit {
 	return domain.Hit{
-		Doc:      domain.Document{ID: docID, Path: path, MTime: time.Unix(1700000000, 0)},
-		Chunk:    domain.Chunk{DocID: docID, Text: text, HeadingPath: "Doc > Section"},
+		Doc:      domain.Document{Path: path, ContentHash: hash, MTime: time.Unix(1700000000, 0)},
+		Chunk:    domain.Chunk{Text: text, HeadingPath: "Doc > Section"},
 		Distance: distance,
 	}
 }
@@ -78,7 +78,7 @@ func newService(t *testing.T) (*search.Service, *fakeIndex, *fakeEmbedder) {
 	index := &fakeIndex{
 		spec: indexedSpec,
 		dims: 3,
-		hits: []domain.Hit{hit("d_1", "/notes/a.md", "alpha text", 0.1)},
+		hits: []domain.Hit{hit("h1", "/notes/a.md", "alpha text", 0.1)},
 	}
 	embedder := &fakeEmbedder{spec: indexedSpec, vec: []float32{1, 0, 0}}
 	return search.New(index, embedder), index, embedder
@@ -95,8 +95,8 @@ func TestSearchReturnsHits(t *testing.T) {
 		t.Fatalf("got %d hits, want 1", len(resp.Hits))
 	}
 	got := resp.Hits[0]
-	if got.DocID != "d_1" || got.Path != "/notes/a.md" {
-		t.Errorf("hit = %+v, want doc d_1 at /notes/a.md", got)
+	if got.ContentHash != "h1" || got.Path != "/notes/a.md" {
+		t.Errorf("hit = %+v, want content h1 at /notes/a.md", got)
 	}
 	if got.Distance != 0.1 {
 		t.Errorf("distance = %v, want 0.1", got.Distance)
@@ -163,14 +163,17 @@ func TestSearchDefaultsLimit(t *testing.T) {
 	}
 }
 
-func TestSearchCollapsesToBestChunkPerDoc(t *testing.T) {
+func TestSearchCollapsesToBestChunkPerContent(t *testing.T) {
 	svc, index, _ := newService(t)
 	// Ascending by distance — the SearchVectors contract, which
-	// CollapseBestPerDoc relies on to know a document's first hit is its best.
+	// CollapseBestPerContent relies on to know a content's first hit is its
+	// best. The worse chunk is a different ordinal of the same content.
+	worse := hit("h1", "/notes/a.md", "worse chunk", 0.4)
+	worse.Chunk.Ordinal = 1
 	index.hits = []domain.Hit{
-		hit("d_1", "/notes/a.md", "better chunk", 0.1),
-		hit("d_2", "/notes/b.md", "other doc", 0.2),
-		hit("d_1", "/notes/a.md", "worse chunk", 0.4),
+		hit("h1", "/notes/a.md", "better chunk", 0.1),
+		hit("h2", "/notes/b.md", "other doc", 0.2),
+		worse,
 	}
 
 	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 10})
@@ -178,10 +181,57 @@ func TestSearchCollapsesToBestChunkPerDoc(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 	if len(resp.Hits) != 2 {
-		t.Fatalf("got %d hits, want 2 (one per document)", len(resp.Hits))
+		t.Fatalf("got %d hits, want 2 (one per content)", len(resp.Hits))
 	}
-	if resp.Hits[0].DocID != "d_1" || resp.Hits[0].ChunkPreview != "better chunk" {
-		t.Errorf("first hit = %+v, want d_1's best chunk", resp.Hits[0])
+	if resp.Hits[0].ContentHash != "h1" || resp.Hits[0].ChunkPreview != "better chunk" {
+		t.Errorf("first hit = %+v, want h1's best chunk", resp.Hits[0])
+	}
+}
+
+func TestSearchFansOutDuplicatePathsIntoAlsoAt(t *testing.T) {
+	// One content at two paths arrives as consecutive fan-out rows, newest
+	// mtime first (the SearchVectors contract). The response is one hit whose
+	// Path is the primary and whose AlsoAt holds the rest.
+	svc, index, _ := newService(t)
+	newer := hit("h1", "/notes/newer.md", "shared chunk", 0.1)
+	newer.Doc.MTime = time.Unix(1700000100, 0)
+	older := hit("h1", "/notes/older.md", "shared chunk", 0.1)
+	index.hits = []domain.Hit{newer, older}
+
+	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(resp.Hits) != 1 {
+		t.Fatalf("got %d hits, want 1 (one per content, however many paths)", len(resp.Hits))
+	}
+	got := resp.Hits[0]
+	if got.Path != "/notes/newer.md" {
+		t.Errorf("path = %q, want the primary (newest mtime) path", got.Path)
+	}
+	if len(got.AlsoAt) != 1 || got.AlsoAt[0] != "/notes/older.md" {
+		t.Errorf("also_at = %v, want the duplicate's other path", got.AlsoAt)
+	}
+}
+
+func TestSearchOmitsAlsoAtWhenUnique(t *testing.T) {
+	// The overwhelmingly common case is a content at one path; the wire field
+	// must then be absent, not [].
+	svc, _, _ := newService(t)
+
+	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if resp.Hits[0].AlsoAt != nil {
+		t.Errorf("AlsoAt = %v, want nil for a unique content", resp.Hits[0].AlsoAt)
+	}
+	encoded, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(encoded), "also_at") {
+		t.Errorf("response %s carries also_at for a unique content; want it omitted", encoded)
 	}
 }
 

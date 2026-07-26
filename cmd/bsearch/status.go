@@ -129,13 +129,32 @@ func writeIndexSection(out io.Writer, index server.IndexStatus) {
 		}
 		fields = append(fields, field{"model", model})
 	}
-	if index.Documents != nil {
-		fields = append(fields, field{"documents", fmt.Sprintf("%s indexed · %s failed · %s deleted",
-			count(index.Documents[string(domain.DocStateIndexed)]),
-			count(index.Documents[string(domain.DocStateFailed)]),
-			count(index.Documents[string(domain.DocStateDeleted)]))})
+	if index.Content != nil {
+		fields = append(fields, field{"documents", fmt.Sprintf("%s files · %s indexed · %s failed",
+			count(index.Files),
+			count(index.Content[string(domain.ContentStateIndexed)]),
+			count(index.Content[string(domain.ContentStateFailed)]))})
+	}
+	if unread := sumCounts(index.Unread); unread > 0 {
+		// All three reasons whenever any is non-zero: denied is the Full
+		// Disk Access signal and must never fold into dataless, which is an
+		// iCloud placeholder skipped exactly as intended — one is broken,
+		// the other is working (ADR 0015).
+		fields = append(fields, field{"unread", fmt.Sprintf("denied %s · dataless %s · io_error %s",
+			count(index.Unread[string(domain.UnreadDenied)]),
+			count(index.Unread[string(domain.UnreadDataless)]),
+			count(index.Unread[string(domain.UnreadIOError)]))})
 	}
 	writeFields(out, fields)
+}
+
+// sumCounts totals a count map (nil-safe).
+func sumCounts(m map[string]int) int {
+	total := 0
+	for _, n := range m {
+		total += n
+	}
+	return total
 }
 
 // writeQueueSection reports the backlog. The per-state breakdown is what says
@@ -153,11 +172,11 @@ func writeQueueSection(out io.Writer, index server.IndexStatus) {
 		fields = append(fields, field{"retrying", count(index.Queue.Retrying)})
 	}
 	var states []string
-	for _, state := range domain.DocStates {
+	for _, state := range domain.ContentStates {
 		if state.Terminal() {
 			continue
 		}
-		if n := index.Documents[string(state)]; n > 0 {
+		if n := index.Content[string(state)]; n > 0 {
 			states = append(states, fmt.Sprintf("%s %s", state, count(n)))
 		}
 	}
@@ -311,14 +330,14 @@ func scanTrouble(indexing *server.IndexingStatus) string {
 	return trouble
 }
 
-// writeFailuresSection lists why documents were given up on. Grouped, because
+// writeFailuresSection lists why contents were given up on. Grouped, because
 // a corpus fails in a handful of ways and the count plus one path is what can
 // be acted on.
 func writeFailuresSection(out io.Writer, index server.IndexStatus, home string) {
 	if len(index.Failures) == 0 {
 		return
 	}
-	failed := index.Documents[string(domain.DocStateFailed)]
+	failed := index.Content[string(domain.ContentStateFailed)]
 	fmt.Fprintf(out, "\nFailures (%s)\n", count(failed))
 	listed := 0
 	for _, f := range index.Failures {
@@ -326,11 +345,11 @@ func writeFailuresSection(out io.Writer, index server.IndexStatus, home string) 
 		if reason == "" {
 			reason = "no reason recorded"
 		}
-		fmt.Fprintf(out, "  %s  %s\n", count(f.Documents), search.Preview(reason, maxReasonRunes))
+		fmt.Fprintf(out, "  %s  %s\n", count(f.Contents), search.Preview(reason, maxReasonRunes))
 		if f.ExamplePath != "" {
 			fmt.Fprintf(out, "     %s\n", stripControl(tildePath(home, f.ExamplePath)))
 		}
-		listed += f.Documents
+		listed += f.Contents
 	}
 	// The daemon reports only the largest few groups, so on a corpus that
 	// failed in many ways the list accounts for less than the heading. Saying

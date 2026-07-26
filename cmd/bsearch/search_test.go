@@ -215,8 +215,8 @@ func TestRunSearchJSON(t *testing.T) {
 
 	var resp struct {
 		Hits []struct {
-			DocID        string  `json:"doc_id"`
 			Path         string  `json:"path"`
+			ContentHash  string  `json:"content_hash"`
 			Distance     float64 `json:"distance"`
 			ChunkPreview string  `json:"chunk_preview"`
 			HeadingPath  string  `json:"heading_path"`
@@ -228,7 +228,7 @@ func TestRunSearchJSON(t *testing.T) {
 		t.Fatalf("decode JSON: %v\noutput:\n%s", err, out.String())
 	}
 	if len(resp.Hits) != 2 {
-		t.Fatalf("hits = %d, want 2 (one per doc)\noutput:\n%s", len(resp.Hits), out.String())
+		t.Fatalf("hits = %d, want 2 (one per content)\noutput:\n%s", len(resp.Hits), out.String())
 	}
 	if !strings.HasSuffix(resp.Hits[0].Path, "a.md") {
 		t.Errorf("best hit path = %q, want a.md", resp.Hits[0].Path)
@@ -237,11 +237,21 @@ func TestRunSearchJSON(t *testing.T) {
 		t.Errorf("JSON path %q not absolute", resp.Hits[0].Path)
 	}
 	for i, h := range resp.Hits {
-		if h.DocID == "" {
-			t.Errorf("hit %d missing doc_id", i)
+		if h.Path == "" {
+			t.Errorf("hit %d missing path", i)
+		}
+		if h.ContentHash == "" {
+			t.Errorf("hit %d missing content_hash", i)
 		}
 		if h.Modified == "" {
 			t.Errorf("hit %d missing modified", i)
+		}
+	}
+	// doc_id is retired from every surface (ADR 0015), and each corpus file
+	// is unique content, so also_at must be omitted rather than [].
+	for _, gone := range []string{`"doc_id"`, `"also_at"`} {
+		if strings.Contains(out.String(), gone) {
+			t.Errorf("output carries %s, want it absent\noutput:\n%s", gone, out.String())
 		}
 	}
 	if resp.Hits[0].Distance > resp.Hits[1].Distance {
