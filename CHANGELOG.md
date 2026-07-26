@@ -199,6 +199,25 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   always active; `[paths].exclude` extends it.
 
 
+### Fixed
+
+- **Saving or renaming a file while it was being indexed could quietly lose
+  it.** Two ways, both rare and both permanent until you touched the file
+  again. A file saved during its own indexing run could end up recorded as
+  indexed with nothing actually stored against it — present in the catalog,
+  on disk, and findable by no search. And a file renamed while the old
+  version was mid-flight could have the rename undone, leaving the new name
+  unindexed and the old name serving a different file's contents.
+
+  A brand new file could also be picked up twice at once and given two
+  identities, one of which was then discarded — so an agent holding onto the
+  discarded `doc_id` got nothing back.
+
+  All three came from the same place: the daemon had two things writing to
+  the index at once. It now has one. Nothing about freshness changes — a
+  saved file is still searchable in about fifteen seconds, and a deleted one
+  stops being searchable just as fast.
+
 ### Changed
 
 - **`bsearch search` now requires a running daemon.** It talks to

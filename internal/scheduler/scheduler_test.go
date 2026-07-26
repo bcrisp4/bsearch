@@ -174,6 +174,9 @@ type fakeIndexer struct {
 	// processErr is a fatal machinery failure.
 	processErr error
 	processed  []string
+	// processedDocs is what ProcessDocument was actually handed, which since
+	// ADR 0014 is the re-read row rather than the copy the claim produced.
+	processedDocs []domain.Document
 	// markIndexed lets a test mutate the queue as the real pipeline would.
 	markIndexed func(docID string)
 }
@@ -208,6 +211,7 @@ func (f *fakeIndexer) ProcessDocument(_ context.Context, doc domain.Document, _ 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.processed = append(f.processed, doc.ID)
+	f.processedDocs = append(f.processedDocs, doc)
 	if f.processErr != nil {
 		return pipeline.Result{}, f.processErr
 	}
@@ -254,13 +258,21 @@ type fakeScanner struct {
 	pathResult   discovery.Result
 	pathErr      error
 	scannedPaths [][]string
+	// onScanPaths runs inside ScanPaths, so a test can order a reconcile
+	// against document processing, or cancel mid-reconcile.
+	onScanPaths func()
 }
 
 func (s *fakeScanner) ScanPaths(_ context.Context, paths []string) (discovery.Result, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.scannedPaths = append(s.scannedPaths, slices.Clone(paths))
-	return s.pathResult, s.pathErr
+	hook, res, err := s.onScanPaths, s.pathResult, s.pathErr
+	s.mu.Unlock()
+	// Called outside the lock so a hook may reach back into the scheduler.
+	if hook != nil {
+		hook()
+	}
+	return res, err
 }
 
 func (s *fakeScanner) Roots() ([]string, []discovery.PathError) {

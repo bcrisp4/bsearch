@@ -9,6 +9,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bcrisp4/bsearch/internal/config"
 	"github.com/bcrisp4/bsearch/internal/discovery"
 	"github.com/bcrisp4/bsearch/internal/domain"
 )
@@ -67,8 +68,6 @@ func run(t *testing.T, s *Scheduler) func() {
 	}
 }
 
-// A burst of events inside one debounce window is one reconcile, with the
-// paths deduplicated — the whole point of the window.
 // seedPending stages a closed window the way the watcher would, minus the
 // wake hint.
 //
@@ -84,6 +83,8 @@ func seedPending(s *Scheduler, paths ...string) {
 	s.mergePending(set)
 }
 
+// A burst of events inside one debounce window is one reconcile, with the
+// paths deduplicated — the whole point of the window.
 func TestWatchCoalescesABurstIntoOneReconcile(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sc := watchedScanner("/root")
@@ -460,6 +461,205 @@ func TestForcedScanSurvivesAFailedWalk(t *testing.T) {
 		// cycle takes it rather than waiting out the hour.
 		if due, forced := s.scanDue(); !due || !forced {
 			t.Errorf("scanDue() = (%v, %v), want the forced request re-armed", due, forced)
+		}
+	})
+}
+
+// The reconcile lands between documents, not after the batch. That placement
+// is what bounds how long a purged file stays searchable to one document
+// rather than to a batch of thirty-two, and it is the axis on which ADR 0014
+// rejected draining only between batches.
+func TestAClosedWindowIsReconciledBetweenDocuments(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		q := newFakeQueue(discoveredDoc("d_1"), discoveredDoc("d_2"), discoveredDoc("d_3"))
+		ix := newFakeIndexer()
+		s := newScheduler(t, q, ix, sc, nil)
+
+		var events []string
+		ix.markIndexed = func(docID string) {
+			events = append(events, "processed:"+docID)
+			if docID == "d_1" {
+				// Stands in for the watcher closing a window mid-drain.
+				seedPending(s, "/root/saved.md")
+			}
+		}
+		sc.onScanPaths = func() { events = append(events, "reconciled") }
+
+		s.cycle(t.Context())
+
+		want := []string{"processed:d_1", "reconciled", "processed:d_2", "processed:d_3"}
+		if !slices.Equal(events, want) {
+			t.Errorf("events = %v, want %v — the window waited for the batch to finish", events, want)
+		}
+	})
+}
+
+// Discovery is a cheap stage and runs on battery (DESIGN.md), and reconciling
+// named paths is the same stat-and-hash a walk is. Below the power gate this
+// would be the one thing a deferred cycle never reached, and an unplugged
+// laptop would collect a day of deletions and purge none of them.
+func TestAClosedWindowIsReconciledWhileIndexingIsDeferred(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		sc.pathResult = discovery.Result{Deleted: 1}
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, func(o *Options) {
+			o.Power = func() config.PowerPolicy {
+				return config.PowerPolicy{IndexInterval: config.Interval{Defer: true}}
+			}
+		})
+
+		seedPending(s, "/root/gone.md")
+		s.cycle(t.Context())
+
+		if got := sc.reconciled(); len(got) != 1 || !slices.Equal(got[0], []string{"/root/gone.md"}) {
+			t.Errorf("reconciled = %v, want the window reconciled despite the battery gate", got)
+		}
+		if snap := s.Snapshot(); !snap.Deferring || snap.WatchDeleted != 1 {
+			t.Errorf("Snapshot = %+v, want deferring with the deletion still applied", snap)
+		}
+	})
+}
+
+// Overflow keeps what it holds and refuses what arrives, the opposite of the
+// adapter's rule. The adapter collapses a batch the kernel has already called
+// incomplete; this set is exact, and what discarding it would cost is its
+// deletions — which a walk cannot recover, because a walk sees what exists.
+func TestPendingOverflowKeepsTheHeldSetAndAsksForAWalk(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, nil)
+
+		held := make(map[string]struct{}, maxPendingReconcile)
+		for i := range maxPendingReconcile {
+			held["/root/"+itoa(i)+".md"] = struct{}{}
+		}
+		if !s.mergePending(held) {
+			t.Fatal("the first window was refused; the cap is not where the test thinks")
+		}
+
+		s.enqueue(map[string]struct{}{"/root/refused.md": {}})
+
+		if snap := s.Snapshot(); snap.WatchRescans != 1 {
+			t.Errorf("WatchRescans = %d, want 1 — an overflow is a reason to walk", snap.WatchRescans)
+		}
+		if due, forced := s.scanDue(); !due || !forced {
+			t.Errorf("scanDue = (%v, %v), want a walk armed out of band", due, forced)
+		}
+
+		s.reconcilePending(t.Context())
+		got := sc.reconciled()
+		if len(got) != 1 || len(got[0]) != maxPendingReconcile {
+			t.Fatalf("reconciled %d paths, want the %d held", len(got[0]), maxPendingReconcile)
+		}
+		if slices.Contains(got[0], "/root/refused.md") {
+			t.Error("the refused window was kept and the held set dropped — backwards")
+		}
+	})
+}
+
+// Cancellation is the one error branch where something is still going to run,
+// so the paths go back rather than away: Run's shutdown flush reconciles on a
+// context cancellation cannot defeat, and a deletion dropped here would be
+// lost rather than deferred.
+func TestAReconcileCancelledMidFlightHandsItsPathsBack(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		sc.pathErr = context.Canceled
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, nil)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		sc.onScanPaths = func() { cancel() }
+
+		seedPending(s, "/root/gone.md")
+		s.reconcilePending(ctx)
+
+		if !s.hasPending() {
+			t.Fatal("the window was dropped on cancellation instead of handed back")
+		}
+
+		// What Run does next. The flush runs on a detached context, so the
+		// same paths are reconciled rather than lost.
+		sc.pathErr, sc.onScanPaths = nil, nil
+		sc.pathResult = discovery.Result{Deleted: 1}
+		s.flushPending(ctx)
+
+		got := sc.reconciled()
+		if len(got) != 2 || !slices.Equal(got[1], []string{"/root/gone.md"}) {
+			t.Fatalf("reconciled = %v, want the cancelled window retried by the flush", got)
+		}
+		if s.hasPending() {
+			t.Error("the flush left the window pending")
+		}
+	})
+}
+
+// Both producers of PathErrors now run on one goroutine, and cycle fixes their
+// order: the walk replaces, the reconcile appends. Two goroutines made that
+// safe but not repeatable — a reconcile could append errors the walk it
+// interleaved with was about to overwrite, and only sometimes.
+func TestAWalkAndAReconcileBothReachTheSnapshotInOneCycle(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		sc.result = discovery.Result{PathErrors: []discovery.PathError{
+			{Path: "/root/walked.md", Err: errors.New("permission denied")},
+		}}
+		sc.pathResult = discovery.Result{PathErrors: []discovery.PathError{
+			{Path: "/root/watched.md", Err: errors.New("permission denied")},
+		}}
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, nil)
+
+		seedPending(s, "/root/watched.md")
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.ScanErrs != 2 {
+			t.Errorf("ScanErrs = %d, want 2 — the walk's and the reconcile's", snap.ScanErrs)
+		}
+		var paths []string
+		for _, pe := range snap.PathErrors {
+			paths = append(paths, pe.Path)
+		}
+		want := []string{"/root/walked.md", "/root/watched.md"}
+		if !slices.Equal(paths, want) {
+			t.Errorf("PathErrors = %v, want %v (walk replaces, then reconcile appends)", paths, want)
+		}
+	})
+}
+
+// Issue #63's second half. ClaimBatch hands out copies read once; a rename
+// reconciled between documents moves a row out from under the copy still
+// waiting its turn. Working from that copy sends the pipeline to a path the
+// rename has since given to a different file — and the write that follows
+// displaces that file's row and reverts the rename.
+func TestProcessWorksFromTheRowAsItIsNowNotAsItWasClaimed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		q := newFakeQueue(discoveredDoc("d_1"), discoveredDoc("d_2"))
+		ix := newFakeIndexer()
+		s := newScheduler(t, q, ix, sc, nil)
+
+		ix.markIndexed = func(docID string) {
+			if docID != "d_1" {
+				return
+			}
+			// The write discovery makes for a rename, landing between
+			// documents while d_2's claimed copy still says /tmp/d_2.md.
+			q.mu.Lock()
+			q.docs["d_2"].Path = "/tmp/renamed.md"
+			q.mu.Unlock()
+		}
+
+		s.cycle(t.Context())
+
+		var got string
+		for _, doc := range ix.processedDocs {
+			if doc.ID == "d_2" {
+				got = doc.Path
+			}
+		}
+		if got != "/tmp/renamed.md" {
+			t.Errorf("d_2 processed at %q, want /tmp/renamed.md — the claimed copy is stale", got)
 		}
 	})
 }
