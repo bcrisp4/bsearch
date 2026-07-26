@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -63,6 +64,19 @@ func newFakeQueue(docs ...domain.Document) *fakeQueue {
 		q.order = append(q.order, doc.ID)
 	}
 	return q
+}
+
+// GetByID is the scheduler's re-read. It returns the *current* row, so a test
+// that mutates q.docs between the claim and the process is standing in for a
+// reconcile landing between documents.
+func (q *fakeQueue) GetByID(_ context.Context, docID string) (domain.Document, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	doc, ok := q.docs[docID]
+	if !ok {
+		return domain.Document{}, fmt.Errorf("get %s: %w", docID, domain.ErrDocumentGone)
+	}
+	return *doc, nil
 }
 
 func (q *fakeQueue) ClaimBatch(_ context.Context, now time.Time, limit int) ([]domain.Document, error) {

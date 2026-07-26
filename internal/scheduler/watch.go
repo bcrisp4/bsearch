@@ -34,6 +34,17 @@ const (
 	// notice the file is gone. Short, because a shutdown that hangs is worse
 	// than a stale row — launchd's patience is finite.
 	shutdownFlush = 5 * time.Second
+	// maxPendingReconcile caps the paths the watcher may hand over faster
+	// than the scheduler reconciles them. Eight times the adapter's
+	// per-batch cap, because this one bounds a merged accumulation across
+	// windows rather than a single held batch, and because merging dedups.
+	//
+	// Roughly 11 MB of paths at the cap, against a laptop where the
+	// alternative is losing deletions. Reaching it at all takes a stall: the
+	// scheduler drains between documents, between batches, and on every
+	// wake, so the accumulation windows are one ProcessDocument, one walk, or
+	// one endpoint probe — never an idle daemon, which Notify wakes.
+	maxPendingReconcile = 65536
 )
 
 // Watch reasons. Why the daemon is falling back to the periodic scan, in
@@ -133,11 +144,11 @@ func (s *Scheduler) watch(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			s.flush(ctx, paths, rescan)
+			s.closeWindow(paths, rescan)
 			return
 		case batch, ok := <-events:
 			if !ok {
-				s.flush(ctx, paths, rescan)
+				s.closeWindow(paths, rescan)
 				return
 			}
 			for _, path := range batch.Paths {
@@ -150,81 +161,158 @@ func (s *Scheduler) watch(ctx context.Context) {
 			}
 		case <-window:
 			timer, window = nil, nil
-			s.reconcile(ctx, paths, rescan)
+			s.closeWindow(paths, rescan)
 			paths, rescan = map[string]struct{}{}, false
 		}
 	}
 }
 
-// flush reconciles a debounce window that was still open when the watcher
-// stopped, on a context of its own so cancellation does not defeat it.
+// closeWindow hands one debounce window over to the scheduler goroutine.
 //
-// Worth the extra machinery because the window's contents are not equally
-// recoverable. An edit dropped here is picked up by the next walk; a deletion
-// dropped here is never picked up at all, since only ScanPaths purges and a
-// walk sees what exists. So the last ten seconds before a daemon restart
-// would otherwise be the one window whose deletions stay in the index for
-// good.
-func (s *Scheduler) flush(ctx context.Context, paths map[string]struct{}, rescan bool) {
+// It runs on the watch goroutine and writes no catalog row (ADR 0014). Its
+// whole job is to record that events were delivered and to make the paths
+// visible to the one goroutine allowed to act on them. The shutdown arms of
+// the loop above call it too, with no context and no timeout: merging into a
+// map cannot be defeated by cancellation, so the machinery the old flush
+// needed now lives in Run, next to the write.
+func (s *Scheduler) closeWindow(paths map[string]struct{}, rescan bool) {
 	if len(paths) == 0 && !rescan {
-		return
-	}
-	// Detached from ctx: it is almost certainly already cancelled — that is
-	// why we are here — and a reconcile on a cancelled context does nothing.
-	// Bounded so a slow store cannot hold shutdown open.
-	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownFlush)
-	defer cancel()
-	s.log.Debug("reconciling the last events before shutting down", "paths", len(paths))
-	s.reconcile(flushCtx, paths, rescan)
-}
-
-// reconcile turns one debounce window's worth of events into catalog writes.
-//
-// It runs on the watch goroutine, concurrently with a drain, and that is
-// deliberate: a note saved while a bulk backlog is being embedded must not
-// wait hours for it. Reconciling is stat, hash and upsert with no network in
-// it, and the SQLite writer is one connection with a busy timeout.
-//
-// For an edit that is the whole story — every pipeline stage is an
-// idempotent upsert, the property ADR 0011 already relies on to make crash
-// recovery a redo, so a reconcile that resets a document mid-pipeline is the
-// right answer rather than a race lost: the file changed underneath it.
-//
-// A delete is not idempotent the same way, and rests on a storage invariant
-// instead: only discovery creates catalog rows (domain.ErrDocumentGone).
-// Without it the purge here would be undone by the pipeline's next write,
-// putting a document whose file is gone back into the index permanently.
-func (s *Scheduler) reconcile(ctx context.Context, paths map[string]struct{}, rescan bool) {
-	if rescan {
-		// The event stream lost events or a volume moved, so the path list
-		// has stopped being the whole story and only a walk is honest.
-		s.log.Info("filesystem event stream is incomplete; scheduling a full scan",
-			"paths_superseded", len(paths))
-		s.mark(func(snap *Snapshot) {
-			snap.WatchRescans++
-			snap.LastWatchEvent = s.now()
-		})
-		s.requestScan()
-		s.Notify()
-		return
-	}
-	if len(paths) == 0 {
 		return
 	}
 
 	// Recorded on delivery rather than on a successful reconcile: the field
 	// answers "is the watcher being told anything", and `bsearch status`
 	// reads a watcher that has never seen a change as a missing Full Disk
-	// Access grant. A run of failing reconciles must not be made to look
-	// like that — it has LastError to explain itself with.
+	// Access grant. A run of failing reconciles must not be made to look like
+	// that — it has LastError to explain itself with. Since ADR 0014 that is
+	// no longer only about failures: the reconcile is a whole document away
+	// on another goroutine, so recording it there would make a merely busy
+	// scheduler look like a missing grant too.
 	s.mark(func(snap *Snapshot) { snap.LastWatchEvent = s.now() })
 
-	// Sorted so a reconcile is reproducible from the log and tests are not
-	// hostage to map iteration order.
-	list := slices.Sorted(maps.Keys(paths))
+	if rescan {
+		// The event stream lost events or a volume moved, so the path list
+		// has stopped being the whole story and only a walk is honest. No
+		// catalog write in this branch before ADR 0014 or after it, so it
+		// stays here whole.
+		s.log.Info("filesystem event stream is incomplete; scheduling a full scan",
+			"paths_superseded", len(paths))
+		s.mark(func(snap *Snapshot) { snap.WatchRescans++ })
+		s.requestScan()
+		s.Notify()
+		return
+	}
+	s.enqueue(paths)
+}
+
+// enqueue merges a closed window into the set the scheduler reconciles, and
+// hints that there is work. It never blocks on the scheduler: the watch
+// goroutine's next duty is to be ready for the next FSEvents callback, and a
+// reader that stalls there stalls the stream.
+func (s *Scheduler) enqueue(paths map[string]struct{}) {
+	if !s.mergePending(paths) {
+		// The incoming window is refused and the set already held is kept.
+		// Deliberately not the adapter's overflow rule, which collapses a
+		// batch and discards its paths: that batch is one the kernel has
+		// already declared incomplete, whereas this set is exact. What a
+		// discarded window costs is its deletions — the walk buys back its
+		// creates and edits, and nothing buys back the rest, because a walk
+		// sees what exists (#57).
+		s.log.Warn("unreconciled paths are piling up; falling back to a full walk",
+			"pending", maxPendingReconcile, "refused", len(paths))
+		s.mark(func(snap *Snapshot) { snap.WatchRescans++ })
+		s.requestScan()
+	}
+	s.Notify()
+}
+
+// mergePending folds paths into the pending set, reporting whether they were
+// taken. Nothing is logged or written under the lock: the watch goroutine's
+// latency must not become the status handler's problem.
+func (s *Scheduler) mergePending(paths map[string]struct{}) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.pendingPaths) >= maxPendingReconcile {
+		return false
+	}
+	if s.pendingPaths == nil {
+		s.pendingPaths = make(map[string]struct{}, len(paths))
+	}
+	maps.Copy(s.pendingPaths, paths)
+	return true
+}
+
+// takePending removes the pending set and returns it sorted, so a reconcile is
+// reproducible from the log and tests are not hostage to map iteration order.
+func (s *Scheduler) takePending() []string {
+	s.mu.Lock()
+	pending := s.pendingPaths
+	s.pendingPaths = nil
+	s.mu.Unlock()
+	if len(pending) == 0 {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(pending))
+}
+
+// restorePending hands a taken set back, for the one caller that took it and
+// could not use it.
+func (s *Scheduler) restorePending(list []string) {
+	paths := make(map[string]struct{}, len(list))
+	for _, p := range list {
+		paths[p] = struct{}{}
+	}
+	s.mergePending(paths)
+}
+
+// hasPending reports whether a reconcile is owed.
+func (s *Scheduler) hasPending() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.pendingPaths) > 0
+}
+
+// reconcilePending turns the debounce windows the watcher has handed over
+// into catalog writes.
+//
+// It runs on the scheduler goroutine and on no other (ADR 0014). That is what
+// makes the per-document re-read in process exactly sufficient rather than
+// merely narrowing, and what makes issues #62 and #63 unrepresentable rather
+// than guarded against.
+//
+// For an edit the story is unchanged — every pipeline stage is an idempotent
+// upsert, the property ADR 0011 relies on to make crash recovery a redo, so a
+// reconcile that resets a document the pipeline has not reached yet is the
+// right answer: the file changed underneath it.
+//
+// A delete is not idempotent the same way. "Only discovery creates catalog
+// rows" (domain.ErrDocumentGone) is still worth keeping as a guard, but it is
+// no longer the only thing standing between a purge and a resurrected
+// document: nothing can write between this call and the end of the drain step
+// that made it.
+//
+// The set is taken before the write rather than cleared after it. A reconcile
+// that failed must not leave its paths behind for the next drain to retry —
+// the failure path notifies, so that would turn a wedged store into a hot
+// loop. The window is gone either way, and requestScan is the answer to it.
+func (s *Scheduler) reconcilePending(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	list := s.takePending()
+	if len(list) == 0 {
+		return
+	}
+
 	res, err := s.scanner.ScanPaths(ctx, list)
 	if err != nil {
 		if ctx.Err() != nil {
+			// Handed back rather than dropped. The daemon is stopping and
+			// Run's shutdown flush is about to reconcile on a context
+			// cancellation cannot defeat, so this is the one error branch
+			// where something is still going to run. A deletion dropped here
+			// would be lost rather than deferred.
+			s.restorePending(list)
 			return
 		}
 		s.log.Error("reconciling changed paths failed", "error", err)

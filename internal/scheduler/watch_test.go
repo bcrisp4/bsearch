@@ -69,6 +69,21 @@ func run(t *testing.T, s *Scheduler) func() {
 
 // A burst of events inside one debounce window is one reconcile, with the
 // paths deduplicated — the whole point of the window.
+// seedPending stages a closed window the way the watcher would, minus the
+// wake hint.
+//
+// Deliberately mergePending rather than enqueue: enqueue notifies
+// unconditionally, and the tests below read s.notify as the observable of what
+// the *reconcile* decided. Going through enqueue would poison exactly the
+// assertion being made.
+func seedPending(s *Scheduler, paths ...string) {
+	set := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		set[p] = struct{}{}
+	}
+	s.mergePending(set)
+}
+
 func TestWatchCoalescesABurstIntoOneReconcile(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sc := watchedScanner("/root")
@@ -121,7 +136,8 @@ func TestWatchNotifiesOnlyWhenSomethingChanged(t *testing.T) {
 		// Not started: Notify's buffer is the observable, so the loop is
 		// left out of it and the reconcile is driven directly.
 		s.mark(func(snap *Snapshot) { snap.Watching = true })
-		s.reconcile(t.Context(), map[string]struct{}{"/root/a.md": {}}, false)
+		seedPending(s, "/root/a.md")
+		s.reconcilePending(t.Context())
 		select {
 		case <-s.notify:
 			t.Error("an unchanged reconcile woke the drain")
@@ -129,7 +145,8 @@ func TestWatchNotifiesOnlyWhenSomethingChanged(t *testing.T) {
 		}
 
 		sc.pathResult = discovery.Result{Deleted: 1}
-		s.reconcile(t.Context(), map[string]struct{}{"/root/a.md": {}}, false)
+		seedPending(s, "/root/a.md")
+		s.reconcilePending(t.Context())
 		select {
 		case <-s.notify:
 		default:
@@ -373,7 +390,8 @@ func TestWatchCountsIgnoredPaths(t *testing.T) {
 		})
 
 		s.mark(func(snap *Snapshot) { snap.Watching = true })
-		s.reconcile(t.Context(), map[string]struct{}{"/elsewhere/a.md": {}}, false)
+		seedPending(s, "/elsewhere/a.md")
+		s.reconcilePending(t.Context())
 
 		select {
 		case <-s.notify:
@@ -399,7 +417,8 @@ func TestWatchPathErrorsReachTheSnapshot(t *testing.T) {
 		})
 
 		s.mark(func(snap *Snapshot) { snap.Watching = true })
-		s.reconcile(t.Context(), map[string]struct{}{"/root/locked.md": {}}, false)
+		seedPending(s, "/root/locked.md")
+		s.reconcilePending(t.Context())
 
 		snap := s.Snapshot()
 		if snap.ScanErrs != 1 || len(snap.PathErrors) != 1 {

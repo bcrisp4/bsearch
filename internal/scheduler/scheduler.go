@@ -101,6 +101,11 @@ type Queue interface {
 	domain.Queue
 	// MarkFailed records a document as permanently failed with a reason.
 	MarkFailed(ctx context.Context, docID, reason string) error
+	// GetByID re-reads a claimed document. ClaimBatch hands out copies read
+	// once, and a batch is worked through over the minutes that follow, so a
+	// reconcile landing between documents can move a row out from under the
+	// copy of it still waiting its turn (ADR 0014).
+	GetByID(ctx context.Context, docID string) (domain.Document, error)
 }
 
 // Indexer is the per-document work, as implemented by *pipeline.Indexer.
@@ -268,6 +273,17 @@ type Scheduler struct {
 	// forceScan is a walk requested out of band — by an incomplete event
 	// stream. Consumed by scanDue, so it survives a scan already in flight.
 	forceScan bool
+	// pendingPaths is the debounce windows the watcher has closed and this
+	// goroutine has not reconciled yet. It is the whole of the handoff ADR
+	// 0014 asks for: the watcher merges into it, the scheduler swaps it out,
+	// and no catalog row is written anywhere but here.
+	//
+	// A set rather than a queue of windows, for two reasons. A file saved
+	// three times during one long embed is one path to stat, so merging is
+	// free deduplication; and the bound that matters — the one the overflow
+	// rule is written against — is distinct paths, which a queue of windows
+	// could not express.
+	pendingPaths map[string]struct{}
 }
 
 // New builds a Scheduler.
@@ -364,10 +380,10 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		"max_attempts", s.maxAttempts,
 		"watching", s.watcher != nil)
 
-	// The watcher runs alongside the cycle rather than inside it: its whole
-	// point is that a saved file does not wait for a drain that may be
-	// hours long. Run owns it so shutdown stays one story — cancel the
-	// context, and both goroutines are accounted for before Run returns.
+	// The watcher runs alongside the cycle rather than inside it: FSEvents
+	// intake and the debounce window must not wait behind a drain that may be
+	// hours long. It writes nothing, though — it hands its closed windows to
+	// this goroutine (ADR 0014). Run owns it so shutdown stays one story.
 	var watching sync.WaitGroup
 	if s.watcher != nil {
 		// Recorded before the goroutine starts, not inside it: resolving
@@ -382,7 +398,23 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			s.watch(ctx)
 		}()
 	}
-	defer watching.Wait()
+	// Ordered, not a bare `defer watching.Wait()`. The watcher hands over its
+	// still-open debounce window as it exits, and only this goroutine may
+	// write it — so the wait is a precondition of the final reconcile rather
+	// than goroutine hygiene, whichever goroutine notices the cancellation
+	// first.
+	//
+	// Worth the machinery because a window's contents are not equally
+	// recoverable. An edit dropped here is picked up by the next walk; a
+	// deletion dropped here is picked up by nothing, since only ScanPaths
+	// purges and a walk sees what exists. The last ten seconds before a
+	// restart would otherwise be the one window whose deletions stay in the
+	// index for good.
+	defer func() {
+		watching.Wait()
+		s.flushPending(ctx)
+		s.log.Info("indexing scheduler stopped")
+	}()
 
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -390,7 +422,6 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			s.log.Info("indexing scheduler stopped")
 			return nil
 		case <-timer.C:
 		case <-s.notify:
@@ -398,7 +429,6 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 		next := s.cycle(ctx)
 		if ctx.Err() != nil {
-			s.log.Info("indexing scheduler stopped")
 			return nil
 		}
 		if next <= 0 {
@@ -425,6 +455,24 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 }
 
+// flushPending reconciles what the watcher handed over and the loop did not
+// reach, as the daemon stops.
+func (s *Scheduler) flushPending(ctx context.Context) {
+	if !s.hasPending() {
+		// Checked before the context is built, so a daemon with no watcher —
+		// or nothing owed — does not arm a timer on its way out.
+		return
+	}
+	// Detached from ctx: it is almost certainly already cancelled — that is
+	// why we are here — and ScanPaths on a cancelled context does nothing.
+	// Bounded so a slow store cannot hold shutdown open; a shutdown that hangs
+	// is worse than a stale row, and launchd's patience is finite.
+	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownFlush)
+	defer cancel()
+	s.log.Debug("reconciling the last events before shutting down")
+	s.reconcilePending(flushCtx)
+}
+
 // cycle runs one scan-if-due plus one drain, and returns how long to wait
 // before the next one.
 func (s *Scheduler) cycle(ctx context.Context) time.Duration {
@@ -439,6 +487,23 @@ func (s *Scheduler) cycle(ctx context.Context) time.Duration {
 	if due, forced := s.scanDue(); due {
 		s.scan(ctx, forced)
 	}
+	if ctx.Err() != nil {
+		return deferRecheckInterval
+	}
+
+	// Above the battery gate, and below the walk, both deliberately.
+	//
+	// Above the gate because reconciling named paths is the same stat-and-hash
+	// the walk is, and discovery already runs on battery for that reason
+	// (DESIGN.md: cheap stages always run). Below the gate this would be the
+	// one thing a deferred cycle never reached, and an unplugged laptop would
+	// accumulate a day of deletions and purge none of them.
+	//
+	// Below the walk because scan *replaces* ScanErrs and PathErrors while
+	// this appends to them. One order or the other had to be chosen; this one
+	// makes the sample deterministic, where two goroutines made it a race the
+	// mutex kept safe but not repeatable.
+	s.reconcilePending(ctx)
 	if ctx.Err() != nil {
 		return deferRecheckInterval
 	}
@@ -604,6 +669,10 @@ func (s *Scheduler) drain(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		// Between batches, so the row a reconcile just wrote is at the head of
+		// the very next claim rather than one batch late. It also covers the
+		// two `continue` arms below, which never reach process.
+		s.reconcilePending(ctx)
 		// The version sweep needs no network, so it runs before anything can
 		// decide the queue is empty: a corpus that is entirely indexed under
 		// a superseded model looks like no work at all until it is swept.
@@ -741,6 +810,34 @@ func (s *Scheduler) process(ctx context.Context, docs []domain.Document, sv map[
 		if ctx.Err() != nil {
 			return skipped, false
 		}
+		// Between documents, never inside one. Both halves of this matter and
+		// they are the same constraint (ADR 0014): a saved file waits at most
+		// one document to be noticed, and — because nothing else writes the
+		// catalog — the re-read below cannot go stale between here and the end
+		// of ProcessDocument.
+		s.reconcilePending(ctx)
+		if ctx.Err() != nil {
+			return skipped, false
+		}
+
+		// The copy in docs was read when the batch was claimed, which may be
+		// many documents and several reconciles ago. Working from it would
+		// send the pipeline to whatever path this document had *then* — and a
+		// rename since reconciled has given that path to a different file
+		// (issue #63).
+		fresh, err := s.queue.GetByID(ctx, doc.ID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return skipped, false
+			}
+			if s.documentGone(doc, err) {
+				seen[doc.ID] = struct{}{}
+				continue
+			}
+			return skipped, s.storeFailure(ctx, "re-read document", err)
+		}
+		doc = fresh
+
 		seen[doc.ID] = struct{}{}
 		res, err := s.indexer.ProcessDocument(ctx, doc, sv)
 		if err != nil {
