@@ -265,6 +265,22 @@ func TestDeleteByPathPrefixRemovesPathFromSearchImmediately(t *testing.T) {
 	if n := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'hash-1'"); n != 1 {
 		t.Error("content row gone after a documents-only delete")
 	}
+
+	// Deleting the LAST path is what pins the fan-out's inner-join
+	// semantics: chunks and vectors are all still present (pre-sweep), so
+	// content with no referencing document surviving into the results —
+	// under a LEFT-ish rewrite of the documents lookup — would show here
+	// and nowhere else.
+	if _, err := store.DeleteByPathPrefix(ctx, "/notes/keep.md"); err != nil {
+		t.Fatalf("DeleteByPathPrefix (last path): %v", err)
+	}
+	hits, err = store.SearchVectors(ctx, []float32{1, 0, 0}, 1)
+	if err != nil {
+		t.Fatalf("SearchVectors after deleting the last path: %v", err)
+	}
+	if len(hits) != 0 {
+		t.Errorf("hits = %+v, want none — unreferenced content contributes nothing, pre-sweep", hits)
+	}
 }
 
 func TestVecTableUsesCosineMetric(t *testing.T) {

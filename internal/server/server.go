@@ -137,10 +137,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/status", s.methodNotAllowed(http.MethodGet))
 	// #19 (list + get) registers here in the same double pattern:
-	// `GET /v1/docs` and `GET /v1/docs/content/{content_hash}` (path as the
-	// r.PathValue wildcard; `?path=` convenience resolved through
-	// documents). Keyed by content hash, never a doc_id — DESIGN.md: HTTP
-	// API, ADR 0015.
+	// `GET /v1/docs` and `GET /v1/docs/content/{content_hash}` (the hash as
+	// the r.PathValue wildcard — a single-segment wildcard cannot hold a
+	// filesystem path, which is one of the reasons the route keys on the
+	// hash; `?path=` is the convenience, resolved through documents).
+	// Keyed by content hash, never a doc_id — DESIGN.md: HTTP API, ADR 0015.
 	mux.HandleFunc("/", s.notFound)
 
 	// Logging is outermost so a panicking request still produces a request
