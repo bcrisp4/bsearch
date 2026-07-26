@@ -155,6 +155,34 @@ func TestStatusRendersTheChangedTotalOnlyWhenNonZero(t *testing.T) {
 	}
 }
 
+// The collected total only earns a line when it is non-zero — like the
+// re-queued line, it is the daemon explaining background work, and here it
+// is the one visible trace of the orphan sweep. A corpus where files keep
+// being deleted while this number never moves is the sweep silently failing.
+func TestStatusRendersTheCollectedTotalOnlyWhenNonZero(t *testing.T) {
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Index: server.IndexStatus{Ready: true},
+		Indexing: &server.IndexingStatus{
+			Running: true,
+			Totals:  server.IndexingTotals{Indexed: 7, Collected: 5},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); !strings.Contains(got, "5 (orphaned content)") || !strings.Contains(got, "collected") {
+		t.Errorf("report does not carry the collected line:\n%s", got)
+	}
+
+	resp.Indexing.Totals.Collected = 0
+	out.Reset()
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); strings.Contains(got, "collected") || strings.Contains(got, "orphaned") {
+		t.Errorf("report mentions the sweep with nothing collected:\n%s", got)
+	}
+}
+
 // Unread files are invisible to search and the counts are the only place that
 // says so. All three reasons render whenever any is non-zero: denied is the
 // Full Disk Access signal and must never fold into dataless, which is an

@@ -398,17 +398,30 @@ func (s *Store) queryContents(ctx context.Context, op, query string, args ...any
 	return contents, nil
 }
 
+// sweepBatch bounds one sweep transaction: enough that a big purge takes
+// tens of transactions rather than thousands, small enough that each stays
+// a short write under the busy-timeout discipline — the repo rule every
+// other writer here follows, and an unbounded `rm -rf` sweep would not.
+const sweepBatch = 256
+
 // SweepOrphans deletes content no documents row references — the other half
 // of deletion (DeleteByPathPrefix removes only the documents row) and of
-// edits (discovery re-points a path and leaves the old hash behind). One
-// transaction, vectors first across every generation while the chunk ids
-// still resolve to find them by, then the content rows; chunks and
-// summaries follow by FK cascade. Returns how many contents went.
+// edits (discovery re-points a path and leaves the old hash behind). scope
+// says whether terminal orphans are collected too (see domain.SweepScope).
+// Returns how many contents went; chunks and summaries follow by FK
+// cascade, vectors are deleted first, per hash, across every generation,
+// while the chunk ids still resolve to find them by.
 //
-// ONE transaction, never find-then-delete across two: a file restored to
-// prior content in the gap (editor undo, `git checkout`, a sync client)
-// would lose derived data its hash had started referencing again — issue
-// #63's signature, rebuilt from new machinery.
+// Shaped for the common case: a cheap EXISTS probe on the reader answers
+// "anything to do?" without touching the writer or scanning a vector
+// table — the armed-but-empty sweep costs one indexed anti-join, not a
+// full vec0 scan per generation. Real work is cursor-paginated batches of
+// sweepBatch hashes, one short IMMEDIATE transaction each, and every batch
+// RE-VERIFIES orphan-ness inside its own transaction — find-then-delete
+// across transactions is exactly what would let a file restored to prior
+// content in the gap (editor undo, `git checkout`, a sync client) lose
+// derived data its hash had started referencing again (issue #63's
+// signature), so the find inside the transaction is the one that counts.
 //
 // NOT EXISTS, never NOT IN. documents.content_hash is nullable (unread
 // rows), and `hash NOT IN (SELECT content_hash FROM documents)` goes
@@ -416,40 +429,130 @@ func (s *Store) queryContents(ctx context.Context, op, query string, args ...any
 // would delete zero rows, permanently, with no error and no log. The shared
 // store-test seed keeps a NULL-hash row planted precisely so a rewrite in
 // that direction fails on arrival (see newTestStore).
-func (s *Store) SweepOrphans(ctx context.Context) (int, error) {
-	var removed int
-	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		tables, err := listVecTables(ctx, tx)
-		if err != nil {
-			return err
-		}
-		for table := range tables {
-			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-				DELETE FROM %s WHERE rowid IN (
-					SELECT c.id FROM chunks c
-					WHERE NOT EXISTS (SELECT 1 FROM documents d
-						WHERE d.content_hash = c.content_hash))`, table)); err != nil {
-				return fmt.Errorf("sweep orphan vectors from %s: %w", table, err)
-			}
-		}
-		res, err := tx.ExecContext(ctx, `
-			DELETE FROM content WHERE NOT EXISTS (
-				SELECT 1 FROM documents d
-				WHERE d.content_hash = content.content_hash)`)
-		if err != nil {
-			return fmt.Errorf("sweep orphan content: %w", err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("sweep orphan content: %w", err)
-		}
-		removed = int(n)
-		return nil
-	})
-	if err != nil {
-		return 0, err
+func (s *Store) SweepOrphans(ctx context.Context, scope domain.SweepScope) (int, error) {
+	stateFilter := ""
+	if scope == domain.SweepScopeQueue {
+		//nolint:gosec // G202: the spliced text is domain.TerminalContentStates, not input
+		stateFilter = "state NOT IN (" + terminalStatesSQL() + ") AND "
 	}
-	return removed, nil
+	orphaned := `NOT EXISTS (
+		SELECT 1 FROM documents d WHERE d.content_hash = content.content_hash)`
+
+	var due bool
+	if err := s.db.Reader().QueryRowContext(ctx,
+		"SELECT EXISTS (SELECT 1 FROM content WHERE "+stateFilter+orphaned+")").
+		Scan(&due); err != nil {
+		return 0, fmt.Errorf("probe for orphaned content: %w", err)
+	}
+	if !due {
+		return 0, nil
+	}
+
+	removed, cursor := 0, ""
+	for {
+		// Candidates are read outside the transaction and re-verified
+		// inside it; the cursor advances over candidates regardless of the
+		// verify's answer, so a hash re-referenced in the gap is skipped
+		// without ever being re-collected into a spin.
+		batch, err := s.sweepCandidates(ctx, stateFilter+orphaned, cursor)
+		if err != nil {
+			return removed, fmt.Errorf("collect orphaned content: %w", err)
+		}
+		if len(batch) == 0 {
+			return removed, nil
+		}
+		cursor = batch[len(batch)-1]
+
+		err = s.withTx(ctx, func(tx *sql.Tx) error {
+			doomed, err := verifyOrphans(ctx, tx, stateFilter+orphaned, batch)
+			if err != nil {
+				return fmt.Errorf("verify orphaned content: %w", err)
+			}
+
+			for _, hash := range doomed {
+				if err := deleteVectorsTx(ctx, tx, hash); err != nil {
+					return err
+				}
+			}
+			if len(doomed) == 0 {
+				return nil
+			}
+			dp := strings.TrimSuffix(strings.Repeat("?,", len(doomed)), ",")
+			da := make([]any, len(doomed))
+			for i, h := range doomed {
+				da[i] = h
+			}
+			//nolint:gosec // G202: the spliced text is ?-placeholders, not input
+			res, err := tx.ExecContext(ctx,
+				"DELETE FROM content WHERE content_hash IN ("+dp+")", da...)
+			if err != nil {
+				return fmt.Errorf("sweep orphaned content: %w", err)
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return err
+			}
+			removed += int(n)
+			return nil
+		})
+		if err != nil {
+			return removed, err
+		}
+		if len(batch) < sweepBatch {
+			return removed, nil
+		}
+	}
+}
+
+// sweepCandidates reads the next batch of orphan candidates after cursor, in
+// hash order. A read on the reader pool, deliberately outside any write
+// transaction — SweepOrphans re-verifies each batch inside its own.
+func (s *Store) sweepCandidates(ctx context.Context, predicate, cursor string) ([]string, error) {
+	//nolint:gosec // G202: the spliced text is SweepOrphans' own predicate, not input
+	rows, err := s.db.Reader().QueryContext(ctx, `
+		SELECT content_hash FROM content
+		WHERE content_hash > ? AND `+predicate+`
+		ORDER BY content_hash LIMIT ?`, cursor, sweepBatch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
+	var batch []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		batch = append(batch, hash)
+	}
+	return batch, rows.Err()
+}
+
+// verifyOrphans re-evaluates the orphan predicate over batch inside tx —
+// the find that counts, because it holds the same lock as the delete.
+func verifyOrphans(ctx context.Context, tx *sql.Tx, predicate string, batch []string) ([]string, error) {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+	args := make([]any, len(batch))
+	for i, h := range batch {
+		args[i] = h
+	}
+	//nolint:gosec // G202: the spliced text is ?-placeholders and SweepOrphans' own predicate, not input
+	rows, err := tx.QueryContext(ctx, `
+		SELECT content_hash FROM content
+		WHERE content_hash IN (`+placeholders+`) AND `+predicate, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
+	var doomed []string
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		doomed = append(doomed, hash)
+	}
+	return doomed, rows.Err()
 }
 
 // deleteVectorsTx removes a content's vec rows from EVERY generation, not

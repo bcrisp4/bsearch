@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -744,7 +745,18 @@ func TestSweepOrphansCollectsUnreferencedContent(t *testing.T) {
 		t.Fatalf("UpsertVectors orphan: %v", err)
 	}
 
-	// A model switch mints generation 2 and leaves the orphan's vectors
+	// A second orphan that has already gone terminal: SweepScopeAll is the
+	// startup sweep, and terminal orphans are exactly what it exists to
+	// collect — nothing else ever does.
+	indexedIDs := seedChunked(t, store, testDoc("h_orphan_indexed", "/orphan-indexed.md"), testChunks("indexed doomed"))
+	if err := store.UpsertVectors(ctx, indexedIDs, [][]float32{vec(4)}); err != nil {
+		t.Fatalf("UpsertVectors indexed orphan: %v", err)
+	}
+	if err := store.UpdateContentState(ctx, "h_orphan_indexed", domain.ContentStateIndexed); err != nil {
+		t.Fatalf("UpdateContentState: %v", err)
+	}
+
+	// A model switch mints generation 2 and leaves the orphans' vectors
 	// behind in generation 1 — the sweep must clean every generation, not
 	// just the current one.
 	if err := store.EnsureVecTable(ctx, vecSpec("model-b"), 4); err != nil {
@@ -754,22 +766,25 @@ func TestSweepOrphansCollectsUnreferencedContent(t *testing.T) {
 	if _, err := store.DeleteByPathPrefix(ctx, "/orphan.md"); err != nil {
 		t.Fatalf("DeleteByPathPrefix: %v", err)
 	}
+	if _, err := store.DeleteByPathPrefix(ctx, "/orphan-indexed.md"); err != nil {
+		t.Fatalf("DeleteByPathPrefix indexed orphan: %v", err)
+	}
 
-	removed, err := store.SweepOrphans(ctx)
+	removed, err := store.SweepOrphans(ctx, domain.SweepScopeAll)
 	if err != nil {
 		t.Fatalf("SweepOrphans: %v", err)
 	}
-	if removed != 1 {
-		t.Errorf("removed = %d, want 1 — exactly the orphaned content, with the NULL-hash seed row present", removed)
+	if removed != 2 {
+		t.Errorf("removed = %d, want 2 — both orphans, terminal included, with the NULL-hash seed row present", removed)
 	}
-	if got := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'h_orphan'"); got != 0 {
+	if got := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash IN ('h_orphan', 'h_orphan_indexed')"); got != 0 {
 		t.Errorf("orphan content rows = %d, want 0", got)
 	}
-	if got := countRows(t, db, "SELECT count(*) FROM chunks WHERE content_hash = 'h_orphan'"); got != 0 {
+	if got := countRows(t, db, "SELECT count(*) FROM chunks WHERE content_hash IN ('h_orphan', 'h_orphan_indexed')"); got != 0 {
 		t.Errorf("orphan chunk rows = %d, want 0 (FK cascade)", got)
 	}
-	if got := countRows(t, db, "SELECT count(*) FROM vec_chunks_1 WHERE rowid IN (?, ?)",
-		orphanIDs[0], orphanIDs[1]); got != 0 {
+	if got := countRows(t, db, "SELECT count(*) FROM vec_chunks_1 WHERE rowid IN (?, ?, ?)",
+		orphanIDs[0], orphanIDs[1], indexedIDs[0]); got != 0 {
 		t.Errorf("orphan vec rows = %d, want 0 — generation 1 is not current and must be swept anyway", got)
 	}
 
@@ -782,41 +797,157 @@ func TestSweepOrphansCollectsUnreferencedContent(t *testing.T) {
 	}
 }
 
-// A catalog with nothing orphaned sweeps to zero — the common case, and the
-// reason the scheduler only arms the sweep after deletions and edits.
+// A catalog with nothing orphaned sweeps to zero at either scope — the
+// common case, the one the EXISTS early-out exists for, and the reason the
+// scheduler only arms the sweep after deletions and edits.
 func TestSweepOrphansNothingToCollect(t *testing.T) {
 	store, _ := newTestStore(t)
 	ctx := context.Background()
 
 	seedChunked(t, store, testDoc("h_live", "/live.md"), testChunks("text"))
-	removed, err := store.SweepOrphans(ctx)
-	if err != nil {
-		t.Fatalf("SweepOrphans: %v", err)
+	for _, scope := range []domain.SweepScope{domain.SweepScopeQueue, domain.SweepScopeAll} {
+		removed, err := store.SweepOrphans(ctx, scope)
+		if err != nil {
+			t.Fatalf("SweepOrphans(%v): %v", scope, err)
+		}
+		if removed != 0 {
+			t.Errorf("removed = %d at scope %v, want 0", removed, scope)
+		}
 	}
-	if removed != 0 {
-		t.Errorf("removed = %d, want 0", removed)
+}
+
+// The queue scope collects only non-terminal orphans: the indexed orphan an
+// edit left behind keeps its content, chunks and vectors for the
+// free-restore window (an undo or a `git checkout` re-references it, and
+// eager collection would turn that into a full re-embed). The full scope
+// then collects it — the startup sweep's job.
+func TestSweepOrphansQueueScopeSparesTerminalOrphans(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("model-a"), 4); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+
+	// One orphan still in the pipeline (chunked, non-terminal) and one that
+	// finished (indexed, terminal, vectors written).
+	seedChunked(t, store, testDoc("h_queued", "/queued.md"), testChunks("in flight"))
+	indexedIDs := seedChunked(t, store, testDoc("h_done", "/done.md"), testChunks("finished"))
+	if err := store.UpsertVectors(ctx, indexedIDs, [][]float32{{1, 0, 0, 0}}); err != nil {
+		t.Fatalf("UpsertVectors: %v", err)
+	}
+	if err := store.UpdateContentState(ctx, "h_done", domain.ContentStateIndexed); err != nil {
+		t.Fatalf("UpdateContentState: %v", err)
+	}
+	if _, err := store.DeleteByPathPrefix(ctx, "/queued.md"); err != nil {
+		t.Fatalf("DeleteByPathPrefix queued: %v", err)
+	}
+	if _, err := store.DeleteByPathPrefix(ctx, "/done.md"); err != nil {
+		t.Fatalf("DeleteByPathPrefix done: %v", err)
+	}
+
+	removed, err := store.SweepOrphans(ctx, domain.SweepScopeQueue)
+	if err != nil {
+		t.Fatalf("SweepOrphans(queue): %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("removed = %d, want 1 — only the non-terminal orphan", removed)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'h_queued'"); got != 0 {
+		t.Errorf("queued orphan content rows = %d, want 0", got)
+	}
+	// The terminal orphan and everything derived from it survive intact.
+	if got := contentState(t, db, "h_done"); got != "indexed" {
+		t.Errorf("terminal orphan state = %q, want indexed and untouched", got)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM chunks WHERE content_hash = 'h_done'"); got != 1 {
+		t.Errorf("terminal orphan chunk rows = %d, want 1", got)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM vec_chunks_1 WHERE rowid = ?", indexedIDs[0]); got != 1 {
+		t.Errorf("terminal orphan vec rows = %d, want 1 — a spared orphan must stay restorable for free", got)
+	}
+
+	// The startup sweep's scope collects what the queue scope spared.
+	removed, err = store.SweepOrphans(ctx, domain.SweepScopeAll)
+	if err != nil {
+		t.Fatalf("SweepOrphans(all): %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("removed = %d at full scope, want the spared terminal orphan", removed)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'h_done'"); got != 0 {
+		t.Errorf("terminal orphan content rows = %d, want 0 after the full sweep", got)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM vec_chunks_1 WHERE rowid = ?", indexedIDs[0]); got != 0 {
+		t.Errorf("terminal orphan vec rows = %d, want 0 after the full sweep", got)
 	}
 }
 
 // An edit orphans the old hash the same way a deletion does: the path
-// re-points, nothing references the old content, and the sweep collects it.
+// re-points, nothing references the old content, and a queue-scope sweep
+// collects it — vectors included, because the edit path is exactly where an
+// orphaned hash is guaranteed to have them (review 3653204178).
 func TestSweepOrphansCollectsTheOldHashOfAnEditedFile(t *testing.T) {
 	store, db := newTestStore(t)
 	ctx := context.Background()
 
-	seedChunked(t, store, testDoc("h_before", "/note.md"), testChunks("v1"))
+	if err := store.EnsureVecTable(ctx, vecSpec("model-a"), 4); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+	beforeIDs := seedChunked(t, store, testDoc("h_before", "/note.md"), testChunks("v1"))
+	if err := store.UpsertVectors(ctx, beforeIDs, [][]float32{{1, 0, 0, 0}}); err != nil {
+		t.Fatalf("UpsertVectors: %v", err)
+	}
 	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc("h_after", "/note.md")}); err != nil {
 		t.Fatalf("re-point: %v", err)
 	}
 
-	removed, err := store.SweepOrphans(ctx)
+	// h_before is chunked — non-terminal — so the queue scope takes it.
+	removed, err := store.SweepOrphans(ctx, domain.SweepScopeQueue)
 	if err != nil {
 		t.Fatalf("SweepOrphans: %v", err)
 	}
 	if removed != 1 {
 		t.Errorf("removed = %d, want 1 (h_before)", removed)
 	}
+	if got := countRows(t, db, "SELECT count(*) FROM vec_chunks_1 WHERE rowid = ?", beforeIDs[0]); got != 0 {
+		t.Errorf("old hash's vec rows = %d, want 0 — chunk ids are AUTOINCREMENT, an orphaned vec row is permanent", got)
+	}
 	if got := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'h_after'"); got != 1 {
 		t.Errorf("new content rows = %d, want 1 — the edit's own row must survive", got)
+	}
+}
+
+// A sweep bigger than one batch pages through on the hash cursor: 300
+// orphans cross the 256-per-transaction boundary, and every one goes. The
+// batching is the busy-timeout discipline — what must not change is the
+// result.
+func TestSweepOrphansBatchesLargeSweeps(t *testing.T) {
+	store, db := newTestStore(t)
+	ctx := context.Background()
+
+	seedChunked(t, store, testDoc("h_live", "/live.md"), testChunks("kept"))
+	// Raw inserts: discovery would need 300 files to orphan; the sweep only
+	// cares that the rows exist and nothing references them.
+	for i := range 300 {
+		if _, err := db.Writer().ExecContext(ctx,
+			"INSERT INTO content (content_hash, state, created_at, updated_at) VALUES (?, 'discovered', 0, 0)",
+			fmt.Sprintf("orph-%03d", i)); err != nil {
+			t.Fatalf("insert orphan %d: %v", i, err)
+		}
+	}
+
+	removed, err := store.SweepOrphans(ctx, domain.SweepScopeQueue)
+	if err != nil {
+		t.Fatalf("SweepOrphans: %v", err)
+	}
+	if removed != 300 {
+		t.Errorf("removed = %d, want all 300 across the batch boundary", removed)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash LIKE 'orph-%'"); got != 0 {
+		t.Errorf("orphan rows left = %d, want 0", got)
+	}
+	if got := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'h_live'"); got != 1 {
+		t.Errorf("live content rows = %d, want the referenced row untouched", got)
 	}
 }

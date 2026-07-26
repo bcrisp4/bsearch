@@ -56,8 +56,12 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   file is deleted its search hits disappear immediately; the chunks, vectors
   and summaries its bytes produced are garbage-collected by a sweep that runs
   after deletions and edits (and once at startup), never on quiet cycles.
-  Nothing observable changes when it runs — that is the point: search never
-  waits on it.
+  Search results never change and never wait on it. Content you might come
+  back to — an undo, a `git checkout`, a copy restored from backup — is
+  deliberately spared while the daemon runs, so flipping between two
+  versions of a file never costs a re-embed; fully-processed orphans are
+  only collected at the next daemon start. `bsearch status` reports what
+  the sweep has collected.
 
 ### Added
 

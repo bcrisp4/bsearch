@@ -590,7 +590,11 @@ func (s *Scanner) processFile(ctx context.Context, path string, info fs.FileInfo
 	// New path, or a known path re-pointed to different bytes. The upsert
 	// creates the content row at discovered when the hash is new; when it
 	// is not — a duplicate, or a file restored to prior content — there is
-	// simply no work to schedule, structurally (ADR 0015).
+	// simply no work to schedule, structurally (ADR 0015). For a restore
+	// that holds for the life of the daemon process: the eager orphan sweep
+	// spares terminal content precisely so an undo or a split-window rename
+	// stays free, and only the startup sweep collects what is still
+	// unreferenced by then (domain.SweepScope).
 	s.pendingRes.Discovered++
 	if known && existing.ContentHash != "" && existing.ContentHash != hash {
 		s.pendingRes.Changed++

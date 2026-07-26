@@ -249,6 +249,13 @@ func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now ti
 		// an indexed corpus is being worked through again.
 		fields = append(fields, field{"re-queued", count(t.Swept) + " (superseded pipeline stage)"})
 	}
+	if t.Collected > 0 {
+		// Garbage collection after deletions and edits. Only when it
+		// happened — and worth a line when it did, because a corpus where
+		// files keep being deleted while this number never moves is the
+		// sweep silently failing.
+		fields = append(fields, field{"collected", count(t.Collected) + " (orphaned content)"})
+	}
 	if t.Superseded > 0 {
 		// Never expected. One goroutine writes the catalog (ADR 0014), so any
 		// count here means something else did — and the documents involved are

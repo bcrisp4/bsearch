@@ -179,6 +179,11 @@ type IndexingTotals struct {
 	Skipped int `json:"skipped"`
 	Retried int `json:"retried"`
 	Swept   int `json:"swept"`
+	// Collected counts orphaned contents removed by the background sweep —
+	// content no path references any more, after deletions and edits. Zero
+	// on a quiet daemon; a value that never moves while files are being
+	// deleted is the sweep silently failing, which is why it is reported.
+	Collected int `json:"collected,omitempty"`
 	// Changed counts claims abandoned because no copy of the file still
 	// held the claimed bytes — awaiting rediscovery, not failed. Its
 	// non-zero steady state is the signature of a file being rewritten

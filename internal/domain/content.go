@@ -170,6 +170,29 @@ type WorkItem struct {
 	Paths   []string
 }
 
+// SweepScope selects which orphaned content an orphan sweep collects.
+//
+// The split exists because the two orphan populations cost differently.
+// Non-terminal orphans pollute the queue — claimed and Gone-skipped every
+// drain — so they are collected eagerly. Terminal orphans cost nothing to
+// leave (the partial claim index excludes them) and are precisely the
+// expensive-to-rebuild ones: an undo, a `git checkout`, or a rename whose
+// halves land in different debounce windows re-references them, and an
+// eager collection would turn each of those into a full re-embed. They
+// wait for the startup sweep, so the free-restore window is the life of
+// the process.
+type SweepScope int
+
+const (
+	// SweepScopeQueue collects only non-terminal orphans — the ones that
+	// would otherwise be claimed and skipped forever.
+	SweepScopeQueue SweepScope = iota
+	// SweepScopeAll collects every orphan, terminal included. Run at
+	// startup: whatever a crash or a previous build left, plus terminal
+	// orphans accumulated over the last process's lifetime.
+	SweepScopeAll
+)
+
 // QueueDepth is the dispatchable backlog: content the scheduler would work
 // on now, and content waiting out a retry backoff. Reported by `bsearch
 // status`, where the split is the point — a queue draining a backlog and a
