@@ -36,14 +36,16 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   reindexes on next start; an old database left in place is refused with an
   error saying exactly that.
 
-- **Files bsearch couldn't read are now remembered, not just logged.** A
-  permission-denied file (the missing Full Disk Access case), an iCloud
+- **Files bsearch couldn't read are now remembered, not just logged.** A file
+  that can be seen but not opened (a per-file permission denial), an iCloud
   placeholder skipped so it never triggers a download, and a file that failed
-  to read are each recorded with their reason and stay visible in
+  mid-read are each recorded with their reason and stay visible in
   `bsearch status` in steady state — previously a denial was only reported if
-  the *most recent* scan happened to touch it. A file that was indexed before
-  becoming unreadable keeps serving its indexed content rather than
-  disappearing from search.
+  the *most recent* scan happened to touch it. A directory-level denial — the
+  usual missing Full Disk Access shape — still surfaces through scan errors
+  only: the files inside were never even seen, so there is nothing to record.
+  A file that was indexed before becoming unreadable keeps serving its
+  indexed content rather than disappearing from search.
 
 - **Discovery writes are batched.** A first scan over a large corpus commits
   catalog rows hundreds at a time instead of one transaction per file

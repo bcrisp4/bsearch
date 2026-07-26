@@ -1450,7 +1450,7 @@ func TestSupersededContentIsReportedAndRescheduled(t *testing.T) {
 // charges no attempt and moves no counter — but seen must still bound a
 // hot-edited file to one abandoned read per drain, because the row stays
 // claimable the whole time.
-func TestChangedContentIsAbandonedWithoutChargeOrCount(t *testing.T) {
+func TestChangedContentIsDeferredWithoutChargeAndCounted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
@@ -1465,21 +1465,53 @@ func TestChangedContentIsAbandonedWithoutChargeOrCount(t *testing.T) {
 			t.Errorf("counters = indexed %d failed %d skipped %d retried %d superseded %d, want all zero — a changed file is nobody's failure",
 				snap.Indexed, snap.Failed, snap.Skipped, snap.Retried, snap.Superseded)
 		}
-		reschedules, failures, _, claims := q.counts()
-		if reschedules != 0 || failures != 0 {
-			t.Errorf("reschedules = %d, failures = %d, want 0 and 0 — nothing is charged", reschedules, failures)
+		if snap.Changed != 1 {
+			t.Errorf("Changed = %d, want 1 — the abandoned claim must be visible in status", snap.Changed)
 		}
-		// The row stays claimable (discovered, no backoff), so the drain
-		// re-claims it — and seen is the only thing standing between that and
-		// re-reading a hot file forever within one drain.
-		if claims < 2 {
-			t.Fatalf("claims = %d, want the drain to have re-claimed after the abandoned read", claims)
+		// Deferred at the backoff cap without charging: attempts unchanged,
+		// next_retry_at in the future, so the pathological shapes (a
+		// continuously-rewritten file, a size-and-mtime-preserving edit
+		// discovery can never notice) cost one read per cap interval, not
+		// one per drain.
+		reschedules, failures, _, _ := q.counts()
+		if reschedules != 1 || failures != 0 {
+			t.Errorf("reschedules = %d, failures = %d, want 1 and 0", reschedules, failures)
+		}
+		if got := q.reschedules[0]; got.hash != "c_1" || got.attempts != 0 {
+			t.Errorf("reschedule = %+v, want c_1 deferred with attempts unchanged (0)", got)
 		}
 		if got := ix.processedHashes(); len(got) != 1 || got[0] != "c_1" {
 			t.Errorf("processed %v, want exactly one abandoned read of c_1 in this drain", got)
 		}
 		if c := q.snapshotContent("c_1"); c.State != domain.ContentStateDiscovered || c.Attempts != 0 {
-			t.Errorf("c_1 = state %q attempts %d, want the row untouched", c.State, c.Attempts)
+			t.Errorf("c_1 = state %q attempts %d, want state and budget untouched", c.State, c.Attempts)
+		}
+	})
+}
+
+// pipeline.movedOn folds two sentinels into OutcomeSuperseded and documents
+// that the caller tells them apart. ErrContentGone is routine — the row was
+// swept mid-flight once the orphan sweep exists — and must not trip the
+// ADR 0014 invariant alarm or charge backoff to a row that no longer
+// exists.
+func TestSupersededWithContentGoneIsRoutineNotAnAlarm(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_1"))
+		ix := newFakeIndexer()
+		ix.outcomes["c_1"] = pipeline.Result{
+			Outcome: pipeline.OutcomeSuperseded,
+			Err:     fmt.Errorf("store chunks: %w", domain.ErrContentGone),
+		}
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.Superseded != 0 {
+			t.Errorf("Superseded = %d, want 0 — a mid-flight sweep is not a broken invariant", snap.Superseded)
+		}
+		if reschedules, failures, _, _ := q.counts(); reschedules != 0 || failures != 0 {
+			t.Errorf("reschedules = %d, failures = %d, want 0 and 0 — nothing is owed to a swept row", reschedules, failures)
 		}
 	})
 }

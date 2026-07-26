@@ -75,8 +75,11 @@ type DocumentStore interface {
 	// UpsertDocuments writes the batch in one transaction (#34). For each
 	// doc with a ContentHash, the content row is created at discovered if
 	// absent — the eager insert that keeps dispatch a plain predicate over
-	// content rather than an anti-join (ADR 0015). Existing content rows are
-	// never touched: a second identical file schedules no work.
+	// content rather than an anti-join (ADR 0015). An existing terminal row
+	// is never touched (a second identical file schedules no work); an
+	// existing non-terminal row gets its updated_at bumped, so re-referenced
+	// bytes — an undo, a restore, a copy — are hot in the claim's recency
+	// ordering rather than stranded behind the aging slice.
 	//
 	// An upsert on an existing path replaces the row wholesale: rename,
 	// edit, unread→readable and readable→unread are all this one call.
@@ -109,10 +112,13 @@ type ContentStore interface {
 	// vectors, stage versions, or retry columns. StoreChunks cannot serve
 	// this: it replaces chunks wholesale and deletes their vectors.
 	UpdateContentState(ctx context.Context, hash string, state ContentState) error
-	// MarkFailed sets state=failed and records the reason in last_error.
-	// Permanent by construction: content is immutable, so nothing resets
-	// it — a changed file is a different content row, and a config change
-	// re-queues it via ResetStale, which is a different event.
+	// MarkFailed sets state=failed, records the reason in last_error, and
+	// deletes the content's chunks and vectors in the same transaction —
+	// failed content must not serve stale chunks, and every route to
+	// failed must leave identical state behind. Permanent by construction:
+	// content is immutable, so nothing resets it — a changed file is a
+	// different content row, and a config change re-queues it via
+	// ResetStale, which is a different event.
 	MarkFailed(ctx context.Context, hash, reason string) error
 }
 
@@ -132,19 +138,20 @@ type Queue interface {
 	// backlog ever starving.
 	ClaimBatch(ctx context.Context, now time.Time, limit int) ([]Content, error)
 	// GetWork re-reads one claimed row immediately before working it and
-	// picks the path the pipeline should read bytes from: the referencing
-	// document with the newest mtime, tie-broken by path ascending — the
-	// same rule that picks a search hit's primary path, so "which path does
-	// bsearch mean by this content" has one answer. A batch is read once
-	// and worked through over the following minutes, so a claimed copy can
-	// be stale by the time its turn comes (ADR 0014).
+	// resolves every path referencing it, newest mtime first, tie-broken
+	// by path ascending — the same rule that picks a search hit's primary
+	// path, so "which path does bsearch mean by this content" has one
+	// answer. A batch is read once and worked through over the following
+	// minutes, so a claimed copy can be stale by the time its turn comes
+	// (ADR 0014).
 	//
 	// ErrContentGone when the row was swept, or when no live path
 	// references it — deleted while in flight; the sweep will collect it.
 	//
-	// The chosen path can still change under the pipeline after this read;
-	// the pipeline hashes what it actually read and abandons on mismatch,
-	// so a wrong pick costs one file read, never a wrong index entry.
+	// Any path can still change under the pipeline after this read; the
+	// pipeline hashes what it actually read, falls back to the next copy
+	// on a read failure, and abandons on mismatch — so a stale resolution
+	// costs file reads, never a wrong index entry.
 	GetWork(ctx context.Context, hash string) (WorkItem, error)
 	// Reschedule records a transient failure: attempts, the next due time,
 	// and the reason. State is left alone — the content keeps whatever

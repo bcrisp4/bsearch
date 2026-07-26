@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	sqlitevec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 
@@ -318,17 +320,33 @@ func (s *Store) UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][
 }
 
 // SearchVectors returns the limit nearest chunks by ascending distance,
-// fanned out per referencing path: the documents join is on the content
-// hash, so a chunk whose content lives at N paths yields N consecutive rows,
-// newest mtime first then path ascending — the ordering contract
-// CollapseBestPerContent's primary-path pick depends on. limit counts KNN
-// chunks (the vec subquery), not fanned-out rows.
+// fanned out per referencing path: a chunk whose content lives at N paths
+// yields N consecutive Hits, newest mtime first then path ascending — the
+// ordering contract CollapseBestPerContent's primary-path pick depends on.
+// limit counts KNN chunks (the vec subquery), not fanned-out rows.
 //
-// The join is deliberately inner: content no document references (deleted,
-// sweep pending) contributes nothing, so a deletion takes effect the moment
-// its documents row goes — and unread rows (NULL content_hash) never match.
+// Two queries in one read transaction, fanned out in Go, rather than one
+// three-way join: joining documents into the KNN statement re-materialised
+// every chunk's text once per referencing path and pushed the lot through a
+// temp B-tree sorter — measured at 118 ms / 128 MB for k=80 against a
+// 1000-path content, on the p95 < 500 ms hot path. Here the chunk columns
+// are read once per chunk; the fan-out duplicates string headers, so a
+// heavily-copied file costs pointers, not payload. The transaction is what
+// keeps the two reads one snapshot — a path deleted between them can
+// neither appear with no chunk nor vice versa.
+//
+// The fan-out keeps inner-join semantics: content no document references
+// (deleted, sweep pending) contributes nothing, so a deletion takes effect
+// the moment its documents row goes — and unread rows (NULL content_hash)
+// never match the hash lookup.
 func (s *Store) SearchVectors(ctx context.Context, query []float32, limit int) ([]domain.Hit, error) {
-	table, desc, err := currentVecTable(ctx, s.db.Reader())
+	tx, err := s.db.Reader().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("search vectors: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // read-only
+
+	table, desc, err := currentVecTable(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -341,23 +359,48 @@ func (s *Store) SearchVectors(ctx context.Context, query []float32, limit int) (
 		return nil, fmt.Errorf("serialize query: %w", err)
 	}
 
-	rows, err := s.db.Reader().QueryContext(ctx, fmt.Sprintf(`
-		SELECT c.ordinal, c.text, c.heading_path, c.byte_start, c.byte_end,
-		       %s, v.distance
+	chunks, err := knnChunks(ctx, tx, table, blob, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(chunks) == 0 {
+		return nil, nil
+	}
+	docsByHash, err := documentsByHash(ctx, tx, chunkHashes(chunks))
+	if err != nil {
+		return nil, err
+	}
+
+	hits := make([]domain.Hit, 0, limit)
+	for _, ch := range chunks {
+		for _, doc := range docsByHash[ch.Doc.ContentHash] {
+			h := ch
+			h.Doc = doc
+			hits = append(hits, h)
+		}
+	}
+	return hits, nil
+}
+
+// knnChunks runs the KNN subquery joined to chunks only — no documents, so
+// each of the k chunk rows is read exactly once, however many paths hold it.
+// Rows come back (distance, chunk id) ascending; Doc carries only the
+// content hash until documentsByHash fills in the referencing paths.
+func knnChunks(ctx context.Context, tx *sql.Tx, table string, blob []byte, k int) ([]domain.Hit, error) {
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
+		SELECT c.content_hash, c.ordinal, c.text, c.heading_path, c.byte_start, c.byte_end, v.distance
 		FROM (SELECT rowid, distance FROM %s WHERE embedding MATCH ? AND k = ?) v
 		JOIN chunks c ON c.id = v.rowid
-		JOIN documents d ON d.content_hash = c.content_hash
-		ORDER BY v.distance, c.id, d.mtime DESC, d.path ASC`,
-		prefixedDocumentColumns, table), blob, limit)
+		ORDER BY v.distance, c.id`, table), blob, k)
 	if err != nil {
 		// An indexer in another process can retire this generation between
-		// the lookup above and the query — the table is simply gone. That's
-		// "nothing to search right now", not a storage fault, so it reports
-		// as ErrNoVecTable. SQLite gives no distinct result code for a
-		// missing table, hence the message match; it names the vector table
-		// specifically, because the statement also joins chunks and
-		// documents and a missing one of those is permanent damage, not a
-		// generation cutover worth retrying.
+		// the descriptor lookup and this query — the table is simply gone.
+		// That's "nothing to search right now", not a storage fault, so it
+		// reports as ErrNoVecTable. SQLite gives no distinct result code for
+		// a missing table, hence the message match; it names the vector
+		// table specifically, because the statement also joins chunks and a
+		// missing chunks table is permanent damage, not a generation cutover
+		// worth retrying.
 		if strings.Contains(err.Error(), "no such table: "+table) {
 			return nil, fmt.Errorf("vector table %s was retired mid-query: %w", table, ErrNoVecTable)
 		}
@@ -367,21 +410,74 @@ func (s *Store) SearchVectors(ctx context.Context, query []float32, limit int) (
 
 	var hits []domain.Hit
 	for rows.Next() {
-		var (
-			h   domain.Hit
-			raw documentRow
-		)
-		targets := []any{
-			&h.Chunk.Ordinal, &h.Chunk.Text,
+		var h domain.Hit
+		if err := rows.Scan(
+			&h.Doc.ContentHash, &h.Chunk.Ordinal, &h.Chunk.Text,
 			&h.Chunk.HeadingPath, &h.Chunk.ByteStart, &h.Chunk.ByteEnd,
-		}
-		targets = append(targets, raw.targets(&h.Doc)...)
-		targets = append(targets, &h.Distance)
-		if err := rows.Scan(targets...); err != nil {
+			&h.Distance); err != nil {
 			return nil, err
 		}
-		raw.finish(&h.Doc)
 		hits = append(hits, h)
 	}
 	return hits, rows.Err()
+}
+
+// chunkHashes collects the distinct content hashes of a chunk result.
+func chunkHashes(chunks []domain.Hit) []string {
+	seen := make(map[string]struct{}, len(chunks))
+	hashes := make([]string, 0, len(chunks))
+	for _, ch := range chunks {
+		if _, dup := seen[ch.Doc.ContentHash]; dup {
+			continue
+		}
+		seen[ch.Doc.ContentHash] = struct{}{}
+		hashes = append(hashes, ch.Doc.ContentHash)
+	}
+	return hashes
+}
+
+// documentsByHash fetches every documents row referencing the hashes, each
+// hash's rows sorted newest mtime first, tie broken by path ascending — the
+// primary-path rule (GetWork's, and the wire contract's). The sort is here,
+// in Go, because the fan-out loop emits rows in slice order: dropping it
+// would misassign primaries silently.
+func documentsByHash(ctx context.Context, tx *sql.Tx, hashes []string) (map[string][]domain.Document, error) {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(hashes)), ",")
+	args := make([]any, len(hashes))
+	for i, h := range hashes {
+		args[i] = h
+	}
+	//nolint:gosec // G202: the spliced text is generated "?" placeholders; the hashes are bound
+	rows, err := tx.QueryContext(ctx,
+		"SELECT content_hash, path, size, mtime FROM documents WHERE content_hash IN ("+placeholders+")",
+		args...)
+	if err != nil {
+		return nil, fmt.Errorf("resolve hit paths: %w", err)
+	}
+	defer rows.Close()
+
+	docs := make(map[string][]domain.Document, len(hashes))
+	for rows.Next() {
+		var (
+			doc     domain.Document
+			mtimeNS int64
+		)
+		if err := rows.Scan(&doc.ContentHash, &doc.Path, &doc.Size, &mtimeNS); err != nil {
+			return nil, err
+		}
+		doc.MTime = time.Unix(0, mtimeNS)
+		docs[doc.ContentHash] = append(docs[doc.ContentHash], doc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("resolve hit paths: %w", err)
+	}
+	for _, list := range docs {
+		sort.Slice(list, func(i, j int) bool {
+			if !list[i].MTime.Equal(list[j].MTime) {
+				return list[i].MTime.After(list[j].MTime)
+			}
+			return list[i].Path < list[j].Path
+		})
+	}
+	return docs, nil
 }

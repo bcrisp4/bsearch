@@ -337,8 +337,8 @@ func TestScanPathsRenameRepointsPathNotContent(t *testing.T) {
 	if !slices.Equal(store.ops, []string{"upsert", "upsert", "delete"}) {
 		t.Errorf("write order = %v, want the rename's upsert committed before the purge", store.ops)
 	}
-	if !slices.ContainsFunc(store.batches[1], func(d domain.Document) bool { return d.Path == renamed }) {
-		t.Errorf("batch before the purge = %+v, want it to carry the new path", store.batches[1])
+	if len(store.batches) < 2 || !slices.ContainsFunc(store.batches[1], func(d domain.Document) bool { return d.Path == renamed }) {
+		t.Errorf("batches = %+v, want the rename's upsert committed before the purge", store.batches)
 	}
 }
 
@@ -475,6 +475,87 @@ func TestScanPathsDatalessPersistsUnreadRow(t *testing.T) {
 	}
 	if len(store.content) != 0 {
 		t.Errorf("content rows = %v, want none — the file must never be opened", store.content)
+	}
+}
+
+// The buffer makes duplicate input non-idempotent (GetByPath reads the
+// store, not pending), so ScanPaths deduplicates: the same path twice in a
+// call is one visit, one count, one row — never a second row that could
+// clobber the first inside one batch.
+func TestScanPathsDuplicateInputProcessedOnce(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "a.md")
+	write(t, path, "hello")
+	store := newFakeStore()
+
+	res := scanPaths(t, store, Options{Include: []string{dir}}, path, path)
+
+	if res.Discovered != 1 {
+		t.Errorf("Result = %+v, want the duplicate folded into one visit", res)
+	}
+	if len(store.upserts) != 1 || len(store.pathLookups) != 1 {
+		t.Errorf("upserts = %d, lookups = %d, want 1/1", len(store.upserts), len(store.pathLookups))
+	}
+}
+
+// A walk reconciles what exists, so an ancestor's walk cannot answer for a
+// vanished descendant: a file deleted while its still-existing directory is
+// in the same batch must still be purged, or the row serves search hits
+// forever.
+func TestScanPathsVanishedUnderWalkedAncestorStillPurged(t *testing.T) {
+	dir := tmpDir(t)
+	sub := filepath.Join(dir, "sub")
+	gone := filepath.Join(sub, "gone.md")
+	write(t, filepath.Join(sub, "kept.md"), "stays")
+	write(t, gone, "goes")
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scanPaths(t, store, opts, sub)
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	// The directory sorts before the file, so the walk of sub runs first —
+	// the ordering that used to swallow the deletion.
+	res := scanPaths(t, store, opts, sub, gone)
+
+	if res.Deleted != 1 || res.Unchanged != 1 {
+		t.Fatalf("Result = %+v, want the vanished child purged and the survivor unchanged", res)
+	}
+	if _, stale := store.docs[gone]; stale {
+		t.Error("the vanished file's row survived behind its walked ancestor")
+	}
+	if _, ok := store.docs[filepath.Join(sub, "kept.md")]; !ok {
+		t.Error("the surviving sibling was purged")
+	}
+}
+
+// Pass 1 commits per event, not once at the end: a debounce window is
+// nearly always far smaller than flushEvery, so an end-of-pass flush would
+// lose the whole reconcile to a shutdown or cancellation instead of at most
+// the event in flight.
+func TestScanPathsFlushesPerEvent(t *testing.T) {
+	dir := tmpDir(t)
+	var paths []string
+	for _, name := range []string{"a.md", "b.md", "c.md"} {
+		p := filepath.Join(dir, name)
+		write(t, p, "content of "+name)
+		paths = append(paths, p)
+	}
+	store := newFakeStore()
+
+	res := scanPaths(t, store, Options{Include: []string{dir}}, paths...)
+
+	if res.Discovered != 3 {
+		t.Fatalf("Result = %+v, want 3 discovered", res)
+	}
+	if len(store.batches) != 3 {
+		t.Fatalf("batches = %d, want one commit per event", len(store.batches))
+	}
+	for i, b := range store.batches {
+		if len(b) != 1 {
+			t.Errorf("batch %d holds %d docs, want 1", i, len(b))
+		}
 	}
 }
 
