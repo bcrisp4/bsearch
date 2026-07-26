@@ -138,7 +138,7 @@ func decodeError(t *testing.T, body []byte) (code, message string) {
 
 func TestSearchReturnsHits(t *testing.T) {
 	backend := &fakeBackend{resp: search.Response{
-		Hits:   []search.Hit{{Path: "/notes/a.md", ContentHash: "h1", Distance: 0.25}},
+		Hits:   []search.Hit{{Path: "/notes/a.md", ContentHash: "sha256:h1", Distance: 0.25}},
 		TookMS: 12,
 	}}
 	ts := newTestServer(t, backend)
@@ -154,7 +154,7 @@ func TestSearchReturnsHits(t *testing.T) {
 	if err := json.Unmarshal(rep.body, &out); err != nil {
 		t.Fatalf("decode: %v (body %s)", err, rep.body)
 	}
-	if len(out.Hits) != 1 || out.Hits[0].ContentHash != "h1" || out.Hits[0].Path != "/notes/a.md" {
+	if len(out.Hits) != 1 || out.Hits[0].ContentHash != "sha256:h1" || out.Hits[0].Path != "/notes/a.md" {
 		t.Errorf("hits = %+v, want the backend's single hit", out.Hits)
 	}
 	if got := backend.request(); got.Query != "heat pump" || got.Limit != 5 {

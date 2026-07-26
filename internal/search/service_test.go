@@ -27,7 +27,10 @@ type fakeIndex struct {
 	specErr  error
 	hits     []domain.Hit
 	searchEr error
-	gotLimit int
+	// hitsByLimit, when set, answers each call from the k it was asked for
+	// — how the k-escalation retry is exercised. hits answers otherwise.
+	hitsByLimit map[int][]domain.Hit
+	gotLimits   []int
 }
 
 func (f *fakeIndex) CurrentVecSpec(context.Context) (domain.EmbeddingSpec, int, error) {
@@ -38,9 +41,12 @@ func (f *fakeIndex) CurrentVecSpec(context.Context) (domain.EmbeddingSpec, int, 
 }
 
 func (f *fakeIndex) SearchVectors(_ context.Context, _ []float32, limit int) ([]domain.Hit, error) {
-	f.gotLimit = limit
+	f.gotLimits = append(f.gotLimits, limit)
 	if f.searchEr != nil {
 		return nil, f.searchEr
+	}
+	if f.hitsByLimit != nil {
+		return f.hitsByLimit[limit], nil
 	}
 	return f.hits, nil
 }
@@ -95,8 +101,10 @@ func TestSearchReturnsHits(t *testing.T) {
 		t.Fatalf("got %d hits, want 1", len(resp.Hits))
 	}
 	got := resp.Hits[0]
-	if got.ContentHash != "h1" || got.Path != "/notes/a.md" {
-		t.Errorf("hit = %+v, want content h1 at /notes/a.md", got)
+	// The wire hash is prefixed with the algorithm (DESIGN.md); the store
+	// hands the service bare hex.
+	if got.ContentHash != "sha256:h1" || got.Path != "/notes/a.md" {
+		t.Errorf("hit = %+v, want content sha256:h1 at /notes/a.md", got)
 	}
 	if got.Distance != 0.1 {
 		t.Errorf("distance = %v, want 0.1", got.Distance)
@@ -147,8 +155,8 @@ func TestSearchOverFetchesChunks(t *testing.T) {
 	if _, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 5}); err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if want := search.KnnK(5); index.gotLimit != want {
-		t.Errorf("SearchVectors limit = %d, want the over-fetch %d", index.gotLimit, want)
+	if want := search.KnnK(5); len(index.gotLimits) == 0 || index.gotLimits[0] != want {
+		t.Errorf("SearchVectors limits = %v, want the first call at the over-fetch %d", index.gotLimits, want)
 	}
 }
 
@@ -158,8 +166,69 @@ func TestSearchDefaultsLimit(t *testing.T) {
 	if _, err := svc.Search(context.Background(), search.Request{Query: "alpha"}); err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if want := search.KnnK(search.DefaultLimit); index.gotLimit != want {
-		t.Errorf("SearchVectors limit = %d, want the default-limit over-fetch %d", index.gotLimit, want)
+	if want := search.KnnK(search.DefaultLimit); len(index.gotLimits) == 0 || index.gotLimits[0] != want {
+		t.Errorf("SearchVectors limits = %v, want the first call at the default-limit over-fetch %d", index.gotLimits, want)
+	}
+}
+
+// Orphaned vectors (deleted content pending the sweep) occupy KNN slots and
+// are dropped by the store's documents join, so a bulk delete can starve a
+// query that over-fetched "enough". When the collapse comes up short of the
+// limit, the service retries once at the k ceiling.
+func TestSearchEscalatesKWhenCollapseComesUpShort(t *testing.T) {
+	svc, index, _ := newService(t)
+	index.hitsByLimit = map[int][]domain.Hit{
+		// The first pass finds one live content; the ceiling finds two —
+		// the shape of a top-k full of dead rows with live matches past it.
+		search.KnnK(2): {hit("h1", "/notes/a.md", "alpha", 0.1)},
+		search.MaxKNNK: {
+			hit("h1", "/notes/a.md", "alpha", 0.1),
+			hit("h2", "/notes/b.md", "beta", 0.9),
+		},
+	}
+
+	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 2})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(resp.Hits) != 2 {
+		t.Fatalf("hits = %+v, want both contents after the retry", resp.Hits)
+	}
+	want := []int{search.KnnK(2), search.MaxKNNK}
+	if len(index.gotLimits) != 2 || index.gotLimits[0] != want[0] || index.gotLimits[1] != want[1] {
+		t.Errorf("SearchVectors limits = %v, want %v", index.gotLimits, want)
+	}
+}
+
+func TestSearchDoesNotEscalateWhenTheLimitIsMet(t *testing.T) {
+	svc, index, _ := newService(t)
+	index.hitsByLimit = map[int][]domain.Hit{
+		search.KnnK(1): {hit("h1", "/notes/a.md", "alpha", 0.1)},
+	}
+
+	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 1})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(resp.Hits) != 1 {
+		t.Fatalf("hits = %+v, want one", resp.Hits)
+	}
+	if len(index.gotLimits) != 1 {
+		t.Errorf("SearchVectors called %d times (%v), want once — a full response must not pay a rescan", len(index.gotLimits), index.gotLimits)
+	}
+}
+
+func TestSearchDoesNotEscalatePastTheCeiling(t *testing.T) {
+	// At MaxLimit the first pass is already at MaxKNNK; a retry at the same
+	// k would repeat the identical query for the identical answer.
+	svc, index, _ := newService(t)
+	index.hits = nil
+
+	if _, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: search.MaxLimit}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(index.gotLimits) != 1 || index.gotLimits[0] != search.MaxKNNK {
+		t.Errorf("SearchVectors limits = %v, want one call at MaxKNNK", index.gotLimits)
 	}
 }
 
@@ -183,7 +252,7 @@ func TestSearchCollapsesToBestChunkPerContent(t *testing.T) {
 	if len(resp.Hits) != 2 {
 		t.Fatalf("got %d hits, want 2 (one per content)", len(resp.Hits))
 	}
-	if resp.Hits[0].ContentHash != "h1" || resp.Hits[0].ChunkPreview != "better chunk" {
+	if resp.Hits[0].ContentHash != "sha256:h1" || resp.Hits[0].ChunkPreview != "better chunk" {
 		t.Errorf("first hit = %+v, want h1's best chunk", resp.Hits[0])
 	}
 }

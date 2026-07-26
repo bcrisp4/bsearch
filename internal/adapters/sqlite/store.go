@@ -39,14 +39,17 @@ func (s *Store) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 }
 
 // UpsertDocuments writes the batch in one short IMMEDIATE transaction (#34):
-// content rows first (created at discovered if absent, never touched if
-// present — a second identical file schedules no work), then the documents
+// content rows first (created at discovered if absent), then the documents
 // rows, wholesale.
 //
 // The eager content insert is what keeps dispatch a plain predicate over
-// content rather than an anti-join (ADR 0015). Its updated_at is the insert
-// time, which is what makes a just-changed file hot in the claim's recency
-// ordering.
+// content rather than an anti-join (ADR 0015). A re-referenced hash splits
+// on whether the row is terminal: non-terminal content gets its updated_at
+// bumped, so an undo, a `git checkout`, or a copy of not-yet-indexed bytes
+// is hot in the claim's recency ordering rather than stranded behind the
+// aging slice; terminal content is never touched — a second identical file
+// schedules no work, and re-discovering indexed or failed bytes must not
+// drag them back through the pipeline.
 //
 // The documents upsert replaces the row completely: a rename is the same
 // path-keyed write as an edit, an unread→readable transition is the hash
@@ -60,10 +63,12 @@ func (s *Store) UpsertDocuments(ctx context.Context, docs []domain.Document) err
 	return s.withTx(ctx, func(tx *sql.Tx) error {
 		now := time.Now().Unix()
 
+		//nolint:gosec // G202: the spliced text is domain.TerminalContentStates, not input
 		insContent, err := tx.PrepareContext(ctx, `
 			INSERT INTO content (content_hash, state, created_at, updated_at)
 			VALUES (?, 'discovered', ?, ?)
-			ON CONFLICT (content_hash) DO NOTHING`)
+			ON CONFLICT (content_hash) DO UPDATE SET updated_at = excluded.updated_at
+				WHERE state NOT IN (`+terminalStatesSQL()+`)`)
 		if err != nil {
 			return err
 		}
@@ -245,13 +250,43 @@ func (s *Store) UpdateContentState(ctx context.Context, hash string, state domai
 		string(state), time.Now().Unix(), hash)
 }
 
-// MarkFailed sets state=failed and records the reason in last_error.
+// MarkFailed sets state=failed, records the reason in last_error, and
+// deletes the content's chunks and vectors (every generation) in the same
+// transaction. Failed content must not serve stale chunks, and there are two
+// routes to failed — the pipeline's normalize failure and the scheduler's
+// attempt cap — which must leave identical state behind, or M4's FTS5
+// external-content table would turn the cap route's leftovers into live
+// BM25 hits.
+//
 // Permanent by construction — content is immutable, so nothing resets it;
 // a config change re-queues it via ResetStale, which is a different event.
 func (s *Store) MarkFailed(ctx context.Context, hash, reason string) error {
-	return s.updateContent(ctx, "mark failed", hash,
-		"UPDATE content SET state = 'failed', last_error = ?, updated_at = ? WHERE content_hash = ?",
-		reason, time.Now().Unix(), hash)
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			"UPDATE content SET state = 'failed', last_error = ?, updated_at = ? WHERE content_hash = ?",
+			reason, time.Now().Unix(), hash)
+		if err != nil {
+			return fmt.Errorf("mark failed for %s: %w", hash, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			// Not a bug in the caller: the row can be swept between claiming
+			// content and giving up on it — see updateContent.
+			return fmt.Errorf("mark failed for %s: %w", hash, domain.ErrContentGone)
+		}
+		// Vectors first, while the chunk IDs still exist to find them by —
+		// the same discipline as StoreChunks' replacement path.
+		if err := deleteVectorsTx(ctx, tx, hash); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM chunks WHERE content_hash = ?", hash); err != nil {
+			return fmt.Errorf("delete chunks of failed %s: %w", hash, err)
+		}
+		return nil
+	})
 }
 
 // updateContent runs one UPDATE on a single content row inside a writer
@@ -322,6 +357,10 @@ func (s *Store) queryWorkItems(ctx context.Context, op, query string, args ...an
 		if err := raw.finish(&item.Content); err != nil {
 			return nil, err
 		}
+		// Primary only: the one-shot path (pipeline.Run, eval) works
+		// corpora with no duplicate files, so the fallback list is just
+		// the primary.
+		item.Paths = []string{item.Path}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {

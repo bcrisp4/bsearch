@@ -154,14 +154,20 @@ type Content struct {
 	LastError string
 }
 
-// WorkItem is one claimed piece of work: the content row plus the path the
-// pipeline should read bytes from. The path is chosen at re-read time
-// (Queue.GetWork) — the referencing document with the newest mtime,
-// tie-broken by path ascending, the same rule that picks a search hit's
-// primary path.
+// WorkItem is one claimed piece of work: the content row plus every path
+// holding those bytes, resolved at re-read time (Queue.GetWork). Paths is
+// ordered newest mtime first, tie-broken by path ascending — the same rule
+// that picks a search hit's primary path — and Path is its head, the
+// primary.
+//
+// All paths ride along because any copy is as good as another: the pipeline
+// verifies the bytes it reads against Content.Hash, so it may fall back to
+// the next copy when one is unreadable — one unmounted volume or revoked
+// grant must not block a perfectly readable duplicate.
 type WorkItem struct {
 	Content Content
 	Path    string
+	Paths   []string
 }
 
 // QueueDepth is the dispatchable backlog: content the scheduler would work
