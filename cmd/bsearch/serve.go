@@ -261,6 +261,7 @@ func indexingStatus(sched *scheduler.Scheduler, offReason string) server.Indexin
 			Reconciled: snap.WatchReconciled,
 			Deleted:    snap.WatchDeleted,
 			Rescans:    snap.WatchRescans,
+			Ignored:    snap.WatchIgnored,
 		},
 		Totals: server.IndexingTotals{
 			Indexed: snap.Indexed,

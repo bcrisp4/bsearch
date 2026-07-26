@@ -69,18 +69,18 @@ func run(t *testing.T, s *Scheduler) func() {
 }
 
 // seedPending stages a closed window the way the watcher would, minus the
-// wake hint.
+// wake hint and minus the overflow reporting.
 //
-// Deliberately mergePending rather than enqueue: enqueue notifies
-// unconditionally, and the tests below read s.notify as the observable of what
-// the *reconcile* decided. Going through enqueue would poison exactly the
-// assertion being made.
+// mergePending rather than enqueue, so a test that reads s.notify is reading
+// its own subject rather than the staging. Tests that care about the wake
+// itself call enqueue directly — see
+// TestTheHandoffWakesTheSchedulerAndTheReconcileDoesNot.
 func seedPending(s *Scheduler, paths ...string) {
 	set := make(map[string]struct{}, len(paths))
 	for _, p := range paths {
 		set[p] = struct{}{}
 	}
-	s.mergePending(set)
+	s.mergePending(set) //nolint:errcheck // staging a window; the cap is exercised by its own test
 }
 
 // A burst of events inside one debounce window is one reconcile, with the
@@ -122,39 +122,77 @@ func TestWatchCoalescesABurstIntoOneReconcile(t *testing.T) {
 	})
 }
 
-// A reconcile that changed nothing must not wake the drain: the daemon is
-// idle for weeks at a time, and an editor touching a file it did not change
-// is not a reason to probe an inference endpoint.
-func TestWatchNotifiesOnlyWhenSomethingChanged(t *testing.T) {
+// The wake belongs to the handoff, not to the reconcile.
+//
+// On main, reconcile ran on the watch goroutine and notified when it found
+// work. It now runs on the scheduler goroutine, which is the only reader of
+// that channel — so notifying there would be waking itself, and the buffered
+// token would survive to fire an entirely redundant cycle. The wake that
+// matters is enqueue's, which is what makes a closed window reconcile
+// promptly instead of waiting out a fifteen-minute interval.
+func TestTheHandoffWakesTheSchedulerAndTheReconcileDoesNot(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sc := watchedScanner("/root")
-		sc.pathResult = discovery.Result{Unchanged: 1}
-		w := newFakeWatcher()
+		sc.pathResult = discovery.Result{Deleted: 1}
 		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, func(o *Options) {
-			o.Watcher = w
+			o.Watcher = newFakeWatcher()
 		})
-
-		// Not started: Notify's buffer is the observable, so the loop is
-		// left out of it and the reconcile is driven directly.
 		s.mark(func(snap *Snapshot) { snap.Watching = true })
-		seedPending(s, "/root/a.md")
-		s.reconcilePending(t.Context())
+
+		// enqueue is the watch goroutine's half: it must wake the scheduler,
+		// or nothing reconciles until the next interval.
+		s.enqueue(map[string]struct{}{"/root/a.md": {}})
 		select {
 		case <-s.notify:
-			t.Error("an unchanged reconcile woke the drain")
 		default:
+			t.Fatal("a closed window did not wake the scheduler")
 		}
 
-		sc.pathResult = discovery.Result{Deleted: 1}
-		seedPending(s, "/root/a.md")
+		// The reconcile itself must not, however productive it is.
 		s.reconcilePending(t.Context())
 		select {
 		case <-s.notify:
+			t.Error("the reconcile notified the goroutine it was already running on")
 		default:
-			t.Error("a deletion did not wake the drain")
 		}
 		if snap := s.Snapshot(); snap.WatchDeleted != 1 {
 			t.Errorf("WatchDeleted = %d, want 1", snap.WatchDeleted)
+		}
+	})
+}
+
+// An unreachable endpoint is probed on the recheck interval, not on every
+// wake. Since ADR 0014 a closed debounce window wakes a cycle, so ordinary
+// churn under a watched root would otherwise set the probe rate — a connect
+// attempt every ten seconds against DESIGN.md's near-zero-CPU-when-idle.
+func TestAFailedEndpointProbeIsNotRepeatedOnEveryWake(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		ix := newFakeIndexer()
+		ix.prepareErr = errors.New("connection refused")
+		s := newScheduler(t, newFakeQueue(discoveredDoc("d_1")), ix, sc, nil)
+
+		for range 5 {
+			s.cycle(t.Context())
+		}
+		if got := ix.prepareCount(); got != 1 {
+			t.Errorf("probes = %d over five cycles, want 1 until the recheck interval", got)
+		}
+
+		time.Sleep(deferRecheckInterval)
+		s.cycle(t.Context())
+		if got := ix.prepareCount(); got != 2 {
+			t.Errorf("probes = %d after the recheck interval, want a second attempt", got)
+		}
+
+		// And the deferral is forgotten once the endpoint answers, or a
+		// server that came back would stay locked out for an interval.
+		ix.prepareErr = nil
+		time.Sleep(deferRecheckInterval)
+		s.cycle(t.Context())
+		s.cycle(t.Context())
+		if got := ix.prepareCount(); got != 4 {
+			t.Errorf("probes = %d, want the deferral cleared by a healthy probe", got)
 		}
 	})
 }
@@ -534,7 +572,7 @@ func TestPendingOverflowKeepsTheHeldSetAndAsksForAWalk(t *testing.T) {
 		for i := range maxPendingReconcile {
 			held["/root/"+itoa(i)+".md"] = struct{}{}
 		}
-		if !s.mergePending(held) {
+		if _, ok := s.mergePending(held); !ok {
 			t.Fatal("the first window was refused; the cap is not where the test thinks")
 		}
 
@@ -660,6 +698,64 @@ func TestProcessWorksFromTheRowAsItIsNowNotAsItWasClaimed(t *testing.T) {
 		}
 		if got != "/tmp/renamed.md" {
 			t.Errorf("d_2 processed at %q, want /tmp/renamed.md — the claimed copy is stale", got)
+		}
+	})
+}
+
+// The cap bounds the set's size, not merely admission to it. A window is
+// merged whole, and a debounce window can carry far more than one adapter
+// batch — the adapter's 8192 bound is per batch, and at a 1s coalescing
+// latency a 10s window holds about ten of them. Testing the size we already
+// have would let a merge accepted just under the cap land at multiples of it.
+func TestPendingCapBoundsTheSetNotJustAdmission(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), watchedScanner("/root"), nil)
+
+		// Start just under the cap, the way a busy window leaves it.
+		under := make(map[string]struct{}, maxPendingReconcile-1)
+		for i := range maxPendingReconcile - 1 {
+			under["/root/"+itoa(i)+".md"] = struct{}{}
+		}
+		if _, ok := s.mergePending(under); !ok {
+			t.Fatal("the first window was refused below the cap")
+		}
+
+		// A window that would take it past the cap is refused whole.
+		oversized := make(map[string]struct{}, 1000)
+		for i := range 1000 {
+			oversized["/root/next-"+itoa(i)+".md"] = struct{}{}
+		}
+		if _, ok := s.mergePending(oversized); ok {
+			t.Error("a window that would overshoot the cap was accepted")
+		}
+		if got := len(s.takePending()); got != maxPendingReconcile-1 {
+			t.Errorf("held %d paths, want the set left at %d", got, maxPendingReconcile-1)
+		}
+	})
+}
+
+// Repeats cost nothing to absorb and must not be refused for it — which is the
+// common case, not an edge one: a file written continuously reopens a window
+// naming the same path, and a directory event arrives alongside events for the
+// files inside it.
+func TestPendingCapCountsOnlyNewlySeenPaths(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), watchedScanner("/root"), nil)
+
+		full := make(map[string]struct{}, maxPendingReconcile)
+		for i := range maxPendingReconcile {
+			full["/root/"+itoa(i)+".md"] = struct{}{}
+		}
+		if _, ok := s.mergePending(full); !ok {
+			t.Fatal("the first window was refused")
+		}
+
+		// Exactly at the cap, but every path is already held.
+		if _, ok := s.mergePending(map[string]struct{}{"/root/1.md": {}}); !ok {
+			t.Error("a window of paths already held was refused at the cap")
+		}
+		if _, ok := s.mergePending(map[string]struct{}{"/root/new.md": {}}); ok {
+			t.Error("a genuinely new path was accepted past the cap")
 		}
 	})
 }

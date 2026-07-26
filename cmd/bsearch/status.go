@@ -249,6 +249,14 @@ func watchLine(watch *server.WatchStatus, now time.Time) string {
 		// Rare, and it explains a full walk the user did not schedule.
 		line += fmt.Sprintf(" · %s full rescans (events were lost)", count(watch.Rescans))
 	}
+	if watch.Ignored > 0 && watch.Reconciled == 0 {
+		// The failure that looks like success: subscribed, delivering, and
+		// every path discarded. Only shown when nothing at all has been
+		// queued, since a handful of ignored paths is ordinary — a save
+		// inside an excluded tree — and would otherwise be noise on every
+		// healthy daemon.
+		line += fmt.Sprintf(" · %s paths ignored, none queued — check paths.include matches the on-disk spelling", count(watch.Ignored))
+	}
 	return line
 }
 

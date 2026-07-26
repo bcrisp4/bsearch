@@ -5,6 +5,8 @@ import (
 	"maps"
 	"slices"
 	"time"
+
+	"github.com/bcrisp4/bsearch/internal/discovery"
 )
 
 const (
@@ -210,36 +212,63 @@ func (s *Scheduler) closeWindow(paths map[string]struct{}, rescan bool) {
 // goroutine's next duty is to be ready for the next FSEvents callback, and a
 // reader that stalls there stalls the stream.
 func (s *Scheduler) enqueue(paths map[string]struct{}) {
-	if !s.mergePending(paths) {
-		// The incoming window is refused and the set already held is kept.
-		// Deliberately not the adapter's overflow rule, which collapses a
-		// batch and discards its paths: that batch is one the kernel has
-		// already declared incomplete, whereas this set is exact. What a
-		// discarded window costs is its deletions — the walk buys back its
-		// creates and edits, and nothing buys back the rest, because a walk
-		// sees what exists (#57).
-		s.log.Warn("unreconciled paths are piling up; falling back to a full walk",
-			"pending", maxPendingReconcile, "refused", len(paths))
-		s.mark(func(snap *Snapshot) { snap.WatchRescans++ })
-		s.requestScan()
+	if held, ok := s.mergePending(paths); !ok {
+		s.refusePending(held, len(paths))
 	}
 	s.Notify()
 }
 
-// mergePending folds paths into the pending set, reporting whether they were
-// taken. Nothing is logged or written under the lock: the watch goroutine's
-// latency must not become the status handler's problem.
-func (s *Scheduler) mergePending(paths map[string]struct{}) bool {
+// refusePending reports a set of paths that could not be held.
+//
+// Deliberately not the adapter's overflow rule, which collapses a batch and
+// discards its paths: that batch is one the kernel has already declared
+// incomplete, whereas this set is exact. What a refused set costs is its
+// deletions — a walk buys back the creates and the edits, and nothing buys
+// back the rest, because a walk sees what exists (#57). So the loss is logged,
+// it counts, and it asks for the walk that recovers everything recoverable.
+//
+// held is the real size of the set that was kept, not the cap: an operator
+// diagnosing an overshoot needs the number the process actually holds.
+func (s *Scheduler) refusePending(held, refused int) {
+	s.log.Warn("unreconciled paths are piling up; falling back to a full walk",
+		"held", held, "refused", refused, "cap", maxPendingReconcile)
+	s.mark(func(snap *Snapshot) { snap.WatchRescans++ })
+	s.requestScan()
+}
+
+// mergePending folds paths into the pending set, reporting the resulting size
+// and whether they were taken. Nothing is logged or written under the lock:
+// the watch goroutine's latency must not become the status handler's problem.
+func (s *Scheduler) mergePending(paths map[string]struct{}) (held int, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.pendingPaths) >= maxPendingReconcile {
-		return false
+
+	// Counted before merging rather than after, or the cap would gate
+	// admission instead of bounding size: one window can carry the set far
+	// past it, since a debounce window merges every batch the adapter delivers
+	// inside it and the adapter's own 8192 bound is per batch, not per window.
+	// At a 1 s coalescing latency that is ~10 batches, so a merge accepted at
+	// one under the cap could land at more than twice it.
+	//
+	// Newly-seen paths only. A window that repeats paths already held costs
+	// nothing to absorb and must not be refused for it — which is the common
+	// case, since a file being written continuously reopens a window naming
+	// the same path.
+	fresh := 0
+	for p := range paths {
+		if _, dup := s.pendingPaths[p]; !dup {
+			fresh++
+		}
 	}
+	if len(s.pendingPaths)+fresh > maxPendingReconcile {
+		return len(s.pendingPaths), false
+	}
+
 	if s.pendingPaths == nil {
 		s.pendingPaths = make(map[string]struct{}, len(paths))
 	}
 	maps.Copy(s.pendingPaths, paths)
-	return true
+	return len(s.pendingPaths), true
 }
 
 // takePending removes the pending set and returns it sorted, so a reconcile is
@@ -257,12 +286,21 @@ func (s *Scheduler) takePending() []string {
 
 // restorePending hands a taken set back, for the one caller that took it and
 // could not use it.
+//
+// The refusal is reported rather than swallowed, and that matters more here
+// than at the other call site. The watcher keeps closing windows while a long
+// ScanPaths runs, and it merges them freely because takePending has just
+// emptied the set — so by the time this restores an interrupted list, the set
+// can be back at the cap. Dropping the list silently there would lose exactly
+// the deletions the caller's own comment promises to defer rather than lose.
 func (s *Scheduler) restorePending(list []string) {
 	paths := make(map[string]struct{}, len(list))
 	for _, p := range list {
 		paths[p] = struct{}{}
 	}
-	s.mergePending(paths)
+	if held, ok := s.mergePending(paths); !ok {
+		s.refusePending(held, len(paths))
+	}
 }
 
 // hasPending reports whether a reconcile is owed.
@@ -305,6 +343,17 @@ func (s *Scheduler) reconcilePending(ctx context.Context) {
 	}
 
 	res, err := s.scanner.ScanPaths(ctx, list)
+
+	// Recorded before the error is considered, because ScanPaths commits as it
+	// goes rather than at the end: purge deletes rows and *then* adds to
+	// res.Deleted, and every per-path problem met on the way is already in
+	// res.PathErrors. Returning on the error without reading res would drop
+	// both — a TCC-denied subtree found mid-reconcile would reach neither the
+	// log nor `bsearch status`, against CLAUDE.md's rule that EPERM is never a
+	// silent skip, and WatchDeleted would undercount permanently, since a
+	// re-run deletes nothing for rows already purged.
+	s.recordReconcile(list, res)
+
 	if err != nil {
 		if ctx.Err() != nil {
 			// Handed back rather than dropped. The daemon is stopping and
@@ -312,6 +361,15 @@ func (s *Scheduler) reconcilePending(ctx context.Context) {
 			// cancellation cannot defeat, so this is the one error branch
 			// where something is still going to run. A deletion dropped here
 			// would be lost rather than deferred.
+			//
+			// The whole list goes back, not the unprocessed remainder, because
+			// ScanPaths does not report where it stopped. Re-reconciling a
+			// path already done is free — the change detection is idempotent —
+			// but it does mean the flush repeats pass one from the start, and
+			// deletions happen only in pass two. A flush that runs out of
+			// budget mid-repeat therefore purges nothing, which is the
+			// shutdownFlush bound's job to make unlikely rather than
+			// impossible.
 			s.restorePending(list)
 			return
 		}
@@ -325,7 +383,13 @@ func (s *Scheduler) reconcilePending(ctx context.Context) {
 		s.Notify()
 		return
 	}
+}
 
+// recordReconcile logs and counts one ScanPaths result. Separate from
+// reconcilePending so that both the success and the failure path go through
+// it: the result is a live accumulator of work already committed, not a
+// summary produced at the end.
+func (s *Scheduler) recordReconcile(list []string, res discovery.Result) {
 	sample := s.logPathErrors(res.PathErrors, "could not reconcile a changed path",
 		"further watch path errors suppressed", maxLoggedWatchErrors)
 
@@ -359,10 +423,21 @@ func (s *Scheduler) reconcilePending(ctx context.Context) {
 		// failure — would reach the log and nothing else.
 		snap.ScanErrs += len(res.PathErrors)
 		snap.PathErrors = appendCapped(snap.PathErrors, sample, maxLoggedPathErrors)
+		// Cumulative, and reported, because the wholly-ignored warning above
+		// stopped being a reliable signal once a reconcile could span several
+		// windows: one in-scope path anywhere in the set silences it for the
+		// whole set. A running total does not care how the windows were
+		// grouped — a watcher subscribed to a mis-spelled root shows up as
+		// "reconciled 0, ignored 12431", which is unmissable however the
+		// scheduler happened to batch its wakes.
+		snap.WatchIgnored += res.Ignored
 	})
-	if res.Discovered > 0 || res.Deleted > 0 {
-		s.Notify()
-	}
+	// No Notify here. This runs on the scheduler goroutine, which is the only
+	// reader of that channel, so it would be waking itself: the drain that
+	// follows in the same cycle already sees the rows, and the buffered token
+	// would survive to fire one entirely redundant cycle immediately after.
+	// On battery that is worse than redundant — the reconcile sits above the
+	// defer gate, so the woken cycle wakes only to hit the same gate again.
 }
 
 // requestScan makes the next cycle walk the filesystem whatever the clock

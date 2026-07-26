@@ -238,6 +238,14 @@ type Snapshot struct {
 	WatchReconciled int // documents queued from watched events since start
 	WatchDeleted    int // documents purged because their file went away
 	WatchRescans    int // full scans forced by an incomplete event stream
+	// WatchIgnored counts watched paths that were out of scope — outside
+	// every include root, or deny-listed. A running total rather than a
+	// per-reconcile log line, because the pathology it exists to expose (a
+	// root whose on-disk spelling does not match the paths FSEvents reports,
+	// so every event is discarded) is invisible in any single reconcile once
+	// one reconcile can span several debounce windows. Reconciled 0 against a
+	// large Ignored is the signature.
+	WatchIgnored int
 }
 
 // Scheduler runs the indexing loop. Construct with New, drive with Run.
@@ -284,6 +292,10 @@ type Scheduler struct {
 	// rule is written against — is distinct paths, which a queue of windows
 	// could not express.
 	pendingPaths map[string]struct{}
+	// nextProbe is when the embedding endpoint may be probed again after a
+	// failure. Zero means "now". See prepare for why the wake rate must not
+	// decide the probe rate.
+	nextProbe time.Time
 }
 
 // New builds a Scheduler.
@@ -766,6 +778,22 @@ func (s *Scheduler) drain(ctx context.Context) {
 // nothing to any document: an endpoint that is switched off is not evidence
 // about any file.
 func (s *Scheduler) prepare(ctx context.Context) (int, bool) {
+	// A probe that failed a moment ago is not worth repeating. Cycles used to
+	// arrive on a timer, so "once per cycle" was already a rate limit; since
+	// ADR 0014 a closed debounce window wakes one too, and ordinary background
+	// churn under a watched root — an editor's save, a build writing into a
+	// deny-listed directory — would otherwise probe a switched-off inference
+	// server every debounce window rather than every interval.
+	//
+	// Not backoff: there is nothing to back off from, no attempt is charged to
+	// any document, and the interval is the same one a deferred cycle already
+	// rechecks on. It only stops the wake *rate* deciding the probe rate
+	// (DESIGN.md: near-zero CPU when idle).
+	if until, ok := s.probeDeferredUntil(); ok {
+		s.log.Debug("skipping the embedding endpoint probe", "retry_at", until)
+		return 0, false
+	}
+
 	dims, err := s.indexer.Prepare(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -774,9 +802,33 @@ func (s *Scheduler) prepare(ctx context.Context) (int, bool) {
 		s.log.Warn("indexing deferred", "reason", GateEmbedder, "error", err)
 		s.gate(GateEmbedder, false)
 		s.mark(func(snap *Snapshot) { snap.LastError = err.Error() })
+		s.deferProbe()
 		return 0, false
 	}
+	s.clearProbeDeferral()
 	return dims, true
+}
+
+// probeDeferredUntil reports whether a failed probe is still inside its
+// recheck interval, and when that interval ends.
+func (s *Scheduler) probeDeferredUntil() (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.nextProbe, !s.nextProbe.IsZero() && s.now().Before(s.nextProbe)
+}
+
+// deferProbe holds the next endpoint probe off until the recheck interval.
+func (s *Scheduler) deferProbe() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextProbe = s.now().Add(deferRecheckInterval)
+}
+
+// clearProbeDeferral forgets a past failure once the endpoint answers.
+func (s *Scheduler) clearProbeDeferral() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextProbe = time.Time{}
 }
 
 // sweep re-queues documents whose derived data predates current, reporting
