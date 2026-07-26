@@ -181,7 +181,7 @@ storage and vector-search rows first.
 | Doc conversion | bscribe over HTTP behind `ConverterPort`; plain text/markdown handled in-process. Adapter sends bscribe's required bearer token (from config); v1 uses the sync `POST /v1/convert` endpoint and reads the JSON envelope's `content` field. bscribe's native port is 8000 — `localhost:18000` is this machine's host mapping | No parser deps in the binary; LibreOffice/OCR churn isolated in a hardened container (non-root baked into the image; read-only rootfs, capability drop, and memory cap are operator run-flags — required flags recorded in deployment docs); bscribe already runs here and anticipated bsearch as a consumer | Adapter swap (lit CLI subprocess, docling) without touching domain; async job API available if large-doc sync timeouts warrant it |
 | Change detection | FSEvents watch (macOS API behind `WatcherPort`, via `fsnotify/fsevents`) for near-real-time creates, edits, **and deletes**, plus periodic full scan for missed events; change = cheap size/mtime check, content hash to confirm. Events are debounced ~10 s and reconciled path-by-path against the same change detection the walk uses; an event stream that overflows or reports a volume appearing/disappearing escalates to a full walk rather than trusting a partial path list. The walk's cadence follows the watcher — 5 min scan-only, 15 min while watching ([ADR 0013](docs/adr/0013-fsevents-watcher-and-event-driven-reconcile.md)) | Freshness SLO without constant scanning; battery-friendly | Linux port = new watcher adapter (inotify) |
 | Chunking | Markdown-aware, hand-rolled in Go (see below) | Everything is markdown post-conversion; tractable, dependency-free algorithm | Isolated pure function, versioned |
-| Summaries | Pyramid summaries per document: 4 / 16 / 64 words + full text, generated at index time by the summary LLM. Word counts are targets, not contracts (validated and trimmed post-hoc). Documents exceeding the summarizer's context are handled map-reduce style: section/chunk summaries reduced to document summaries; the summarizer's minimum context requirement is part of the versioned stage | Agent context economy — survey cheap, zoom on demand (StrongDM pyramid-summaries technique, which pairs the ladder with MapReduce for over-context inputs) | Additive; regenerable without touching vectors |
+| Summaries | Pyramid summaries per distinct content (ADR 0015 — so duplicates and renamed files share one set): 4 / 16 / 64 words + full text, generated at index time by the summary LLM. Word counts are targets, not contracts (validated and trimmed post-hoc). Documents exceeding the summarizer's context are handled map-reduce style: section/chunk summaries reduced to document summaries; the summarizer's minimum context requirement is part of the versioned stage | Agent context economy — survey cheap, zoom on demand (StrongDM pyramid-summaries technique, which pairs the ladder with MapReduce for over-context inputs) | Additive; regenerable without touching vectors |
 | Embeddings / LLM | OpenAI-compatible HTTP (`EmbedderPort`, `SummarizerPort`); model names + endpoints in config. **Per-model query/passage prefix templates** (E5 `query:`/`passage:`, Nomic `search_query:`/`search_document:`, BGE/Qwen3 query instructions) stored in versioned pipeline metadata and applied identically at index and query time — asymmetric embedders lose substantial recall without matched prefixes (lore solves this per model family; lesson carried alongside the breadcrumb one) | BYO inference; LM Studio today | Config change; embedding model swap requires full re-embed (see pipeline metadata for the migration path) |
 | API | HTTP+JSON over unix domain socket at `~/Library/Application Support/bsearch/bsearch.sock`, mode 0600 (comfortably under the ~104-char `sun_path` limit); listener abstraction so a TCP listener (with auth) can be added later | OS-enforced same-user access, no open ports, zero auth machinery in v1 | TCP = new listener + auth story; designed-for, not bolted-on |
 | MCP | MCP server as a thin stdio shim over the same domain services | First-class agent access — the primary scenario | Thin layer over the API |
@@ -189,8 +189,10 @@ storage and vector-search rows first.
 
 ### Indexing pipeline and queue
 
-Pipeline per document: **discover → convert → chunk → (embed ∥ summarize) →
-store.** Embedding and summarization are parallel branches after chunking: a
+Pipeline: **discover → convert → chunk → (embed ∥ summarize) → store.**
+Discovery is per path; every stage after it is per distinct content (ADR 0015),
+so a file that duplicates one already indexed enters at `discover` and stops
+there. Embedding and summarization are parallel branches after chunking: a
 document becomes searchable as soon as it is embedded; summaries are
 fill-later fields that enrich results when ready. A summarizer outage degrades
 summary richness, never searchability.
@@ -498,7 +500,7 @@ flowchart LR
         INF["Inference server (LM Studio)<br/>OpenAI-compatible: embeddings + summaries"]
     end
 
-    DB[("SQLite<br/>catalog + queue + FTS5 + sqlite-vec")]
+    DB[("SQLite<br/>documents (path) + content (hash)<br/>+ FTS5 + sqlite-vec")]
     FS[("Filesystem<br/>~/ configured paths (TCC-gated)")]
 
     AGT --> MCP
@@ -523,7 +525,7 @@ flowchart LR
 bsearch serve                     # run daemon (launchd invokes this); indexes in the background
 bsearch search "heat pump quote" [--limit 10] [--level 4|16|64] [--mode hybrid|semantic|keyword] [--json]
 bsearch list [path-prefix] [--sort modified|path] [--level 4|16|64] [--limit 100]
-bsearch get <doc-id> [--level 4|16|64|full]
+bsearch get <path|content-hash> [--level 4|16|64|full]
 bsearch status                    # index counts, queue depth, gate reasons, permission failures, disk footprint
 bsearch reindex [path]            # force re-index of path or everything
 ```
@@ -653,10 +655,12 @@ even when there is no database at all.
  "socket": "~/Library/Application Support/bsearch/bsearch.sock",
  "db_path": "~/Library/Application Support/bsearch/bsearch.db",
  "index": {"ready": true, "model": "text-embedding-embeddinggemma-300m", "dims": 768,
-           "documents": {"discovered": 35, "converted": 0, "chunked": 2,
-                         "embedded": 0, "indexed": 1204, "failed": 2, "deleted": 0},
+           "files": 1268,
+           "content": {"discovered": 35, "converted": 0, "chunked": 2,
+                       "embedded": 0, "indexed": 1204, "failed": 2},
+           "unread": {"denied": 12, "dataless": 15, "io_error": 0},
            "queue": {"pending": 37, "retrying": 2},
-           "failures": [{"reason": "file is not valid UTF-8", "documents": 2,
+           "failures": [{"reason": "file is not valid UTF-8", "contents": 2,
                          "example_path": "~/Documents/notes/legacy.txt"}],
            "disk": {"db_bytes": 432013312, "wal_bytes": 4096, "total_bytes": 432017408}},
  "indexing": {"running": true, "gate": "idle — nothing to index", "deferring": false,
@@ -669,8 +673,21 @@ even when there is no database at all.
               "totals": {"indexed": 1204, "failed": 2, "skipped": 0, "retried": 0, "swept": 0}}}
 ```
 
+Three populations, and they must reconcile ([ADR
+0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)): `files` counts
+paths, `unread` counts the paths whose bytes were never obtained, broken down by
+reason, and `content` counts *distinct contents* by state. So
+`files − sum(unread)` is the files that have content, `sum(content)` is how many
+distinct contents those are, and the gap between them is what deduplication
+saved. Reporting only one of the three is how a corpus with twelve
+permission-denied files ends up looking healthy.
+
+`unread.denied` is the Full Disk Access signal and must never be folded into
+`unread.dataless`, which is an iCloud placeholder skipped exactly as intended —
+one is broken, the other is working.
+
 When `ready` is false a `reason` says why ("no index database at …",
-"nothing embedded yet", a model/config disagreement); the document counts are
+"nothing embedded yet", a model/config disagreement); the counts are
 still reported, because a database full of discovered-but-unindexed rows is
 when they matter most. `gate` is why the last indexing cycle did no work, in
 the user's terms, and `last_progress` against `last_cycle` is what
@@ -895,6 +912,16 @@ queue with retry/backoff and health gates, unix-socket API, `status`. launchd
 agent. **TCC onboarding:** daemon detects permission failures and surfaces
 them in `status`; docs cover granting Full Disk Access. Demo: save a note,
 search finds it a minute later, no manual indexing.
+
+**M3.5 — Identity split.** Schema rewrite to path-keyed `documents` +
+hash-keyed `content` ([ADR
+0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)): renames and
+moves stop costing a re-embed, duplicate files embed once, `resolveID` deletes,
+and `doc_id` is retired in favour of path. Executed as drop-and-reindex, which
+is free while no index is in real use. Sequenced here deliberately — after it,
+M4's FTS5 triggers and `summaries` are written against the final shape instead
+of being migrated. Demo: rename a folder of notes, `status` shows no re-indexing
+work queued.
 
 **M4 — Hybrid + pyramid.** FTS5 + RRF fusion; pyramid summaries (4/16/64)
 generated at index time; `list`, `get`, level params. Demo: exact-term queries
