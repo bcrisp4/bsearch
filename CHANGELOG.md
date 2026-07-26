@@ -36,6 +36,20 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   reindexes on next start; an old database left in place is refused with an
   error saying exactly that.
 
+- **Files bsearch couldn't read are now remembered, not just logged.** A
+  permission-denied file (the missing Full Disk Access case), an iCloud
+  placeholder skipped so it never triggers a download, and a file that failed
+  to read are each recorded with their reason and stay visible in
+  `bsearch status` in steady state — previously a denial was only reported if
+  the *most recent* scan happened to touch it. A file that was indexed before
+  becoming unreadable keeps serving its indexed content rather than
+  disappearing from search.
+
+- **Discovery writes are batched.** A first scan over a large corpus commits
+  catalog rows hundreds at a time instead of one transaction per file
+  ([#34](https://github.com/bcrisp4/bsearch/issues/34)), so the initial index
+  of a big folder spends its time hashing and embedding, not committing.
+
 ### Added
 
 - **Save a file, and it is searchable in seconds.** The daemon now watches

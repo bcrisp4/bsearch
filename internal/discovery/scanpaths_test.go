@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bcrisp4/bsearch/internal/domain"
 	"github.com/bcrisp4/bsearch/internal/pathutil"
 )
 
@@ -330,6 +331,15 @@ func TestScanPathsRenameRepointsPathNotContent(t *testing.T) {
 	if len(store.content) != 1 {
 		t.Errorf("content rows = %v, want just the original", store.content)
 	}
+	// Pass 1 is flushed before the purge pass runs: the new path's row was
+	// durable before anything was deleted. Scan 1 wrote one batch, so the
+	// full write order is upsert, upsert, delete.
+	if !slices.Equal(store.ops, []string{"upsert", "upsert", "delete"}) {
+		t.Errorf("write order = %v, want the rename's upsert committed before the purge", store.ops)
+	}
+	if !slices.ContainsFunc(store.batches[1], func(d domain.Document) bool { return d.Path == renamed }) {
+		t.Errorf("batch before the purge = %+v, want it to carry the new path", store.batches[1])
+	}
 }
 
 // The same property for a directory move, which arrives as two paths for the
@@ -397,6 +407,74 @@ func TestScanPathsUnreadablePathRecorded(t *testing.T) {
 	}
 	if len(res.PathErrors) != 1 || res.PathErrors[0].Path != path {
 		t.Errorf("PathErrors = %v, want one for %s", res.PathErrors, path)
+	}
+	// The Lstat itself failed (locked directory): the file was never even
+	// statted, so no unread row can be written for it.
+	if res.Unread != 0 || len(store.docs) != 0 {
+		t.Errorf("Unread = %d, docs = %v, want nothing persisted", res.Unread, catalogPaths(store))
+	}
+}
+
+// The same denial met at the file itself — stat succeeds, open fails —
+// persists a denied row, exactly as the walk would.
+func TestScanPathsUnreadableFilePersistsDeniedRow(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not apply")
+	}
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "secret.md")
+	write(t, path, "cannot read")
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	store := newFakeStore()
+
+	res := scanPaths(t, store, Options{Include: []string{dir}}, path)
+
+	if res.Unread != 1 || len(res.PathErrors) != 1 {
+		t.Fatalf("Result = %+v, want 1 unread and the read failure reported", res)
+	}
+	doc, ok := store.docs[path]
+	if !ok {
+		t.Fatalf("no unread row persisted; docs = %v", catalogPaths(store))
+	}
+	if doc.UnreadReason != domain.UnreadDenied || doc.ContentHash != "" {
+		t.Errorf("doc = %+v, want reason denied and no hash", doc)
+	}
+	if len(store.content) != 0 {
+		t.Errorf("content rows = %v, want none", store.content)
+	}
+}
+
+// The dataless guard at the event path: a placeholder named by an event is
+// persisted as an unread row without ever being opened — an event must not
+// trigger the cloud download the walk refuses to.
+func TestScanPathsDatalessPersistsUnreadRow(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "cloud.md")
+	write(t, path, "placeholder")
+	store := newFakeStore()
+
+	s := New(store, Options{Include: []string{dir}})
+	s.dataless = func(info os.FileInfo) bool { return true }
+	res, err := s.ScanPaths(t.Context(), []string{path})
+	if err != nil {
+		t.Fatalf("ScanPaths: %v", err)
+	}
+
+	if res.Dataless != 1 || res.Unread != 0 || res.Discovered != 0 {
+		t.Errorf("Result = %+v, want 1 dataless only", res)
+	}
+	doc, ok := store.docs[path]
+	if !ok {
+		t.Fatalf("no unread row for the placeholder; docs = %v", catalogPaths(store))
+	}
+	if doc.UnreadReason != domain.UnreadDataless || doc.ContentHash != "" {
+		t.Errorf("doc = %+v, want reason dataless and no hash", doc)
+	}
+	if len(store.content) != 0 {
+		t.Errorf("content rows = %v, want none — the file must never be opened", store.content)
 	}
 }
 

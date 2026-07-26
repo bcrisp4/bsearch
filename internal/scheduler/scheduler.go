@@ -607,7 +607,7 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 	// pattern, few enough that neither turns into a haystack.
 	sample := s.logPathErrors(res.PathErrors, "scan could not read a path",
 		"further scan path errors suppressed", maxLoggedPathErrors)
-	reached := res.Discovered + res.Unchanged + res.Dataless
+	reached := res.Discovered + res.Unchanged + res.Dataless + res.Unread
 	if len(res.PathErrors) > 0 && reached == 0 {
 		// Every root failed and nothing was reachable. That is a permissions
 		// problem — almost always a missing or revoked Full Disk Access grant
@@ -626,6 +626,7 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 		"unchanged", res.Unchanged,
 		"changed", res.Changed,
 		"dataless", res.Dataless,
+		"unread", res.Unread,
 		"path_errors", len(res.PathErrors),
 		"duration_ms", s.now().Sub(start).Milliseconds())
 
