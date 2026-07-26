@@ -275,9 +275,9 @@ not actionable:
    the sweep's subquery is written `content_hash NOT IN (SELECT content_hash
    FROM documents)`, then the first NULL in `documents` makes the predicate
    `UNKNOWN` for every candidate and the statement deletes **zero rows,
-   permanently** — with no error and no log. It passes every test (fixtures
-   have readable files) and stops working the moment one real file is denied.
-   Prefer the NULL-safe form, which cannot be broken by omitting a clause:
+   permanently** — with no error and no log. It stops working the moment one
+   real file is denied. Prefer the NULL-safe form, which cannot be broken by
+   omitting a clause:
 
    ```sql
    DELETE FROM content AS c WHERE NOT EXISTS (
@@ -307,10 +307,28 @@ as a hash, making a denied file indistinguishable from content that
 legitimately produced no chunks. The domain type must keep the two apart rather
 than leaning on a sentinel.
 
-Worth a test that a permission error survives a full scan cycle and appears in
-`status` under `denied`, distinct from `dataless` — and one that the sweep
-still collects orphans while an unreadable file is present, which is (1)'s
-regression test.
+**Testing this needs a fixture change, not just a test.** Discovery already
+covers permission errors — `discovery_test.go` chmods a file to `0` in two
+places and exercises the `dataless` seam. The gap is one layer down: in
+`internal/adapters/sqlite`, `testDoc` always sets a content hash, so no
+storage-layer fixture has ever represented a row *without* content, which is
+exactly the shape hazard (1) needs to appear.
+
+A single targeted test would catch the sweep and nothing else. The bug class is
+"a query that silently misbehaves when a NULL is present anywhere in the
+table", so the durable fix is to put an unread row in the **shared seed** used
+by every store test. Then any future query with the same flaw fails on arrival
+rather than waiting for someone to think of it. Concretely:
+
+- `seedUpsert` (or its successor) grows a denied row alongside the readable
+  ones, so `documents` is never NULL-free in tests.
+- The orphan sweep is asserted to still collect while that row is present —
+  hazard (1)'s regression test, which fails loudly if the `IS NOT NULL` guard
+  is dropped or `NOT EXISTS` is rewritten as `NOT IN`.
+- A permission error survives a full scan cycle and appears in `status` under
+  `denied`, distinct from `dataless`.
+- Counts reconcile: files = contents + duplicates + unread, so a corpus with
+  denied files cannot report a healthy total.
 
 **Follow-up.** Discovery can then hash only paths whose size/mtime changed
 *and* which it has not seen before, letting the pipeline's hash serve the rest
