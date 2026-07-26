@@ -86,10 +86,18 @@ type Request struct {
 	MinScore     float64 `json:"min_score,omitempty"`
 }
 
-// Hit is one document in the response, built from its best-matching chunk.
+// Hit is one content in the response, built from its best-matching chunk.
+// Path is the identity — there is no doc_id (ADR 0015). One content can live
+// at several paths (duplicate files): Path names the primary (most recent
+// mtime, tie-broken by path ascending) and AlsoAt lists the rest, omitted
+// when there are none — the overwhelmingly common case.
 type Hit struct {
-	DocID string `json:"doc_id"`
-	Path  string `json:"path"`
+	Path string `json:"path"`
+	// ContentHash is what the hit is really about: two paths with one hash
+	// are one document as far as retrieval is concerned, and it is stable
+	// under renames. Wire form is "sha256:<hex>" (DESIGN.md: search
+	// response); storage holds the bare hex.
+	ContentHash string `json:"content_hash"`
 	// Distance is the raw KNN distance: lower is better, uncalibrated.
 	// DESIGN.md reserves `score` for fused (RRF) ranking so the name never
 	// carries two meanings.
@@ -97,6 +105,7 @@ type Hit struct {
 	ChunkPreview string    `json:"chunk_preview"`
 	HeadingPath  string    `json:"heading_path,omitempty"`
 	Modified     time.Time `json:"modified"`
+	AlsoAt       []string  `json:"also_at,omitempty"`
 }
 
 // Response is the search result set.
@@ -151,24 +160,49 @@ func (s *Service) Search(ctx context.Context, req Request) (Response, error) {
 			ErrIndexMismatch, len(vec), dims, spec.Model)
 	}
 
-	hits, err := s.index.SearchVectors(ctx, vec, KnnK(limit))
-	if err != nil {
-		if errors.Is(err, domain.ErrNoVecTable) {
-			return Response{}, fmt.Errorf("%w: the index was re-built while this query ran — try again", ErrNotIndexed)
+	knn := func(k int) ([]domain.Hit, error) {
+		hits, err := s.index.SearchVectors(ctx, vec, k)
+		if err != nil && errors.Is(err, domain.ErrNoVecTable) {
+			return nil, fmt.Errorf("%w: the index was re-built while this query ran — try again", ErrNotIndexed)
 		}
+		return hits, err
+	}
+	hits, err := knn(KnnK(limit))
+	if err != nil {
 		return Response{}, err
 	}
 
-	docs := domain.CollapseBestPerDoc(hits, limit)
-	resp := Response{Hits: make([]Hit, 0, len(docs)), TookMS: time.Since(start).Milliseconds()}
-	for _, h := range docs {
+	contents := domain.CollapseBestPerContent(hits, limit)
+	// Vectors whose content no document references — deleted or edited
+	// files awaiting the orphan sweep — occupy KNN slots and are then
+	// dropped by the store's documents join, so a bulk delete can leave the
+	// over-fetched top-k mostly dead rows and starve the response down to
+	// nothing while live matches exist just past k. One retry at the
+	// ceiling buys back everything a bigger k can: brute-force KNN scans
+	// every vector regardless of k, so the retry costs a rescan, not a
+	// different algorithm — and it only runs when the first pass came up
+	// short, which a healthy index makes rare.
+	if len(contents) < limit && KnnK(limit) < MaxKNNK {
+		if hits, err = knn(MaxKNNK); err != nil {
+			return Response{}, err
+		}
+		contents = domain.CollapseBestPerContent(hits, limit)
+	}
+	resp := Response{Hits: make([]Hit, 0, len(contents)), TookMS: time.Since(start).Milliseconds()}
+	for _, ch := range contents {
 		resp.Hits = append(resp.Hits, Hit{
-			DocID:        h.Doc.ID,
-			Path:         h.Doc.Path,
-			Distance:     h.Distance,
-			ChunkPreview: Preview(h.Chunk.Text, PreviewRunes),
-			HeadingPath:  h.Chunk.HeadingPath,
-			Modified:     h.Doc.MTime.UTC(),
+			Path: ch.Hit.Doc.Path,
+			// Prefixed on the wire (DESIGN.md publishes "sha256:8f3a91…"),
+			// bare hex in storage: the prefix is what lets the hash
+			// algorithm ever change, and #19's GET by content hash keys on
+			// this exact string — the two surfaces must agree now, while
+			// agreeing is free.
+			ContentHash:  "sha256:" + ch.Hit.Doc.ContentHash,
+			Distance:     ch.Hit.Distance,
+			ChunkPreview: Preview(ch.Hit.Chunk.Text, PreviewRunes),
+			HeadingPath:  ch.Hit.Chunk.HeadingPath,
+			Modified:     ch.Hit.Doc.MTime.UTC(),
+			AlsoAt:       ch.AlsoAt,
 		})
 	}
 	return resp, nil

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bcrisp4/bsearch/internal/domain"
 	"github.com/bcrisp4/bsearch/internal/pathutil"
 )
 
@@ -37,8 +38,11 @@ func TestScanPathsNewFile(t *testing.T) {
 	if len(store.upserts) != 1 {
 		t.Fatalf("upserts = %d, want 1", len(store.upserts))
 	}
-	if doc := store.upserts[0]; doc.Path != path || !docIDRe.MatchString(doc.ID) {
+	if doc := store.upserts[0]; doc.Path != path || doc.ContentHash != hashOf("hello") {
 		t.Errorf("doc = %+v", doc)
+	}
+	if !store.content[hashOf("hello")] {
+		t.Error("no content row created for the new hash")
 	}
 }
 
@@ -172,6 +176,11 @@ func TestScanPathsDeletedFilePurged(t *testing.T) {
 	if _, ok := store.docs[path]; ok {
 		t.Error("catalog row survived the deletion")
 	}
+	// Deletion removes documents only; the orphaned content row is the
+	// sweep's to collect, never discovery's.
+	if !store.content[hashOf("hello")] {
+		t.Error("content row deleted by discovery; the sweep owns that")
+	}
 }
 
 // A vanished path does not say whether it was a file or a directory, so the
@@ -284,10 +293,10 @@ func TestScanPathsRecreatedFileNotPurged(t *testing.T) {
 	}
 }
 
-// The reason the two passes are ordered: a rename delivers the old path and
-// the new one together, and only reconciling what exists first lets the new
-// path claim the old row before the old path is considered for deletion.
-func TestScanPathsRenameKeepsDocID(t *testing.T) {
+// A rename is a documents row appearing at the new path with the same hash
+// while the old path purges (ADR 0015). The hash is already in the catalog,
+// so no content row is created and no pipeline work is scheduled.
+func TestScanPathsRenameRepointsPathNotContent(t *testing.T) {
 	dir := tmpDir(t)
 	old := filepath.Join(dir, "old.md")
 	renamed := filepath.Join(dir, "new.md")
@@ -296,33 +305,46 @@ func TestScanPathsRenameKeepsDocID(t *testing.T) {
 	opts := Options{Include: []string{dir}}
 
 	scanPaths(t, store, opts, old)
-	id := store.upserts[0].ID
+	hash := store.upserts[0].ContentHash
 	if err := os.Rename(old, renamed); err != nil {
 		t.Fatal(err)
 	}
 
-	// Old path first in the batch: the ordering must not depend on the
+	// Old path first in the batch: the outcome must not depend on the
 	// order the watcher happened to report them in.
 	res := scanPaths(t, store, opts, old, renamed)
 
-	if res.Renamed != 1 || res.Deleted != 0 {
-		t.Fatalf("Result = %+v, want 1 renamed and nothing deleted", res)
+	if res.Discovered != 1 || res.Changed != 0 || res.Deleted != 1 {
+		t.Fatalf("Result = %+v, want 1 discovered / 0 changed / 1 deleted", res)
 	}
 	doc, ok := store.docs[renamed]
 	if !ok {
 		t.Fatalf("no catalog row at the new path; rows = %v", catalogPaths(store))
 	}
-	if doc.ID != id {
-		t.Errorf("doc id = %q, want the original %q", doc.ID, id)
+	if doc.ContentHash != hash {
+		t.Errorf("ContentHash = %q, want the original %q", doc.ContentHash, hash)
 	}
 	if _, stale := store.docs[old]; stale {
 		t.Error("a row is still parked at the old path")
+	}
+	// Same bytes → the existing content row is reused, nothing new created.
+	if len(store.content) != 1 {
+		t.Errorf("content rows = %v, want just the original", store.content)
+	}
+	// Pass 1 is flushed before the purge pass runs: the new path's row was
+	// durable before anything was deleted. Scan 1 wrote one batch, so the
+	// full write order is upsert, upsert, delete.
+	if !slices.Equal(store.ops, []string{"upsert", "upsert", "delete"}) {
+		t.Errorf("write order = %v, want the rename's upsert committed before the purge", store.ops)
+	}
+	if len(store.batches) < 2 || !slices.ContainsFunc(store.batches[1], func(d domain.Document) bool { return d.Path == renamed }) {
+		t.Errorf("batches = %+v, want the rename's upsert committed before the purge", store.batches)
 	}
 }
 
 // The same property for a directory move, which arrives as two paths for the
 // directory and none for the files inside it.
-func TestScanPathsDirectoryRenameKeepsDocIDs(t *testing.T) {
+func TestScanPathsDirectoryRenameRepointsPaths(t *testing.T) {
 	dir := tmpDir(t)
 	old := filepath.Join(dir, "notes")
 	renamed := filepath.Join(dir, "archive")
@@ -332,28 +354,33 @@ func TestScanPathsDirectoryRenameKeepsDocIDs(t *testing.T) {
 	opts := Options{Include: []string{dir}}
 
 	scanPaths(t, store, opts, old)
-	before := map[string]string{} // content hash -> doc id
-	for _, doc := range store.upserts {
-		before[doc.ContentHash] = doc.ID
-	}
 	if err := os.Rename(old, renamed); err != nil {
 		t.Fatal(err)
 	}
 
 	res := scanPaths(t, store, opts, old, renamed)
 
-	if res.Renamed != 2 || res.Deleted != 0 {
-		t.Fatalf("Result = %+v, want 2 renamed and nothing deleted", res)
+	if res.Discovered != 2 || res.Changed != 0 || res.Deleted != 2 {
+		t.Fatalf("Result = %+v, want 2 discovered / 0 changed / 2 deleted", res)
 	}
-	for _, name := range []string{"a.md", "b.md"} {
+	for name, content := range map[string]string{"a.md": "one", "b.md": "two"} {
 		doc, ok := store.docs[filepath.Join(renamed, name)]
 		if !ok {
 			t.Errorf("no catalog row for %s at the new path", name)
 			continue
 		}
-		if want := before[doc.ContentHash]; doc.ID != want {
-			t.Errorf("%s: doc id = %q, want the original %q", name, doc.ID, want)
+		if doc.ContentHash != hashOf(content) {
+			t.Errorf("%s: ContentHash = %q, want %q", name, doc.ContentHash, hashOf(content))
 		}
+	}
+	for _, name := range []string{"a.md", "b.md"} {
+		if _, stale := store.docs[filepath.Join(old, name)]; stale {
+			t.Errorf("%s still parked at the old path", name)
+		}
+	}
+	// Two files, two hashes, no new content minted by the move.
+	if len(store.content) != 2 {
+		t.Errorf("content rows = %v, want the original two", store.content)
 	}
 }
 
@@ -380,6 +407,155 @@ func TestScanPathsUnreadablePathRecorded(t *testing.T) {
 	}
 	if len(res.PathErrors) != 1 || res.PathErrors[0].Path != path {
 		t.Errorf("PathErrors = %v, want one for %s", res.PathErrors, path)
+	}
+	// The Lstat itself failed (locked directory): the file was never even
+	// statted, so no unread row can be written for it.
+	if res.Unread != 0 || len(store.docs) != 0 {
+		t.Errorf("Unread = %d, docs = %v, want nothing persisted", res.Unread, catalogPaths(store))
+	}
+}
+
+// The same denial met at the file itself — stat succeeds, open fails —
+// persists a denied row, exactly as the walk would.
+func TestScanPathsUnreadableFilePersistsDeniedRow(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not apply")
+	}
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "secret.md")
+	write(t, path, "cannot read")
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	store := newFakeStore()
+
+	res := scanPaths(t, store, Options{Include: []string{dir}}, path)
+
+	if res.Unread != 1 || len(res.PathErrors) != 1 {
+		t.Fatalf("Result = %+v, want 1 unread and the read failure reported", res)
+	}
+	doc, ok := store.docs[path]
+	if !ok {
+		t.Fatalf("no unread row persisted; docs = %v", catalogPaths(store))
+	}
+	if doc.UnreadReason != domain.UnreadDenied || doc.ContentHash != "" {
+		t.Errorf("doc = %+v, want reason denied and no hash", doc)
+	}
+	if len(store.content) != 0 {
+		t.Errorf("content rows = %v, want none", store.content)
+	}
+}
+
+// The dataless guard at the event path: a placeholder named by an event is
+// persisted as an unread row without ever being opened — an event must not
+// trigger the cloud download the walk refuses to.
+func TestScanPathsDatalessPersistsUnreadRow(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "cloud.md")
+	write(t, path, "placeholder")
+	store := newFakeStore()
+
+	s := New(store, Options{Include: []string{dir}})
+	s.dataless = func(info os.FileInfo) bool { return true }
+	res, err := s.ScanPaths(t.Context(), []string{path})
+	if err != nil {
+		t.Fatalf("ScanPaths: %v", err)
+	}
+
+	if res.Dataless != 1 || res.Unread != 0 || res.Discovered != 0 {
+		t.Errorf("Result = %+v, want 1 dataless only", res)
+	}
+	doc, ok := store.docs[path]
+	if !ok {
+		t.Fatalf("no unread row for the placeholder; docs = %v", catalogPaths(store))
+	}
+	if doc.UnreadReason != domain.UnreadDataless || doc.ContentHash != "" {
+		t.Errorf("doc = %+v, want reason dataless and no hash", doc)
+	}
+	if len(store.content) != 0 {
+		t.Errorf("content rows = %v, want none — the file must never be opened", store.content)
+	}
+}
+
+// The buffer makes duplicate input non-idempotent (GetByPath reads the
+// store, not pending), so ScanPaths deduplicates: the same path twice in a
+// call is one visit, one count, one row — never a second row that could
+// clobber the first inside one batch.
+func TestScanPathsDuplicateInputProcessedOnce(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "a.md")
+	write(t, path, "hello")
+	store := newFakeStore()
+
+	res := scanPaths(t, store, Options{Include: []string{dir}}, path, path)
+
+	if res.Discovered != 1 {
+		t.Errorf("Result = %+v, want the duplicate folded into one visit", res)
+	}
+	if len(store.upserts) != 1 || len(store.pathLookups) != 1 {
+		t.Errorf("upserts = %d, lookups = %d, want 1/1", len(store.upserts), len(store.pathLookups))
+	}
+}
+
+// A walk reconciles what exists, so an ancestor's walk cannot answer for a
+// vanished descendant: a file deleted while its still-existing directory is
+// in the same batch must still be purged, or the row serves search hits
+// forever.
+func TestScanPathsVanishedUnderWalkedAncestorStillPurged(t *testing.T) {
+	dir := tmpDir(t)
+	sub := filepath.Join(dir, "sub")
+	gone := filepath.Join(sub, "gone.md")
+	write(t, filepath.Join(sub, "kept.md"), "stays")
+	write(t, gone, "goes")
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scanPaths(t, store, opts, sub)
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	// The directory sorts before the file, so the walk of sub runs first —
+	// the ordering that used to swallow the deletion.
+	res := scanPaths(t, store, opts, sub, gone)
+
+	if res.Deleted != 1 || res.Unchanged != 1 {
+		t.Fatalf("Result = %+v, want the vanished child purged and the survivor unchanged", res)
+	}
+	if _, stale := store.docs[gone]; stale {
+		t.Error("the vanished file's row survived behind its walked ancestor")
+	}
+	if _, ok := store.docs[filepath.Join(sub, "kept.md")]; !ok {
+		t.Error("the surviving sibling was purged")
+	}
+}
+
+// Pass 1 commits per event, not once at the end: a debounce window is
+// nearly always far smaller than flushEvery, so an end-of-pass flush would
+// lose the whole reconcile to a shutdown or cancellation instead of at most
+// the event in flight.
+func TestScanPathsFlushesPerEvent(t *testing.T) {
+	dir := tmpDir(t)
+	var paths []string
+	for _, name := range []string{"a.md", "b.md", "c.md"} {
+		p := filepath.Join(dir, name)
+		write(t, p, "content of "+name)
+		paths = append(paths, p)
+	}
+	store := newFakeStore()
+
+	res := scanPaths(t, store, Options{Include: []string{dir}}, paths...)
+
+	if res.Discovered != 3 {
+		t.Fatalf("Result = %+v, want 3 discovered", res)
+	}
+	if len(store.batches) != 3 {
+		t.Fatalf("batches = %d, want one commit per event", len(store.batches))
+	}
+	for i, b := range store.batches {
+		if len(b) != 1 {
+			t.Errorf("batch %d holds %d docs, want 1", i, len(b))
+		}
 	}
 }
 

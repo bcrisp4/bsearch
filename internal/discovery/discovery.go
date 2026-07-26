@@ -1,11 +1,17 @@
-// Package discovery keeps the catalog's view of the filesystem current: new
-// and changed files become state=discovered rows for the pipeline, unchanged
-// files are skipped cheaply (size/mtime, then content hash), renamed files
-// keep their document IDs, and deleted files are purged. Per-path problems
-// (permission errors — the macOS TCC constraint — unreadable files, missing
-// roots) are collected in the result, never silently swallowed. See
-// DESIGN.md (Indexing pipeline and queue; Change detection; Data retention;
-// doc_id Closed issue).
+// Package discovery keeps the catalog's view of the filesystem current: it
+// owns the documents table (ADR 0015). New and changed files become
+// documents rows pointing at their content hash — creating the content row
+// at state=discovered when the hash is new — unchanged files are skipped
+// cheaply (size/mtime, then content hash), and deleted files are purged.
+// Per-path problems (permission errors — the macOS TCC constraint —
+// unreadable files, missing roots) are collected in the result, never
+// silently swallowed. See DESIGN.md (Indexing pipeline and queue; Identity:
+// path locates, content hash identifies; Data retention).
+//
+// There is deliberately no rename detection. A rename is a documents row
+// appearing at a new path with the same hash while the old path purges;
+// chunks, vectors and summaries were never addressed by path, so nothing
+// needs repointing and no identity needs preserving (ADR 0015).
 //
 // Two entry points, one body of rules. Scan walks every include root; it is
 // the periodic backstop, and the only thing that notices a file nothing told
@@ -21,7 +27,6 @@ package discovery
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -70,18 +75,31 @@ type PathError struct {
 
 // Result summarises one scan.
 type Result struct {
-	// Discovered counts new or content-changed files upserted as
-	// state=discovered (renames included).
+	// Discovered counts new or content-changed files upserted (the content
+	// row is created at state=discovered when the hash is new to the
+	// catalog).
 	Discovered int
 	// Unchanged counts files skipped because the catalog is current
 	// (size/mtime match, or content hash match after a touch).
 	Unchanged int
-	// Renamed counts moved files whose document ID was preserved
-	// (a subset of Discovered).
-	Renamed int
+	// Changed counts known paths re-pointed to a different content hash —
+	// an edit, not a new file (a subset of Discovered). The orphan sweep
+	// keys on it: re-pointing a path is one of the two ways content is
+	// orphaned, deletion being the other.
+	Changed int
 	// Dataless counts iCloud placeholder files skipped — indexing must
-	// never trigger cloud downloads.
+	// never trigger cloud downloads. Each is also persisted as an unread
+	// documents row (reason dataless) unless the catalog already holds its
+	// bytes from before the eviction and the stat still matches.
 	Dataless int
+	// Unread counts paths whose bytes could not be obtained this scan —
+	// denied (TCC) or io_error — and that are recorded as unread rows.
+	// Dataless placeholders are counted in Dataless, not here, so the two
+	// never double-count in "how many paths did the scan reach". Paths
+	// whose bytes the catalog already holds keep their hash and appear
+	// only in PathErrors: unread_reason is for bytes never obtained
+	// (ADR 0015).
+	Unread int
 	// Deleted counts catalog rows purged because their file is gone. Only
 	// ScanPaths sets it: a walk sees what exists, so noticing an absence
 	// needs either an event that named the path (here) or a catalog-side
@@ -103,10 +121,50 @@ type Result struct {
 	PathErrors []PathError
 }
 
+// Reached reports how many paths the scan actually got an answer about —
+// bytes read (Discovered, Unchanged) or deliberately left unread (Dataless).
+// It is the shared "did the scan reach anything" predicate for the
+// scheduler's Full Disk Access alarm and eval's empty-corpus guard, defined
+// once so the two cannot drift.
+//
+// Unread is excluded on purpose: a denied file was *not* reached — its bytes
+// were never obtained — and folding it in would silence the reached-nothing
+// alarm for exactly the corpora it exists to flag (a listable root whose
+// every file fails open with EPERM).
+func (r Result) Reached() int {
+	return r.Discovered + r.Unchanged + r.Dataless
+}
+
+// flushEvery is how many buffered document upserts ride in one transaction
+// (#34). Large enough that a 100k-file first scan costs hundreds of
+// transactions rather than 100k; small enough that each stays a short write
+// under the busy-timeout discipline, and that a fatal mid-scan error loses
+// at most one batch of not-yet-committed rows.
+const flushEvery = 256
+
 // Scanner performs one-shot discovery over the include roots.
 type Scanner struct {
 	store domain.DocumentStore
 	opts  Options
+
+	// pending buffers document upserts between flushes, so catalog writes
+	// batch per transaction instead of paying one IMMEDIATE transaction per
+	// file (#34). Emptied by flush; abandoned wholesale when a scan aborts —
+	// the next scan rediscovers anything dropped, and prior batches are
+	// already durable.
+	pending []domain.Document
+
+	// pendingRes stages the Result counts coupled to buffered rows
+	// (Discovered, Changed, and the write-backed Unchanged/Unread/Dataless
+	// increments). flush folds it into the caller's Result only after the
+	// batch commits, so the counts a scan returns always describe committed
+	// rows — the property the watcher's "recorded before the error is
+	// considered" bookkeeping relies on. Counts with no write behind them
+	// (cheap-check Unchanged, steady-state unread, Deleted, PathErrors) go
+	// straight to the caller's Result. Discarded together with pending when
+	// a scan aborts: rows that were never committed must never be counted,
+	// and re-finding them next scan must not count them twice.
+	pendingRes Result
 
 	// dataless is a seam for tests; production is the platform check.
 	dataless func(fs.FileInfo) bool
@@ -117,13 +175,63 @@ func New(store domain.DocumentStore, opts Options) *Scanner {
 	return &Scanner{store: store, opts: opts, dataless: isDataless}
 }
 
+// buffer queues one document write, flushing into res when the batch is
+// full. Callers stage the count for the row in pendingRes *before* calling
+// buffer — the append can trigger the flush that folds it.
+func (s *Scanner) buffer(ctx context.Context, doc domain.Document, res *Result) error {
+	s.pending = append(s.pending, doc)
+	if len(s.pending) >= flushEvery {
+		return s.flush(ctx, res)
+	}
+	return nil
+}
+
+// flush commits the buffered batch in one transaction and, only then, folds
+// the staged counts into res. Buffer and staged counts are surrendered
+// before the write either way: a failed flush is fatal to the scan, and a
+// Scanner outlives its scans, so rows — and counts — from an aborted one
+// must never leak into the next.
+func (s *Scanner) flush(ctx context.Context, res *Result) error {
+	if len(s.pending) == 0 {
+		return nil
+	}
+	batch := s.pending
+	staged := s.pendingRes
+	s.pending, s.pendingRes = nil, Result{}
+	if err := s.store.UpsertDocuments(ctx, batch); err != nil {
+		return err
+	}
+	res.Discovered += staged.Discovered
+	res.Unchanged += staged.Unchanged
+	res.Changed += staged.Changed
+	res.Dataless += staged.Dataless
+	res.Unread += staged.Unread
+	return nil
+}
+
+// abandon drops any not-yet-committed rows and their staged counts — the
+// deferred cleanup both entry points run so an aborted scan cannot leak
+// either into the next one.
+func (s *Scanner) abandon() {
+	s.pending, s.pendingRes = nil, Result{}
+}
+
 // Scan walks every include root and reconciles the catalog. It returns an
 // error only for fatal problems (store failure, context cancellation);
 // per-path problems accumulate in Result.PathErrors.
+//
+// Writes are flushed at each root boundary, and write-coupled counts fold
+// into the Result only as their batch commits — so Result's counts describe
+// committed state however Scan returns, and a fatal error still leaves every
+// prior root's batches durable and counted.
 func (s *Scanner) Scan(ctx context.Context) (Result, error) {
+	defer s.abandon()
 	var res Result
 	for _, root := range s.roots(&res) {
 		if err := s.walkTree(ctx, root, &res); err != nil {
+			return res, err
+		}
+		if err := s.flush(ctx, &res); err != nil {
 			return res, err
 		}
 	}
@@ -136,15 +244,15 @@ func (s *Scanner) Scan(ctx context.Context) (Result, error) {
 // a walk would give it. As with Scan, the error return is for fatal problems
 // only.
 //
-// The two passes are not a tidiness: their order is what makes a rename keep
-// its document ID. A move arrives as the old path and the new path in one
-// batch, and rename detection works by finding a catalog row whose content
-// hash matches and whose path is gone from disk. Reconciling the paths that
-// exist first lets the new path claim the old row; only then are the
-// still-missing paths considered for deletion, by which point the renamed
-// row has already moved out from under the old path and is not purged. In
-// the other order every rename would purge and re-mint (DESIGN.md: doc_id).
+// The two passes — paths that exist first, vanished paths second — order
+// the work so purge's re-stat guard sees the world settled: a rename
+// arrives as the old path and the new path in one batch, and reconciling
+// the surviving paths first means the second pass stats the old path
+// against a filesystem that is done moving. Nothing here preserves identity
+// across the move any more (ADR 0015 retired rename detection); the order
+// is purely about not purging on a stale view.
 func (s *Scanner) ScanPaths(ctx context.Context, paths []string) (Result, error) {
+	defer s.abandon()
 	var res Result
 	// Root-resolution problems are the walk's to report, not this batch's:
 	// they are a property of the configuration, they do not change between
@@ -162,6 +270,14 @@ func (s *Scanner) ScanPaths(ctx context.Context, paths []string) (Result, error)
 		sorted[i] = filepath.Clean(p)
 	}
 	slices.Sort(sorted)
+	// Deduplicated because the write buffer makes duplicate input
+	// non-idempotent: GetByPath reads the store, not pending, so the same
+	// path twice in one call would be processed and counted twice — and a
+	// readability change between the two visits would let the second row
+	// clobber the first's hash inside one batch. The FSEvents adapter
+	// cannot deliver duplicates, but ScanPaths is exported and must not
+	// carry an undocumented precondition.
+	sorted = slices.Compact(sorted)
 
 	var vanished []string
 	// walked are the directories already descended into. A list rather than
@@ -182,17 +298,23 @@ func (s *Scanner) ScanPaths(ctx context.Context, paths []string) (Result, error)
 			res.Ignored++
 			continue
 		}
-		if withinAny(path, walked) {
-			// Already reconciled by the walk of an ancestor: a directory
-			// created or moved arrives with an event per file inside it too,
-			// and re-statting every one of them would double the work of
-			// every bulk copy.
-			continue
-		}
+		// Stat'ed before the walked-ancestor skip below: a walk reconciles
+		// what exists, so it cannot have answered for a vanished descendant.
+		// A directory deleted and recreated — or moved away and back —
+		// inside one window arrives with events for children that no longer
+		// exist, and skipping those unstatted would leave their rows serving
+		// search hits forever.
 		info, err := os.Lstat(path)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			vanished = append(vanished, path)
+			continue
+		case withinAny(path, walked):
+			// Present, and already reconciled by the walk of an ancestor: a
+			// directory created or moved arrives with an event per file
+			// inside it too, and re-processing every one of them would
+			// double the work of every bulk copy. A stat failure under a
+			// walked ancestor lands here too — the walk already reported it.
 			continue
 		case err != nil:
 			res.PathErrors = append(res.PathErrors, PathError{Path: path, Err: err})
@@ -212,11 +334,23 @@ func (s *Scanner) ScanPaths(ctx context.Context, paths []string) (Result, error)
 			walked = append(walked, path)
 		case !info.Mode().IsRegular() || !isTextFile(info.Name()):
 		case s.dataless(info):
-			res.Dataless++
+			if err := s.noteDataless(ctx, path, info, &res); err != nil {
+				return res, err
+			}
 		default:
 			if err := s.processFile(ctx, path, info, &res); err != nil {
 				return res, err
 			}
+		}
+		// Flushed per event rather than once at the end: a debounce window
+		// is nearly always far smaller than flushEvery, so one flush after
+		// the loop would turn "lose at most one batch" into "lose the whole
+		// reconcile" whenever shutdown or cancellation lands mid-pass.
+		// Directory events still batch inside walkTree. This is also what
+		// commits everything pass 1 learned before anything is deleted, so
+		// the purge's re-stat guard runs against a settled catalog.
+		if err := s.flush(ctx, &res); err != nil {
+			return res, err
 		}
 	}
 
@@ -330,8 +464,7 @@ func (s *Scanner) walkTree(ctx context.Context, root string, res *Result) error 
 			return nil //nolint:nilerr // recorded in PathErrors; keep walking
 		}
 		if s.dataless(info) {
-			res.Dataless++
-			return nil
+			return s.noteDataless(ctx, path, info, res)
 		}
 		return s.processFile(ctx, path, info, res)
 	})
@@ -400,113 +533,145 @@ func (s *Scanner) processFile(ctx context.Context, path string, info fs.FileInfo
 	}
 
 	// Cheap check: size and mtime unchanged → catalog is current, no read.
-	if known && existing.Size == info.Size() &&
-		existing.MTime.UnixNano() == info.ModTime().UnixNano() {
+	// Only for rows with content: an unread row (NULL hash) must be re-tried
+	// every scan, so that granting Full Disk Access clears a denial without
+	// the file having to change.
+	if known && existing.ContentHash != "" && statMatches(existing, info) {
 		res.Unchanged++
+		return nil
+	}
+
+	// The one exception to the unconditional unread retry: io_error means
+	// the last attempt got past open and died mid-read, after reading and
+	// hashing every byte up to the failure point — retrying an unchanged
+	// file re-pays that in full every scan (a large file on a failing disk
+	// is gigabytes a day on a battery). denied stays unconditional, where
+	// the retry earns its keep: open fails instantly, and the grant
+	// appearing is exactly what it exists to notice.
+	if known && existing.UnreadReason == domain.UnreadIOError && statMatches(existing, info) {
+		res.Unread++
 		return nil
 	}
 
 	hash, err := hashFile(path)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Deleted between the stat and the open — the same race the
+			// walk filters at d.Info(). Not a problem to report and never
+			// an io_error row: the path is gone, and persisting it would
+			// leave a phantom row no walk can ever purge.
+			return nil
+		}
+		// Reported both ways on purpose: the PathError is last-scan
+		// transparency (what went wrong just now), the unread row is steady
+		// state (`bsearch status` shows a denial however long ago the scan
+		// that met it ran).
 		res.PathErrors = append(res.PathErrors, PathError{Path: path, Err: err})
-		return nil //nolint:nilerr // recorded in PathErrors; keep walking
+		reason := domain.UnreadIOError
+		if errors.Is(err, fs.ErrPermission) {
+			reason = domain.UnreadDenied
+		}
+		return s.noteUnread(ctx, path, info, reason, existing, known, res)
 	}
 
-	// Touched but content-identical → refresh stat, keep everything else.
+	// Touched but content-identical → refresh stat. The same upsert as
+	// below — a documents row carries nothing else worth protecting — but
+	// counted as unchanged, because for the user nothing happened. The
+	// unread→readable transition also lands here and below: the hash
+	// filling in is what clears the reason.
 	if known && existing.ContentHash == hash {
-		switch err := s.store.UpdateDocumentStat(ctx, existing.ID, info.Size(), info.ModTime()); {
-		case errors.Is(err, domain.ErrDocumentGone):
-			// The row was purged between the read above and this write.
-			//
-			// That used to be ordinary: the watcher's reconcile ran on its own
-			// goroutine and could see this path deleted while the walk was
-			// mid-stride over it. Since ADR 0014 both run on the scheduler
-			// goroutine, so nothing can purge between the two — reaching here
-			// means the single-writer invariant broke, and swallowing it with
-			// a bare `return nil` would absorb that silently: no log, no
-			// PathError, and the document simply stops being counted.
-			//
-			// Recorded as a path error instead, which is the channel the rest
-			// of this function already uses for "something was wrong with this
-			// file" and which `bsearch status` surfaces (CLAUDE.md: never a
-			// silent skip). Still not fatal: one document is not worth failing
-			// a walk over, and the next pass rediscovers the file if it is
-			// really still there.
-			res.PathErrors = append(res.PathErrors, PathError{Path: path, Err: err})
-			return nil //nolint:nilerr // recorded in PathErrors; keep walking
-		case err != nil:
-			return err
-		}
-		res.Unchanged++
-		return nil
+		s.pendingRes.Unchanged++
+		return s.buffer(ctx, domain.Document{
+			Path: path, ContentHash: hash,
+			Size: info.Size(), MTime: info.ModTime(),
+		}, res)
 	}
 
-	id, renamed := existing.ID, false
-	if !known {
-		if id, renamed, err = s.resolveID(ctx, hash, res); err != nil {
-			return err
-		}
+	// New path, or a known path re-pointed to different bytes. The upsert
+	// creates the content row at discovered when the hash is new; when it
+	// is not — a duplicate, or a file restored to prior content — there is
+	// simply no work to schedule, structurally (ADR 0015). For a restore
+	// that holds for the life of the daemon process: the eager orphan sweep
+	// spares terminal content precisely so an undo or a split-window rename
+	// stays free, and only the startup sweep collects what is still
+	// unreferenced by then (domain.SweepScope).
+	s.pendingRes.Discovered++
+	if known && existing.ContentHash != "" && existing.ContentHash != hash {
+		s.pendingRes.Changed++
 	}
+	return s.buffer(ctx, domain.Document{
+		Path: path, ContentHash: hash,
+		Size: info.Size(), MTime: info.ModTime(),
+	}, res)
+}
 
-	doc := domain.Document{
-		ID:          id,
-		Path:        path,
-		ContentHash: hash,
-		Size:        info.Size(),
-		MTime:       info.ModTime(),
-		State:       domain.DocStateDiscovered,
-	}
-	if _, err := s.store.UpsertDocument(ctx, doc, nil); err != nil {
+// statMatches reports whether the catalog row still describes the file's
+// size and mtime. UnixNano on both sides because that is the precision the
+// adapter persists (mtime INTEGER — unix nanoseconds); one definition so no
+// caller retypes the comparison with time.Equal and silently never matches.
+func statMatches(existing domain.Document, info fs.FileInfo) bool {
+	return existing.Size == info.Size() &&
+		existing.MTime.UnixNano() == info.ModTime().UnixNano()
+}
+
+// noteDataless records an iCloud placeholder without ever opening the file,
+// which could trigger a cloud download — the reason this cannot share
+// processFile's read path and does its own lookup.
+func (s *Scanner) noteDataless(ctx context.Context, path string, info fs.FileInfo, res *Result) error {
+	existing, known, err := s.store.GetByPath(ctx, path)
+	if err != nil {
 		return err
 	}
-	res.Discovered++
-	if renamed {
-		res.Renamed++
-	}
-	return nil
+	return s.noteUnread(ctx, path, info, domain.UnreadDataless, existing, known, res)
 }
 
-// resolveID decides the document ID for a path not in the catalog:
-// rename detection per DESIGN.md's doc_id Closed issue. A catalog row
-// with the same content hash whose path is gone from disk is a rename —
-// reuse its ID. Anything ambiguous (old path still exists = copy; several
-// candidate rows; stat failure on the old path) mints a fresh ID: prefer
-// id churn over a false merge.
-func (s *Scanner) resolveID(ctx context.Context, hash string, res *Result) (id string, renamed bool, err error) {
-	candidates, err := s.store.GetByContentHash(ctx, hash)
-	if err != nil {
-		return "", false, err
-	}
-	var gone []domain.Document
-	for _, c := range candidates {
-		switch _, statErr := os.Lstat(c.Path); {
-		case statErr == nil:
-			// Old path still exists: a copy, not a rename.
-		case errors.Is(statErr, fs.ErrNotExist):
-			gone = append(gone, c)
-		default:
-			// Can't verify the old path is gone (e.g. TCC EPERM):
-			// counted as still existing — prefer id churn over a false
-			// merge — but recorded, or the churn is undiagnosable.
-			res.PathErrors = append(res.PathErrors, PathError{Path: c.Path, Err: statErr})
+// noteUnread is the one place the unread rules live — the package comment's
+// "two implementations would eventually disagree" warning applies to this
+// rule as much as to change detection, and the counting of its two callers
+// had already diverged once. It records a path whose bytes were not obtained
+// this scan: persisted as an unread row so `bsearch status` reports it in
+// steady state, counted in Dataless for placeholders and Unread for
+// everything else — a placeholder parked by design and a denial that needs
+// fixing must never report as one number.
+//
+// A row whose bytes were obtained before the path stopped being readable
+// keeps its hash — unread_reason is for bytes never obtained (ADR 0015) —
+// with one carve-out per reason:
+//   - unreadable file: kept unconditionally and counted by nothing;
+//     the caller's PathError is the surface. Refreshing the stat here would
+//     let the cheap check swallow the retry that notices a re-grant.
+//   - dataless: kept only while the stat still matches. A placeholder whose
+//     stat moved was edited remotely after eviction, and the indexed bytes
+//     no longer describe the file — the hash is dropped for a dataless row,
+//     because serving stale chunks indefinitely is worse than losing the
+//     hit until the file is materialized.
+func (s *Scanner) noteUnread(ctx context.Context, path string, info fs.FileInfo, reason domain.UnreadReason, existing domain.Document, known bool, res *Result) error {
+	count := func(r *Result) {
+		if reason == domain.UnreadDataless {
+			r.Dataless++
+		} else {
+			r.Unread++
 		}
 	}
-	if len(gone) == 1 {
-		return gone[0].ID, true, nil
+	if known && existing.ContentHash != "" {
+		if reason != domain.UnreadDataless {
+			return nil
+		}
+		if statMatches(existing, info) {
+			count(res)
+			return nil
+		}
 	}
-	id, err = newDocID()
-	return id, false, err
-}
-
-// newDocID mints an opaque surrogate document ID: "d_" + 16 hex chars
-// (64 random bits — collisions negligible at the 100k-doc target, which
-// matters because the store's upsert would silently merge on collision).
-func newDocID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("mint doc id: %w", err)
+	if known && existing.UnreadReason == reason && statMatches(existing, info) {
+		// Steady state — recorded exactly like this already; count, no write.
+		count(res)
+		return nil
 	}
-	return "d_" + hex.EncodeToString(b[:]), nil
+	count(&s.pendingRes)
+	return s.buffer(ctx, domain.Document{
+		Path: path, UnreadReason: reason,
+		Size: info.Size(), MTime: info.ModTime(),
+	}, res)
 }
 
 // hashFile returns the lowercase hex sha256 of the file contents.

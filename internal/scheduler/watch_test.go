@@ -161,6 +161,38 @@ func TestTheHandoffWakesTheSchedulerAndTheReconcileDoesNot(t *testing.T) {
 	})
 }
 
+// A deletion the watcher reported arms the orphan sweep. This is the
+// feature's primary trigger and the only path that can produce
+// Result.Deleted in production — purge lives in ScanPaths, so the walk's arm
+// can never fire on Deleted (review 3653204119: dropping recordReconcile's
+// noteOrphanProducers call must fail a test, and this is that test).
+func TestAWatcherReportedDeletionArmsTheOrphanSweep(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		sc.pathResult = discovery.Result{Deleted: 1}
+		q := newFakeQueue()
+		s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+		s.cycle(t.Context()) // consumes the construction full-scope arm
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Fatalf("orphan sweeps = %d, want the startup sweep only", got)
+		}
+
+		// A closed debounce window carrying a deletion; the cycle's own
+		// reconcile purges it and must arm the sweep that collects what the
+		// purge orphaned.
+		seedPending(s, "/root/gone.md")
+		s.cycle(t.Context())
+
+		if got := q.orphanSweepCount(); got != 2 {
+			t.Fatalf("orphan sweeps = %d, want 2 — a watcher-reported deletion is the sweep's primary trigger", got)
+		}
+		if scopes := q.scopes(); scopes[1] != domain.SweepScopeQueue {
+			t.Errorf("sweep scope = %v, want SweepScopeQueue", scopes[1])
+		}
+	})
+}
+
 // An unreachable endpoint is probed on the recheck interval, not on every
 // wake. Since ADR 0014 a closed debounce window wakes a cycle, so ordinary
 // churn under a watched root would otherwise set the probe rate — a connect
@@ -170,7 +202,7 @@ func TestAFailedEndpointProbeIsNotRepeatedOnEveryWake(t *testing.T) {
 		sc := watchedScanner("/root")
 		ix := newFakeIndexer()
 		ix.prepareErr = errors.New("connection refused")
-		s := newScheduler(t, newFakeQueue(discoveredDoc("d_1")), ix, sc, nil)
+		s := newScheduler(t, newFakeQueue(discoveredContent("c_1")), ix, sc, nil)
 
 		for range 5 {
 			s.cycle(t.Context())
@@ -503,21 +535,21 @@ func TestForcedScanSurvivesAFailedWalk(t *testing.T) {
 	})
 }
 
-// The reconcile lands between documents, not after the batch. That placement
-// is what bounds how long a purged file stays searchable to one document
+// The reconcile lands between contents, not after the batch. That placement
+// is what bounds how long a purged file stays searchable to one content
 // rather than to a batch of thirty-two, and it is the axis on which ADR 0014
 // rejected draining only between batches.
-func TestAClosedWindowIsReconciledBetweenDocuments(t *testing.T) {
+func TestAClosedWindowIsReconciledBetweenContents(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sc := watchedScanner("/root")
-		q := newFakeQueue(discoveredDoc("d_1"), discoveredDoc("d_2"), discoveredDoc("d_3"))
+		q := newFakeQueue(discoveredContent("c_1"), discoveredContent("c_2"), discoveredContent("c_3"))
 		ix := newFakeIndexer()
 		s := newScheduler(t, q, ix, sc, nil)
 
 		var events []string
-		ix.markIndexed = func(docID string) {
-			events = append(events, "processed:"+docID)
-			if docID == "d_1" {
+		ix.markIndexed = func(hash string) {
+			events = append(events, "processed:"+hash)
+			if hash == "c_1" {
 				// Stands in for the watcher closing a window mid-drain.
 				seedPending(s, "/root/saved.md")
 			}
@@ -526,7 +558,7 @@ func TestAClosedWindowIsReconciledBetweenDocuments(t *testing.T) {
 
 		s.cycle(t.Context())
 
-		want := []string{"processed:d_1", "reconciled", "processed:d_2", "processed:d_3"}
+		want := []string{"processed:c_1", "reconciled", "processed:c_2", "processed:c_3"}
 		if !slices.Equal(events, want) {
 			t.Errorf("events = %v, want %v — the window waited for the batch to finish", events, want)
 		}
@@ -665,39 +697,38 @@ func TestAWalkAndAReconcileBothReachTheSnapshotInOneCycle(t *testing.T) {
 	})
 }
 
-// Issue #63's second half. ClaimBatch hands out copies read once; a rename
-// reconciled between documents moves a row out from under the copy still
-// waiting its turn. Working from that copy sends the pipeline to a path the
-// rename has since given to a different file — and the write that follows
-// displaces that file's row and reverts the rename.
+// Issue #63's lesson, rebuilt for ADR 0015. ClaimBatch hands out copies read
+// once; a rename reconciled between contents re-points a hash's path out
+// from under the copy still waiting its turn. GetWork resolves the path at
+// work time, so the pipeline reads the file where it is now — working from
+// the claimed copy would use a stale attempt count, and there was no path in
+// it to begin with.
 func TestProcessWorksFromTheRowAsItIsNowNotAsItWasClaimed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sc := watchedScanner("/root")
-		q := newFakeQueue(discoveredDoc("d_1"), discoveredDoc("d_2"))
+		q := newFakeQueue(discoveredContent("c_1"), discoveredContent("c_2"))
 		ix := newFakeIndexer()
 		s := newScheduler(t, q, ix, sc, nil)
 
-		ix.markIndexed = func(docID string) {
-			if docID != "d_1" {
+		ix.markIndexed = func(hash string) {
+			if hash != "c_1" {
 				return
 			}
 			// The write discovery makes for a rename, landing between
-			// documents while d_2's claimed copy still says /tmp/d_2.md.
-			q.mu.Lock()
-			q.docs["d_2"].Path = "/tmp/renamed.md"
-			q.mu.Unlock()
+			// contents while c_2's claim is still waiting its turn.
+			q.setPath("c_2", "/tmp/renamed.md")
 		}
 
 		s.cycle(t.Context())
 
 		var got string
-		for _, doc := range ix.processedDocs {
-			if doc.ID == "d_2" {
-				got = doc.Path
+		for _, item := range ix.processedItems {
+			if item.Content.Hash == "c_2" {
+				got = item.Path
 			}
 		}
 		if got != "/tmp/renamed.md" {
-			t.Errorf("d_2 processed at %q, want /tmp/renamed.md — the claimed copy is stale", got)
+			t.Errorf("c_2 processed at %q, want /tmp/renamed.md — the claimed copy is stale", got)
 		}
 	})
 }

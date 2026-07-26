@@ -11,6 +11,68 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Files are now identified by path, and their content by hash — `doc_id` is
+  gone.** ([ADR 0015](docs/adr/0015-content-addressed-chunks-and-summaries.md),
+  [#77](https://github.com/bcrisp4/bsearch/issues/77)) What this buys:
+
+  - **Renaming or moving a file no longer costs a re-embed**
+    ([#32](https://github.com/bcrisp4/bsearch/issues/32)): everything derived
+    from the file's bytes is keyed by their hash, and a rename doesn't change
+    the bytes.
+  - **Identical files are embedded once**, however many copies exist. A search
+    hit names one primary path (the most recently modified copy) and lists the
+    rest in `also_at`, rather than spending result slots on copies that would
+    all rank identically.
+  - Search results (`POST /v1/search`, `bsearch search --json`) carry `path`
+    (the identity), `content_hash`, and `also_at` — the `doc_id` field is
+    removed. A path is what an agent can act on; nothing needs to survive a
+    rebuild.
+
+  **The index database is rebuilt from scratch by this change.** There is no
+  in-place migration — the index is derived data. Delete the old database
+  (`~/Library/Application Support/bsearch/bsearch.db*`) and the daemon
+  reindexes on next start; an old database left in place is refused with an
+  error saying exactly that.
+
+- **Files bsearch couldn't read are now remembered, not just logged.** A file
+  that can be seen but not opened (a per-file permission denial), an iCloud
+  placeholder skipped so it never triggers a download, and a file that failed
+  mid-read are each recorded with their reason and stay visible in
+  `bsearch status` in steady state — previously a denial was only reported if
+  the *most recent* scan happened to touch it. A directory-level denial — the
+  usual missing Full Disk Access shape — still surfaces through scan errors
+  only: the files inside were never even seen, so there is nothing to record.
+  A file that was indexed before becoming unreadable keeps serving its
+  indexed content rather than disappearing from search.
+
+- **Discovery writes are batched.** A first scan over a large corpus commits
+  catalog rows hundreds at a time instead of one transaction per file
+  ([#34](https://github.com/bcrisp4/bsearch/issues/34)), so the initial index
+  of a big folder spends its time hashing and embedding, not committing.
+
+- **`bsearch status` now reports three populations that add up.** `files`
+  counts your files, `unread` counts the ones whose bytes could never be
+  read — split by the reasons described above, which must never report as
+  one number — and `content` counts distinct contents by pipeline state.
+  The gap between files-with-content and distinct contents is what
+  deduplication saved you (content pending garbage collection is excluded,
+  so the arithmetic holds at every moment, not just after a sweep). The
+  always-zero "deleted" count is gone, and failure groups now count
+  contents (`failures[].contents` in the JSON).
+
+- **Deleted and edited-away content is collected in the background.** When a
+  file is deleted its search hits disappear immediately; the chunks, vectors
+  and summaries its bytes produced are garbage-collected by a sweep that runs
+  after deletions and edits (and once at startup), never on quiet cycles.
+  Search results never change and never wait on it. Content you might come
+  back to — an undo, a `git checkout`, a copy restored from backup — is
+  deliberately spared while the daemon runs, so flipping between two
+  versions of a file never costs a re-embed; fully-processed orphans are
+  only collected at the next daemon start. `bsearch status` reports what
+  the sweep has collected.
+
 ### Added
 
 - **Save a file, and it is searchable in seconds.** The daemon now watches
@@ -18,8 +80,7 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   just wrote turns up in search about fifteen seconds later rather than up to
   five minutes. Deleting a file now works too, for the first time: it stops
   appearing in search just as quickly, instead of lingering in the index
-  pointing at a path that is not there. Renames and folder moves keep a
-  document's identity, so anything holding onto a `doc_id` still resolves.
+  pointing at a path that is not there.
 
   The periodic walk has not gone away — it is the backstop for changes the
   event stream missed, and it now runs every fifteen minutes rather than
@@ -41,8 +102,8 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   [#57](https://github.com/bcrisp4/bsearch/issues/57).
 
 - **New `bsearch status` command: what the daemon is doing, and why it isn't.**
-  It reports the index — ready or not and why, the embedding model, per-state
-  document counts, and what the index costs on disk — alongside the
+  It reports the index — ready or not and why, the embedding model, the
+  file/content/unread counts, and what the index costs on disk — alongside the
   background indexing loop: what it is waiting on ("embedding endpoint
   unreachable", "deferred: on battery", "files could not be read — check Full
   Disk Access"), when it last scanned and last made progress, and what it has
@@ -51,8 +112,9 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   The two are reported separately on purpose, because they break separately:
   "nothing is indexed" and "nothing is indexing" have different fixes, and a
   daemon whose indexing never started now says so instead of looking idle.
-  Documents that were given up on are listed by reason, largest group first,
-  with a path to look at; directories that could not be read are listed too,
+  Content that was given up on is listed by reason, largest group first,
+  with a path to look at (identical failing files count once — they are one
+  content); directories that could not be read are listed too,
   which on macOS usually means the binary needs Full Disk Access.
 
   `bsearch status --json` emits the daemon's `GET /v1/status` document

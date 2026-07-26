@@ -129,13 +129,48 @@ func writeIndexSection(out io.Writer, index server.IndexStatus) {
 		}
 		fields = append(fields, field{"model", model})
 	}
-	if index.Documents != nil {
-		fields = append(fields, field{"documents", fmt.Sprintf("%s indexed · %s failed · %s deleted",
-			count(index.Documents[string(domain.DocStateIndexed)]),
-			count(index.Documents[string(domain.DocStateFailed)]),
-			count(index.Documents[string(domain.DocStateDeleted)]))})
+	if index.Documents != nil && index.Content == nil {
+		// The retired pre-ADR-0015 wire names: an older daemon is answering.
+		// Its counts are in fields this build no longer reads, and rendering
+		// zeros would report an empty-looking index on the one command
+		// reached for when something already seems wrong — say what is
+		// actually happening instead.
+		fields = append(fields, field{
+			"warning",
+			"the daemon is older than this CLI — restart it (`bsearch serve`) to see index counts",
+		})
+	}
+	if index.Content != nil {
+		// Two lines for two populations (ADR 0015): files counts paths,
+		// contents counts distinct byte sequences by state. Folded into one
+		// line they read as a comparable triple, and on a deduplicated
+		// corpus "1,000 files · 400 indexed" reads as 600 failures.
+		fields = append(fields,
+			field{"files", count(index.Files)},
+			field{"contents", fmt.Sprintf("%s indexed · %s failed",
+				count(index.Content[string(domain.ContentStateIndexed)]),
+				count(index.Content[string(domain.ContentStateFailed)]))})
+	}
+	if unread := sumCounts(index.Unread); unread > 0 {
+		// All three reasons whenever any is non-zero: denied is the Full
+		// Disk Access signal and must never fold into dataless, which is an
+		// iCloud placeholder skipped exactly as intended — one is broken,
+		// the other is working (ADR 0015).
+		fields = append(fields, field{"unread", fmt.Sprintf("denied %s · dataless %s · io_error %s",
+			count(index.Unread[string(domain.UnreadDenied)]),
+			count(index.Unread[string(domain.UnreadDataless)]),
+			count(index.Unread[string(domain.UnreadIOError)]))})
 	}
 	writeFields(out, fields)
+}
+
+// sumCounts totals a count map (nil-safe).
+func sumCounts(m map[string]int) int {
+	total := 0
+	for _, n := range m {
+		total += n
+	}
+	return total
 }
 
 // writeQueueSection reports the backlog. The per-state breakdown is what says
@@ -153,11 +188,11 @@ func writeQueueSection(out io.Writer, index server.IndexStatus) {
 		fields = append(fields, field{"retrying", count(index.Queue.Retrying)})
 	}
 	var states []string
-	for _, state := range domain.DocStates {
+	for _, state := range domain.ContentStates {
 		if state.Terminal() {
 			continue
 		}
-		if n := index.Documents[string(state)]; n > 0 {
+		if n := index.Content[string(state)]; n > 0 {
 			states = append(states, fmt.Sprintf("%s %s", state, count(n)))
 		}
 	}
@@ -199,12 +234,27 @@ func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now ti
 		fields = append(fields, field{"last cycle", ago(*indexing.LastCycle, now)})
 	}
 	t := indexing.Totals
-	fields = append(fields, field{"since start", fmt.Sprintf("%s indexed · %s failed · %s skipped · %s retried",
-		count(t.Indexed), count(t.Failed), count(t.Skipped), count(t.Retried))})
+	sinceStart := fmt.Sprintf("%s indexed · %s failed · %s skipped · %s retried",
+		count(t.Indexed), count(t.Failed), count(t.Skipped), count(t.Retried))
+	if t.Changed > 0 {
+		// Only when it happened, like the re-queued and superseded lines
+		// below: a claim abandoned because the file changed under it is
+		// rare, and a steady climb here is the one visible trace of a file
+		// being rewritten continuously.
+		sinceStart += fmt.Sprintf(" · %s changed", count(t.Changed))
+	}
+	fields = append(fields, field{"since start", sinceStart})
 	if t.Swept > 0 {
 		// Only worth a line when it happened: it is the daemon explaining why
 		// an indexed corpus is being worked through again.
 		fields = append(fields, field{"re-queued", count(t.Swept) + " (superseded pipeline stage)"})
+	}
+	if t.Collected > 0 {
+		// Garbage collection after deletions and edits. Only when it
+		// happened — and worth a line when it did, because a corpus where
+		// files keep being deleted while this number never moves is the
+		// sweep silently failing.
+		fields = append(fields, field{"collected", count(t.Collected) + " (orphaned content)"})
 	}
 	if t.Superseded > 0 {
 		// Never expected. One goroutine writes the catalog (ADR 0014), so any
@@ -311,14 +361,14 @@ func scanTrouble(indexing *server.IndexingStatus) string {
 	return trouble
 }
 
-// writeFailuresSection lists why documents were given up on. Grouped, because
+// writeFailuresSection lists why contents were given up on. Grouped, because
 // a corpus fails in a handful of ways and the count plus one path is what can
 // be acted on.
 func writeFailuresSection(out io.Writer, index server.IndexStatus, home string) {
 	if len(index.Failures) == 0 {
 		return
 	}
-	failed := index.Documents[string(domain.DocStateFailed)]
+	failed := index.Content[string(domain.ContentStateFailed)]
 	fmt.Fprintf(out, "\nFailures (%s)\n", count(failed))
 	listed := 0
 	for _, f := range index.Failures {
@@ -326,11 +376,11 @@ func writeFailuresSection(out io.Writer, index server.IndexStatus, home string) 
 		if reason == "" {
 			reason = "no reason recorded"
 		}
-		fmt.Fprintf(out, "  %s  %s\n", count(f.Documents), search.Preview(reason, maxReasonRunes))
+		fmt.Fprintf(out, "  %s  %s\n", count(f.Contents), search.Preview(reason, maxReasonRunes))
 		if f.ExamplePath != "" {
 			fmt.Fprintf(out, "     %s\n", stripControl(tildePath(home, f.ExamplePath)))
 		}
-		listed += f.Documents
+		listed += f.Contents
 	}
 	// The daemon reports only the largest few groups, so on a corpus that
 	// failed in many ways the list accounts for less than the heading. Saying

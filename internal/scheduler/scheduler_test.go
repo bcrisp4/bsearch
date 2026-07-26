@@ -23,14 +23,21 @@ import (
 // of the repo: each records what it was asked to do and exposes a knob per
 // failure mode, so a test reads as a scenario rather than as setup.
 
-// fakeQueue is an in-memory catalog. Documents are keyed by ID; the claim
+// fakeQueue is an in-memory catalog. Content rows are keyed by hash; the claim
 // applies the same dispatch predicate as the SQLite implementation, whose own
 // behaviour is covered by the adapter's tests.
 type fakeQueue struct {
-	mu   sync.Mutex
-	docs map[string]*domain.Document
+	mu       sync.Mutex
+	contents map[string]*domain.Content
 	// order fixes claim order so assertions are stable.
 	order []string
+	// paths is what GetWork resolves each hash to. Absent means the default
+	// /tmp/<hash>.md scheme, so most tests never think about paths at all.
+	paths map[string]string
+	// pathGone marks a hash whose row exists but which no live document
+	// references any more — the file was deleted while its claim was in
+	// flight. GetWork reports ErrContentGone for it, as the store does.
+	pathGone map[string]bool
 
 	claimErr     error
 	rescheduleEr error
@@ -42,81 +49,126 @@ type fakeQueue struct {
 	// sweepMoves is what ResetStale reports moved, per call.
 	sweepMoves []int
 	claims     int
+
+	// orphanSweeps counts SweepOrphans calls, sweepScopes records each
+	// call's scope, and orphanSweepErr fails them. The sweep itself is
+	// modelled, not stubbed: it removes pathGone rows the way the store
+	// does, so tests can observe orphans actually leaving the queue.
+	orphanSweeps   int
+	sweepScopes    []domain.SweepScope
+	orphanSweepErr error
+
+	// getWorks records every GetWork call, so a test can assert an orphan
+	// was never handed toward the pipeline at all.
+	getWorks []string
 }
 
 type rescheduled struct {
-	docID    string
+	hash     string
 	attempts int
 	at       time.Time
 	reason   string
 }
 
 type failure struct {
-	docID  string
+	hash   string
 	reason string
 }
 
-func newFakeQueue(docs ...domain.Document) *fakeQueue {
-	q := &fakeQueue{docs: map[string]*domain.Document{}}
-	for _, d := range docs {
-		doc := d
-		q.docs[doc.ID] = &doc
-		q.order = append(q.order, doc.ID)
+func newFakeQueue(contents ...domain.Content) *fakeQueue {
+	q := &fakeQueue{
+		contents: map[string]*domain.Content{},
+		paths:    map[string]string{},
+		pathGone: map[string]bool{},
+	}
+	for _, c := range contents {
+		content := c
+		q.contents[content.Hash] = &content
+		q.order = append(q.order, content.Hash)
 	}
 	return q
 }
 
-// GetByID is the scheduler's re-read. It returns the *current* row, so a test
-// that mutates q.docs between the claim and the process is standing in for a
-// reconcile landing between documents.
-func (q *fakeQueue) GetByID(_ context.Context, docID string) (domain.Document, error) {
+// add stages a new content row mid-test, the way discovery would.
+func (q *fakeQueue) add(c domain.Content) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	doc, ok := q.docs[docID]
-	if !ok {
-		return domain.Document{}, fmt.Errorf("get %s: %w", docID, domain.ErrDocumentGone)
-	}
-	return *doc, nil
+	content := c
+	q.contents[content.Hash] = &content
+	q.order = append(q.order, content.Hash)
 }
 
-func (q *fakeQueue) ClaimBatch(_ context.Context, now time.Time, limit int) ([]domain.Document, error) {
+// setState mutates a row the way the real pipeline's own writes would.
+func (q *fakeQueue) setState(hash string, state domain.ContentState) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.contents[hash].State = state
+}
+
+// setPath re-points a hash at a new path, standing in for the documents-table
+// write a rename produces.
+func (q *fakeQueue) setPath(hash, path string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.paths[hash] = path
+}
+
+// GetWork is the scheduler's re-read. It returns the *current* row and the
+// path resolved *now*, so a test that mutates q between the claim and the
+// process is standing in for a reconcile landing between contents.
+func (q *fakeQueue) GetWork(_ context.Context, hash string) (domain.WorkItem, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.getWorks = append(q.getWorks, hash)
+	c, ok := q.contents[hash]
+	if !ok || q.pathGone[hash] {
+		return domain.WorkItem{}, fmt.Errorf("get work %s: %w", hash, domain.ErrContentGone)
+	}
+	path, ok := q.paths[hash]
+	if !ok {
+		path = "/tmp/" + hash + ".md"
+	}
+	return domain.WorkItem{Content: *c, Path: path}, nil
+}
+
+func (q *fakeQueue) ClaimBatch(_ context.Context, now time.Time, limit int) ([]domain.Content, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.claims++
 	if q.claimErr != nil {
 		return nil, q.claimErr
 	}
-	var out []domain.Document
-	for _, id := range q.order {
+	var out []domain.Content
+	for _, hash := range q.order {
 		if len(out) == limit {
 			break
 		}
-		doc := q.docs[id]
-		if doc.State.Terminal() {
+		c := q.contents[hash]
+		if c.State.Terminal() {
 			continue
 		}
-		if !doc.NextRetryAt.IsZero() && doc.NextRetryAt.After(now) {
+		if !c.NextRetryAt.IsZero() && c.NextRetryAt.After(now) {
 			continue
 		}
-		out = append(out, *doc)
+		out = append(out, *c)
 	}
 	return out, nil
 }
 
-func (q *fakeQueue) Reschedule(_ context.Context, docID string, attempts int, at time.Time, reason string) error {
+func (q *fakeQueue) Reschedule(_ context.Context, hash string, attempts int, at time.Time, reason string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.rescheduleEr != nil {
 		return q.rescheduleEr
 	}
-	q.reschedules = append(q.reschedules, rescheduled{docID, attempts, at, reason})
-	doc, ok := q.docs[docID]
+	q.reschedules = append(q.reschedules, rescheduled{hash, attempts, at, reason})
+	c, ok := q.contents[hash]
 	if !ok {
-		return errors.New("no such document")
+		return errors.New("no such content")
 	}
-	doc.Attempts = attempts
-	doc.NextRetryAt = at
-	doc.LastError = reason
+	c.Attempts = attempts
+	c.NextRetryAt = at
+	c.LastError = reason
 	return nil
 }
 
@@ -135,20 +187,82 @@ func (q *fakeQueue) ResetStale(_ context.Context, current map[string]string) (in
 	return moved, nil
 }
 
-func (q *fakeQueue) MarkFailed(_ context.Context, docID, reason string) error {
+func (q *fakeQueue) MarkFailed(_ context.Context, hash, reason string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.failures = append(q.failures, failure{docID, reason})
-	if doc, ok := q.docs[docID]; ok {
-		doc.State = domain.DocStateFailed
+	q.failures = append(q.failures, failure{hash, reason})
+	if c, ok := q.contents[hash]; ok {
+		c.State = domain.ContentStateFailed
 	}
 	return nil
 }
 
-func (q *fakeQueue) snapshotDoc(id string) domain.Document {
+// SweepOrphans models the store's sweep (review 3653204158): every pathGone
+// row is an orphan, and the scope decides whether terminal orphans go too.
+// Removing the rows is the point — it is what lets a test observe that a
+// swept orphan is never claimed again.
+func (q *fakeQueue) SweepOrphans(_ context.Context, scope domain.SweepScope) (int, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return *q.docs[id]
+	q.orphanSweeps++
+	q.sweepScopes = append(q.sweepScopes, scope)
+	if q.orphanSweepErr != nil {
+		return 0, q.orphanSweepErr
+	}
+	removed := 0
+	kept := q.order[:0]
+	for _, hash := range q.order {
+		c := q.contents[hash]
+		if q.pathGone[hash] && (scope == domain.SweepScopeAll || !c.State.Terminal()) {
+			delete(q.contents, hash)
+			delete(q.pathGone, hash)
+			removed++
+			continue
+		}
+		kept = append(kept, hash)
+	}
+	q.order = kept
+	return removed, nil
+}
+
+func (q *fakeQueue) orphanSweepCount() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.orphanSweeps
+}
+
+func (q *fakeQueue) scopes() []domain.SweepScope {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return slices.Clone(q.sweepScopes)
+}
+
+// orphan marks a hash as referenced by no live document — the state a
+// deletion or an edit leaves the old content in.
+func (q *fakeQueue) orphan(hash string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.pathGone[hash] = true
+}
+
+// has reports whether the content row is still in the catalog.
+func (q *fakeQueue) has(hash string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	_, ok := q.contents[hash]
+	return ok
+}
+
+func (q *fakeQueue) getWorkHashes() []string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return slices.Clone(q.getWorks)
+}
+
+func (q *fakeQueue) snapshotContent(hash string) domain.Content {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return *q.contents[hash]
 }
 
 func (q *fakeQueue) counts() (reschedules, failures, sweeps, claims int) {
@@ -158,7 +272,7 @@ func (q *fakeQueue) counts() (reschedules, failures, sweeps, claims int) {
 }
 
 // fakeIndexer stands in for *pipeline.Indexer. prepareErr simulates the
-// inference endpoint being down; outcomes maps a document ID to what
+// inference endpoint being down; outcomes maps a content hash to what
 // processing it produces.
 type fakeIndexer struct {
 	mu sync.Mutex
@@ -174,11 +288,12 @@ type fakeIndexer struct {
 	// processErr is a fatal machinery failure.
 	processErr error
 	processed  []string
-	// processedDocs is what ProcessDocument was actually handed, which since
-	// ADR 0014 is the re-read row rather than the copy the claim produced.
-	processedDocs []domain.Document
+	// processedItems is what ProcessContent was actually handed, which since
+	// ADR 0014 is the re-read row and path rather than the copy the claim
+	// produced.
+	processedItems []domain.WorkItem
 	// markIndexed lets a test mutate the queue as the real pipeline would.
-	markIndexed func(docID string)
+	markIndexed func(hash string)
 }
 
 func newFakeIndexer() *fakeIndexer {
@@ -207,20 +322,20 @@ func (f *fakeIndexer) StageVersions(dims int) map[string]string {
 	}
 }
 
-func (f *fakeIndexer) ProcessDocument(_ context.Context, doc domain.Document, _ map[string]string) (pipeline.Result, error) {
+func (f *fakeIndexer) ProcessContent(_ context.Context, item domain.WorkItem, _ map[string]string) (pipeline.Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.processed = append(f.processed, doc.ID)
-	f.processedDocs = append(f.processedDocs, doc)
+	f.processed = append(f.processed, item.Content.Hash)
+	f.processedItems = append(f.processedItems, item)
 	if f.processErr != nil {
 		return pipeline.Result{}, f.processErr
 	}
-	res, ok := f.outcomes[doc.ID]
+	res, ok := f.outcomes[item.Content.Hash]
 	if !ok {
 		res = pipeline.Result{Outcome: pipeline.OutcomeIndexed}
 	}
 	if res.Outcome == pipeline.OutcomeIndexed && f.markIndexed != nil {
-		f.markIndexed(doc.ID)
+		f.markIndexed(item.Content.Hash)
 	}
 	return res, nil
 }
@@ -231,7 +346,7 @@ func (f *fakeIndexer) prepareCount() int {
 	return f.prepares
 }
 
-func (f *fakeIndexer) processedIDs() []string {
+func (f *fakeIndexer) processedHashes() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.processed...)
@@ -259,7 +374,7 @@ type fakeScanner struct {
 	pathErr      error
 	scannedPaths [][]string
 	// onScanPaths runs inside ScanPaths, so a test can order a reconcile
-	// against document processing, or cancel mid-reconcile.
+	// against content processing, or cancel mid-reconcile.
 	onScanPaths func()
 }
 
@@ -333,8 +448,8 @@ func itoa(n int) string {
 	return string(b)
 }
 
-func discoveredDoc(id string) domain.Document {
-	return domain.Document{ID: id, Path: "/tmp/" + id + ".md", State: domain.DocStateDiscovered}
+func discoveredContent(hash string) domain.Content {
+	return domain.Content{Hash: hash, State: domain.ContentStateDiscovered}
 }
 
 // newScheduler builds a Scheduler over the given doubles with test-friendly
@@ -372,9 +487,9 @@ func TestNewRequiresCollaborators(t *testing.T) {
 // was off for a week should not sit idle waiting for a tick.
 func TestFirstCycleRunsImmediately(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
-		ix.markIndexed = func(id string) { q.docs[id].State = domain.DocStateIndexed }
+		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
 		sc := &fakeScanner{}
 		s := newScheduler(t, q, ix, sc, nil)
 
@@ -383,8 +498,8 @@ func TestFirstCycleRunsImmediately(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 1 || got[0] != "d_1" {
-			t.Errorf("processed %v, want [d_1] before any interval elapsed", got)
+		if got := ix.processedHashes(); len(got) != 1 || got[0] != "c_1" {
+			t.Errorf("processed %v, want [c_1] before any interval elapsed", got)
 		}
 		if sc.count() != 1 {
 			t.Errorf("scans = %d, want 1 on the first cycle", sc.count())
@@ -392,13 +507,13 @@ func TestFirstCycleRunsImmediately(t *testing.T) {
 	})
 }
 
-// Documents saved between cycles are indexed on the next one, with no command
-// run — the whole point of the daemon.
+// Content discovered between cycles is indexed on the next one, with no
+// command run — the whole point of the daemon.
 func TestNewWorkIsIndexedOnTheNextCycle(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newFakeQueue()
 		ix := newFakeIndexer()
-		ix.markIndexed = func(id string) { q.docs[id].State = domain.DocStateIndexed }
+		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
 		s := newScheduler(t, q, ix, &fakeScanner{}, func(o *Options) {
 			o.Power = func() config.PowerPolicy {
 				return config.PowerPolicy{IndexInterval: config.Interval{Duration: 5 * time.Minute}}
@@ -410,21 +525,17 @@ func TestNewWorkIsIndexedOnTheNextCycle(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 0 {
+		if got := ix.processedHashes(); len(got) != 0 {
 			t.Fatalf("processed %v on an empty queue", got)
 		}
 
-		q.mu.Lock()
-		doc := discoveredDoc("d_new")
-		q.docs[doc.ID] = &doc
-		q.order = append(q.order, doc.ID)
-		q.mu.Unlock()
+		q.add(discoveredContent("c_new"))
 
 		time.Sleep(5 * time.Minute)
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 1 || got[0] != "d_new" {
-			t.Errorf("processed %v after one interval, want [d_new]", got)
+		if got := ix.processedHashes(); len(got) != 1 || got[0] != "c_new" {
+			t.Errorf("processed %v after one interval, want [c_new]", got)
 		}
 	})
 }
@@ -436,7 +547,7 @@ func TestNotifyWakesTheLoopBeforeTheInterval(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newFakeQueue()
 		ix := newFakeIndexer()
-		ix.markIndexed = func(id string) { q.docs[id].State = domain.DocStateIndexed }
+		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
 		s := newScheduler(t, q, ix, &fakeScanner{}, func(o *Options) {
 			o.Power = func() config.PowerPolicy {
 				return config.PowerPolicy{IndexInterval: config.Interval{Duration: time.Hour}}
@@ -448,17 +559,13 @@ func TestNotifyWakesTheLoopBeforeTheInterval(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		q.mu.Lock()
-		doc := discoveredDoc("d_new")
-		q.docs[doc.ID] = &doc
-		q.order = append(q.order, doc.ID)
-		q.mu.Unlock()
+		q.add(discoveredContent("c_new"))
 
 		s.Notify()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 1 || got[0] != "d_new" {
-			t.Errorf("processed %v after Notify, want [d_new] without waiting an hour", got)
+		if got := ix.processedHashes(); len(got) != 1 || got[0] != "c_new" {
+			t.Errorf("processed %v after Notify, want [c_new] without waiting an hour", got)
 		}
 	})
 }
@@ -574,12 +681,12 @@ func TestACycleThatOutlivesItsIntervalStillWaitsAFullInterval(t *testing.T) {
 	})
 }
 
-// An endpoint that is switched off must cost no document anything. This is
+// An endpoint that is switched off must cost no content anything. This is
 // the difference between a daemon you can leave running and one that quietly
 // condemns your corpus while the inference server is down.
 func TestEmbedderOutageBurnsNoAttempts(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"), discoveredDoc("d_2"))
+		q := newFakeQueue(discoveredContent("c_1"), discoveredContent("c_2"))
 		ix := newFakeIndexer()
 		ix.prepareErr = errors.New("connection refused")
 		s := newScheduler(t, q, ix, &fakeScanner{}, nil)
@@ -589,7 +696,7 @@ func TestEmbedderOutageBurnsNoAttempts(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 0 {
+		if got := ix.processedHashes(); len(got) != 0 {
 			t.Errorf("processed %v with the endpoint down, want nothing attempted", got)
 		}
 		reschedules, failures, _, _ := q.counts()
@@ -597,9 +704,9 @@ func TestEmbedderOutageBurnsNoAttempts(t *testing.T) {
 			t.Errorf("reschedules = %d, failures = %d during an outage, want 0 and 0",
 				reschedules, failures)
 		}
-		for _, id := range []string{"d_1", "d_2"} {
-			if doc := q.snapshotDoc(id); doc.Attempts != 0 || doc.State != domain.DocStateDiscovered {
-				t.Errorf("%s = state %q attempts %d, want it untouched", id, doc.State, doc.Attempts)
+		for _, hash := range []string{"c_1", "c_2"} {
+			if c := q.snapshotContent(hash); c.Attempts != 0 || c.State != domain.ContentStateDiscovered {
+				t.Errorf("%s = state %q attempts %d, want it untouched", hash, c.State, c.Attempts)
 			}
 		}
 		if got := s.Snapshot().Gate; got != GateEmbedder {
@@ -612,10 +719,10 @@ func TestEmbedderOutageBurnsNoAttempts(t *testing.T) {
 // restart would make every inference-server hiccup a manual chore.
 func TestIndexingResumesAfterAnOutage(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
 		ix.prepareErr = errors.New("connection refused")
-		ix.markIndexed = func(id string) { q.docs[id].State = domain.DocStateIndexed }
+		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
 		s := newScheduler(t, q, ix, &fakeScanner{}, func(o *Options) {
 			o.Power = func() config.PowerPolicy {
 				return config.PowerPolicy{IndexInterval: config.Interval{Duration: 5 * time.Minute}}
@@ -627,7 +734,7 @@ func TestIndexingResumesAfterAnOutage(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 0 {
+		if got := ix.processedHashes(); len(got) != 0 {
 			t.Fatalf("processed %v while down", got)
 		}
 
@@ -638,8 +745,8 @@ func TestIndexingResumesAfterAnOutage(t *testing.T) {
 		time.Sleep(5 * time.Minute)
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 1 || got[0] != "d_1" {
-			t.Errorf("processed %v after recovery, want [d_1]", got)
+		if got := ix.processedHashes(); len(got) != 1 || got[0] != "c_1" {
+			t.Errorf("processed %v after recovery, want [c_1]", got)
 		}
 		if got := s.Snapshot().Gate; got != GateIdle {
 			t.Errorf("gate = %q after recovery, want %q", got, GateIdle)
@@ -647,15 +754,15 @@ func TestIndexingResumesAfterAnOutage(t *testing.T) {
 	})
 }
 
-// A transient failure on a healthy endpoint is the document's problem, so it
+// A transient failure on a healthy endpoint is the content's problem, so it
 // costs an attempt and comes back later rather than immediately.
 func TestTransientFailureOnAHealthyEndpointBacksOff(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
-		ix.outcomes["d_1"] = pipeline.Result{
+		ix.outcomes["c_1"] = pipeline.Result{
 			Outcome: pipeline.OutcomeTransient,
-			Err:     errors.New("embed /tmp/d_1.md: unexpected EOF"),
+			Err:     errors.New("embed /tmp/c_1.md: unexpected EOF"),
 		}
 		s := newScheduler(t, q, ix, &fakeScanner{}, nil)
 
@@ -683,19 +790,19 @@ func TestTransientFailureOnAHealthyEndpointBacksOff(t *testing.T) {
 		if got[0].reason == "" {
 			t.Error("reschedule recorded no reason; status would have nothing to show")
 		}
-		if doc := q.snapshotDoc("d_1"); doc.State == domain.DocStateFailed {
-			t.Error("a single transient failure marked the document failed")
+		if c := q.snapshotContent("c_1"); c.State == domain.ContentStateFailed {
+			t.Error("a single transient failure marked the content failed")
 		}
 	})
 }
 
-// A document in backoff must not be retried before it is due — otherwise the
-// backoff is decorative and a flaky document is hammered.
-func TestADocumentInBackoffIsNotRetriedEarly(t *testing.T) {
+// Content in backoff must not be retried before it is due — otherwise the
+// backoff is decorative and a flaky file is hammered.
+func TestContentInBackoffIsNotRetriedEarly(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
-		ix.outcomes["d_1"] = pipeline.Result{
+		ix.outcomes["c_1"] = pipeline.Result{
 			Outcome: pipeline.OutcomeTransient,
 			Err:     errors.New("embed: unexpected EOF"),
 		}
@@ -714,19 +821,19 @@ func TestADocumentInBackoffIsNotRetriedEarly(t *testing.T) {
 		time.Sleep(defaultBackoffBase / 2)
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 1 {
-			t.Errorf("processed %v; the document was retried before its backoff expired", got)
+		if got := ix.processedHashes(); len(got) != 1 {
+			t.Errorf("processed %v; the content was retried before its backoff expired", got)
 		}
 	})
 }
 
-// After the attempt cap the document is called failed, with the reason and
+// After the attempt cap the content is called failed, with the reason and
 // the attempt count preserved so status can explain it.
 func TestRepeatedTransientFailuresEventuallyGiveUp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
-		ix.outcomes["d_1"] = pipeline.Result{
+		ix.outcomes["c_1"] = pipeline.Result{
 			Outcome: pipeline.OutcomeTransient,
 			Err:     errors.New("embed: unexpected EOF"),
 		}
@@ -763,29 +870,29 @@ func TestRepeatedTransientFailuresEventuallyGiveUp(t *testing.T) {
 		if len(failures) != 1 {
 			t.Fatalf("failures = %d, want 1", len(failures))
 		}
-		if failures[0].docID != "d_1" {
-			t.Errorf("failed %q, want d_1", failures[0].docID)
+		if failures[0].hash != "c_1" {
+			t.Errorf("failed %q, want c_1", failures[0].hash)
 		}
 		// The reason names the attempt count, and the column has to agree
 		// with it — otherwise a failed row reads as barely tried.
 		if !strings.Contains(failures[0].reason, "after 3 attempts") {
 			t.Errorf("failure reason = %q, want it to name the attempt count", failures[0].reason)
 		}
-		if got := q.snapshotDoc("d_1").Attempts; got != 3 {
+		if got := q.snapshotContent("c_1").Attempts; got != 3 {
 			t.Errorf("recorded attempts = %d, want 3 to match the reason", got)
 		}
 	})
 }
 
-// If the endpoint dies part-way through a batch, the document that happened
+// If the endpoint dies part-way through a batch, the content that happened
 // to be in flight must not be charged for it.
 func TestAnOutageMidBatchChargesNothing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
 		// The gate probe passes; the re-probe after the failure does not.
 		ix.prepareErrAfter = 1
-		ix.outcomes["d_1"] = pipeline.Result{
+		ix.outcomes["c_1"] = pipeline.Result{
 			Outcome: pipeline.OutcomeTransient,
 			Err:     errors.New("embed: connection reset"),
 		}
@@ -798,11 +905,11 @@ func TestAnOutageMidBatchChargesNothing(t *testing.T) {
 
 		reschedules, failures, _, _ := q.counts()
 		if reschedules != 0 || failures != 0 {
-			t.Errorf("reschedules = %d, failures = %d, want 0 and 0 — the outage is not the document's fault",
+			t.Errorf("reschedules = %d, failures = %d, want 0 and 0 — the outage is not the content's fault",
 				reschedules, failures)
 		}
-		if doc := q.snapshotDoc("d_1"); doc.Attempts != 0 {
-			t.Errorf("attempts = %d, want 0", doc.Attempts)
+		if c := q.snapshotContent("c_1"); c.Attempts != 0 {
+			t.Errorf("attempts = %d, want 0", c.Attempts)
 		}
 		if got := s.Snapshot().Gate; got != GateEmbedder {
 			t.Errorf("gate = %q, want %q", got, GateEmbedder)
@@ -810,17 +917,16 @@ func TestAnOutageMidBatchChargesNothing(t *testing.T) {
 	})
 }
 
-// A document the pipeline judges permanently unindexable is already recorded
+// Content the pipeline judges permanently unindexable is already recorded
 // as failed; the scheduler must not also charge it an attempt or retry it.
 func TestPermanentFailureIsNotRetried(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
-		ix.outcomes["d_1"] = pipeline.Result{
+		ix.outcomes["c_1"] = pipeline.Result{
 			Outcome: pipeline.OutcomeFailed,
 			Err:     errors.New("normalize: undecodable"),
 		}
-		ix.markIndexed = nil
 		s := newScheduler(t, q, ix, &fakeScanner{}, nil)
 
 		ctx, cancel := context.WithCancel(t.Context())
@@ -846,12 +952,12 @@ func TestPermanentFailureIsNotRetried(t *testing.T) {
 // A file that is unreadable right now is the environment's fault. Its row
 // must be left alone so that restoring the file or granting Full Disk Access
 // takes effect without the file having to change — and the drain must still
-// terminate, even though the document stays claimable.
-func TestSkippedDocumentsDoNotSpinTheDrain(t *testing.T) {
+// terminate, even though the content stays claimable.
+func TestSkippedContentDoesNotSpinTheDrain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
-		ix.outcomes["d_1"] = pipeline.Result{
+		ix.outcomes["c_1"] = pipeline.Result{
 			Outcome: pipeline.OutcomeSkipped,
 			Err:     errors.New("permission denied"),
 		}
@@ -862,16 +968,16 @@ func TestSkippedDocumentsDoNotSpinTheDrain(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 1 {
-			t.Errorf("processed %v in one cycle; a skipped document was re-claimed in the same drain", got)
+		if got := ix.processedHashes(); len(got) != 1 {
+			t.Errorf("processed %v in one cycle; skipped content was re-claimed in the same drain", got)
 		}
-		if doc := q.snapshotDoc("d_1"); doc.State != domain.DocStateDiscovered || doc.Attempts != 0 {
-			t.Errorf("d_1 = state %q attempts %d, want it untouched", doc.State, doc.Attempts)
+		if c := q.snapshotContent("c_1"); c.State != domain.ContentStateDiscovered || c.Attempts != 0 {
+			t.Errorf("c_1 = state %q attempts %d, want it untouched", c.State, c.Attempts)
 		}
 		if got := s.Snapshot().Skipped; got != 1 {
 			t.Errorf("snapshot Skipped = %d, want 1", got)
 		}
-		// A drain that ran out of *readable* documents is not an indexed
+		// A drain that ran out of *readable* content is not an indexed
 		// corpus. Reporting it as idle would describe a daemon quietly
 		// passing over files every cycle as finished.
 		if got := s.Snapshot().Gate; got != GateUnreadable {
@@ -1098,7 +1204,7 @@ func TestAnIdleCorpusMakesNoNetworkCalls(t *testing.T) {
 // spent the day unplugged must not come back with no idea what changed.
 func TestOnBatteryIndexingDefersButDiscoveryContinues(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
 		sc := &fakeScanner{}
 		s := newScheduler(t, q, ix, sc, func(o *Options) {
@@ -1112,7 +1218,7 @@ func TestOnBatteryIndexingDefersButDiscoveryContinues(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 0 {
+		if got := ix.processedHashes(); len(got) != 0 {
 			t.Errorf("processed %v on battery, want nothing", got)
 		}
 		if sc.count() != 1 {
@@ -1122,8 +1228,8 @@ func TestOnBatteryIndexingDefersButDiscoveryContinues(t *testing.T) {
 		if snap.Gate != GateBattery || !snap.Deferring {
 			t.Errorf("gate = %q deferring = %v, want %q and true", snap.Gate, snap.Deferring, GateBattery)
 		}
-		if doc := q.snapshotDoc("d_1"); doc.Attempts != 0 {
-			t.Errorf("attempts = %d, want deferral to charge nothing", doc.Attempts)
+		if c := q.snapshotContent("c_1"); c.Attempts != 0 {
+			t.Errorf("attempts = %d, want deferral to charge nothing", c.Attempts)
 		}
 	})
 }
@@ -1131,9 +1237,9 @@ func TestOnBatteryIndexingDefersButDiscoveryContinues(t *testing.T) {
 // Plugging the laptop in must start indexing without a restart.
 func TestIndexingStartsWhenPowerReturns(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
-		ix.markIndexed = func(id string) { q.docs[id].State = domain.DocStateIndexed }
+		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
 
 		var mu sync.Mutex
 		onBattery := true
@@ -1153,7 +1259,7 @@ func TestIndexingStartsWhenPowerReturns(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 0 {
+		if got := ix.processedHashes(); len(got) != 0 {
 			t.Fatalf("processed %v on battery", got)
 		}
 
@@ -1164,8 +1270,8 @@ func TestIndexingStartsWhenPowerReturns(t *testing.T) {
 		time.Sleep(deferRecheckInterval)
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 1 || got[0] != "d_1" {
-			t.Errorf("processed %v after plugging in, want [d_1]", got)
+		if got := ix.processedHashes(); len(got) != 1 || got[0] != "c_1" {
+			t.Errorf("processed %v after plugging in, want [c_1]", got)
 		}
 	})
 }
@@ -1213,9 +1319,9 @@ func TestScanAndDrainRunOnIndependentIntervals(t *testing.T) {
 // the corpus carries on.
 func TestScanPathErrorsDoNotStopIndexing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
-		ix.markIndexed = func(id string) { q.docs[id].State = domain.DocStateIndexed }
+		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
 		sc := &fakeScanner{result: discovery.Result{
 			Discovered: 1,
 			PathErrors: []discovery.PathError{
@@ -1229,7 +1335,7 @@ func TestScanPathErrorsDoNotStopIndexing(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 1 {
+		if got := ix.processedHashes(); len(got) != 1 {
 			t.Errorf("processed %v; a path error stopped indexing", got)
 		}
 		if got := s.Snapshot().ScanErrs; got != 1 {
@@ -1238,11 +1344,11 @@ func TestScanPathErrorsDoNotStopIndexing(t *testing.T) {
 	})
 }
 
-// A store write that did not land says nothing about any document, so it
+// A store write that did not land says nothing about any content, so it
 // stops the cycle without charging anyone — and the next cycle tries again.
-func TestAStoreFailureStopsTheCycleWithoutBlamingDocuments(t *testing.T) {
+func TestAStoreFailureStopsTheCycleWithoutBlamingContent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		q.claimErr = errors.New("database is locked")
 		ix := newFakeIndexer()
 		s := newScheduler(t, q, ix, &fakeScanner{}, nil)
@@ -1252,7 +1358,7 @@ func TestAStoreFailureStopsTheCycleWithoutBlamingDocuments(t *testing.T) {
 		go func() { _ = s.Run(ctx) }()
 		synctest.Wait()
 
-		if got := ix.processedIDs(); len(got) != 0 {
+		if got := ix.processedHashes(); len(got) != 0 {
 			t.Errorf("processed %v despite a failing claim", got)
 		}
 		snap := s.Snapshot()
@@ -1296,7 +1402,7 @@ func TestRunStopsOnContextCancellation(t *testing.T) {
 func TestCancellationInterruptsACycleInFlight(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sc := &fakeScanner{entered: make(chan struct{}), release: make(chan struct{})}
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
 		s := newScheduler(t, q, ix, sc, nil)
 
@@ -1313,7 +1419,7 @@ func TestCancellationInterruptsACycleInFlight(t *testing.T) {
 		default:
 			t.Fatal("Run did not return after cancellation during a scan")
 		}
-		if got := ix.processedIDs(); len(got) != 0 {
+		if got := ix.processedHashes(); len(got) != 0 {
 			t.Errorf("processed %v after cancellation, want the cycle abandoned", got)
 		}
 	})
@@ -1323,9 +1429,9 @@ func TestCancellationInterruptsACycleInFlight(t *testing.T) {
 // must not race the loop that writes it.
 func TestSnapshotIsSafeConcurrently(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"), discoveredDoc("d_2"))
+		q := newFakeQueue(discoveredContent("c_1"), discoveredContent("c_2"))
 		ix := newFakeIndexer()
-		ix.markIndexed = func(id string) { q.docs[id].State = domain.DocStateIndexed }
+		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
 		s := newScheduler(t, q, ix, &fakeScanner{}, func(o *Options) {
 			o.Power = func() config.PowerPolicy {
 				return config.PowerPolicy{IndexInterval: config.Interval{Duration: time.Second}}
@@ -1352,21 +1458,21 @@ func TestSnapshotIsSafeConcurrently(t *testing.T) {
 }
 
 // OutcomeSuperseded stopped being routine when the catalog gained a single
-// writer (ADR 0014): the document is re-read immediately before processing, so
+// writer (ADR 0014): the content is re-read immediately before processing, so
 // for its row to change while the pipeline holds it, something other than this
 // goroutine must have written the catalog — and there is nothing else.
 //
 // Left as it was — Debug, counted nowhere, row untouched — it would be the
 // quietest failure in the daemon: re-claimed and superseded every cycle
 // forever, with `bsearch status` reporting no failures, no skips and an empty
-// gate over a permanently unsearchable document.
-func TestASupersededDocumentIsReportedAndRescheduled(t *testing.T) {
+// gate over permanently unsearchable content.
+func TestSupersededContentIsReportedAndRescheduled(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredDoc("d_1"))
+		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
-		ix.outcomes["d_1"] = pipeline.Result{
+		ix.outcomes["c_1"] = pipeline.Result{
 			Outcome: pipeline.OutcomeSuperseded,
-			Err:     domain.ErrDocumentGone,
+			Err:     domain.ErrContentSuperseded,
 		}
 		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
 
@@ -1378,8 +1484,8 @@ func TestASupersededDocumentIsReportedAndRescheduled(t *testing.T) {
 		if len(q.reschedules) != 1 {
 			t.Fatalf("reschedules = %+v, want the row put on the retry schedule rather than left hot", q.reschedules)
 		}
-		if got := q.reschedules[0]; got.docID != "d_1" || got.attempts != 1 {
-			t.Errorf("reschedule = %+v, want d_1 charged one attempt", got)
+		if got := q.reschedules[0]; got.hash != "c_1" || got.attempts != 1 {
+			t.Errorf("reschedule = %+v, want c_1 charged one attempt", got)
 		}
 
 		// No health probe: the embedding endpoint is not implicated, so
@@ -1387,6 +1493,417 @@ func TestASupersededDocumentIsReportedAndRescheduled(t *testing.T) {
 		// asked. One probe for the drain itself, none for this.
 		if got := ix.prepareCount(); got != 1 {
 			t.Errorf("probes = %d, want only the drain's own", got)
+		}
+	})
+}
+
+// OutcomeChanged means the file changed between the claim and the pipeline's
+// read: the bytes no longer hash to this content, nothing was written, and
+// discovery's next pass re-points the path. It is nobody's failure, so it
+// charges no attempt and moves no counter — but seen must still bound a
+// hot-edited file to one abandoned read per drain, because the row stays
+// claimable the whole time.
+func TestChangedContentIsDeferredWithoutChargeAndCounted(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_1"))
+		ix := newFakeIndexer()
+		ix.outcomes["c_1"] = pipeline.Result{Outcome: pipeline.OutcomeChanged}
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.Indexed != 0 || snap.Failed != 0 || snap.Skipped != 0 ||
+			snap.Retried != 0 || snap.Superseded != 0 {
+			t.Errorf("counters = indexed %d failed %d skipped %d retried %d superseded %d, want all zero — a changed file is nobody's failure",
+				snap.Indexed, snap.Failed, snap.Skipped, snap.Retried, snap.Superseded)
+		}
+		if snap.Changed != 1 {
+			t.Errorf("Changed = %d, want 1 — the abandoned claim must be visible in status", snap.Changed)
+		}
+		// Deferred at the backoff cap without charging: attempts unchanged,
+		// next_retry_at in the future, so the pathological shapes (a
+		// continuously-rewritten file, a size-and-mtime-preserving edit
+		// discovery can never notice) cost one read per cap interval, not
+		// one per drain.
+		reschedules, failures, _, _ := q.counts()
+		if reschedules != 1 || failures != 0 {
+			t.Errorf("reschedules = %d, failures = %d, want 1 and 0", reschedules, failures)
+		}
+		if got := q.reschedules[0]; got.hash != "c_1" || got.attempts != 0 {
+			t.Errorf("reschedule = %+v, want c_1 deferred with attempts unchanged (0)", got)
+		}
+		if got := ix.processedHashes(); len(got) != 1 || got[0] != "c_1" {
+			t.Errorf("processed %v, want exactly one abandoned read of c_1 in this drain", got)
+		}
+		if c := q.snapshotContent("c_1"); c.State != domain.ContentStateDiscovered || c.Attempts != 0 {
+			t.Errorf("c_1 = state %q attempts %d, want state and budget untouched", c.State, c.Attempts)
+		}
+	})
+}
+
+// pipeline.movedOn folds two sentinels into OutcomeSuperseded and documents
+// that the caller tells them apart. ErrContentGone is routine — the row was
+// swept mid-flight once the orphan sweep exists — and must not trip the
+// ADR 0014 invariant alarm or charge backoff to a row that no longer
+// exists.
+func TestSupersededWithContentGoneIsRoutineNotAnAlarm(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_1"))
+		ix := newFakeIndexer()
+		ix.outcomes["c_1"] = pipeline.Result{
+			Outcome: pipeline.OutcomeSuperseded,
+			Err:     fmt.Errorf("store chunks: %w", domain.ErrContentGone),
+		}
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.Superseded != 0 {
+			t.Errorf("Superseded = %d, want 0 — a mid-flight sweep is not a broken invariant", snap.Superseded)
+		}
+		if reschedules, failures, _, _ := q.counts(); reschedules != 0 || failures != 0 {
+			t.Errorf("reschedules = %d, failures = %d, want 0 and 0 — nothing is owed to a swept row", reschedules, failures)
+		}
+	})
+}
+
+// Content whose every referencing path vanished between the claim and the
+// re-read is gone, not broken: GetWork reports ErrContentGone, the drain
+// marks it seen and carries on with the rest of the batch. Gating on it
+// would let one deleted file stop indexing for everything behind it, and
+// counting it as skipped would report a deletion as a permissions problem.
+//
+// The deletion lands mid-drain — after the startup sweep, while the batch is
+// in flight — because that is the only window this path serves: an orphan
+// already present when the cycle starts is collected by the sweep and never
+// re-read at all (its own test below).
+func TestContentGoneAtTheReReadIsSkippedWithoutStoppingTheDrain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_live"), discoveredContent("c_gone"))
+		ix := newFakeIndexer()
+		ix.markIndexed = func(hash string) {
+			q.setState(hash, domain.ContentStateIndexed)
+			// The file backing c_gone is deleted while c_live is indexing —
+			// between c_gone's claim and its re-read.
+			q.orphan("c_gone")
+		}
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		if got := ix.processedHashes(); !slices.Equal(got, []string{"c_live"}) {
+			t.Errorf("processed %v, want [c_live] — the gone content skipped, the rest worked", got)
+		}
+		snap := s.Snapshot()
+		if snap.Gate != GateIdle {
+			t.Errorf("gate = %q, want %q — a deleted file is not an unreadable one", snap.Gate, GateIdle)
+		}
+		if snap.Skipped != 0 || snap.Failed != 0 {
+			t.Errorf("Skipped = %d, Failed = %d, want 0 and 0 — gone is counted nowhere", snap.Skipped, snap.Failed)
+		}
+		reschedules, failures, _, _ := q.counts()
+		if reschedules != 0 || failures != 0 {
+			t.Errorf("reschedules = %d, failures = %d, want 0 and 0", reschedules, failures)
+		}
+	})
+}
+
+// The orphan sweep is armed at construction — the first cycle collects
+// whatever a crash or a previous build left behind, terminal orphans
+// included — and a quiet cycle afterwards must not pay for it again.
+func TestOrphanSweepRunsOnceAtStartThenNotOnQuietCycles(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue()
+		s := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Fatalf("orphan sweeps after first cycle = %d, want 1", got)
+		}
+		if scopes := q.scopes(); scopes[0] != domain.SweepScopeAll {
+			t.Errorf("startup sweep scope = %v, want SweepScopeAll — a previous process's terminal orphans have no other collector", scopes[0])
+		}
+
+		s.cycle(t.Context())
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Errorf("orphan sweeps after a quiet cycle = %d, want still 1 — quiet cycles must not sweep", got)
+		}
+	})
+}
+
+// Deletions and edits are the two orphan producers, so a scan reporting
+// either arms a sweep — at queue scope, so a terminal orphan keeps its
+// derived data for the free-restore window (an undo must not cost a
+// re-embed).
+func TestDeletionsAndEditsArmTheOrphanSweep(t *testing.T) {
+	for name, res := range map[string]discovery.Result{
+		"deletions": {Deleted: 1},
+		"edits":     {Changed: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				q := newFakeQueue()
+				sc := watchedScanner("/root")
+				s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+				s.cycle(t.Context()) // consumes the construction arm
+				if got := q.orphanSweepCount(); got != 1 {
+					t.Fatalf("orphan sweeps = %d, want 1", got)
+				}
+
+				sc.mu.Lock()
+				sc.result = res
+				sc.mu.Unlock()
+				s.requestScan()
+				s.cycle(t.Context())
+				if got := q.orphanSweepCount(); got != 2 {
+					t.Errorf("orphan sweeps = %d, want 2 — a scan with orphan producers must arm the sweep", got)
+				}
+				if scopes := q.scopes(); len(scopes) == 2 && scopes[1] != domain.SweepScopeQueue {
+					t.Errorf("armed sweep scope = %v, want SweepScopeQueue — eager collection of terminal orphans turns every undo into a re-embed", scopes[1])
+				}
+
+				s.cycle(t.Context())
+				if got := q.orphanSweepCount(); got != 2 {
+					t.Errorf("orphan sweeps = %d, want still 2 — the arm is consumed, not standing", got)
+				}
+			})
+		})
+	}
+}
+
+// A scan that only found new and unchanged files arms nothing: neither
+// produces an orphan, and a bulk initial index must never pay for sweeping.
+// This is the negative half of noteOrphanProducers' predicate — the
+// mutation `|| res.Discovered > 0` must fail here (review 3653204192).
+func TestAScanWithoutOrphanProducersDoesNotArmTheSweep(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue()
+		sc := watchedScanner("/root")
+		s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+		s.cycle(t.Context()) // consumes the construction arm
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Fatalf("orphan sweeps = %d, want the startup sweep only", got)
+		}
+
+		sc.mu.Lock()
+		sc.result = discovery.Result{Discovered: 5, Unchanged: 3}
+		sc.mu.Unlock()
+		s.requestScan()
+		s.cycle(t.Context())
+
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Errorf("orphan sweeps = %d after a discover-only scan, want still 1 — new files produce no orphans", got)
+		}
+	})
+}
+
+// A failed sweep re-arms itself and the cycle carries on to the drain: the
+// deletions that armed it exist nowhere else, but the drain tolerates
+// orphans (GetWork answers ErrContentGone), so wedging indexing behind
+// garbage collection would trade a benign Gone-skip for a stalled queue.
+func TestOrphanSweepFailureRearmsAndTheCycleContinues(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_1"))
+		q.orphanSweepErr = errors.New("disk full")
+		ix := newFakeIndexer()
+		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		// The drain ran despite the failed sweep, and worked the queue down.
+		if _, _, _, claims := q.counts(); claims == 0 {
+			t.Error("claims = 0 — a failed sweep stopped the drain, wedging indexing behind garbage collection")
+		}
+		if got := ix.processedHashes(); !slices.Equal(got, []string{"c_1"}) {
+			t.Errorf("processed %v, want [c_1] indexed despite the failed sweep", got)
+		}
+		snap := s.Snapshot()
+		if snap.Gate == GateStoreFail {
+			t.Errorf("gate = %q — the sweep alone must not report the store as failed while indexing works", snap.Gate)
+		}
+		if snap.LastError == "" {
+			t.Error("no LastError recorded; status would show nothing about the failing sweep")
+		}
+
+		// The failure re-armed the same scope, and the next cycle retries it.
+		q.mu.Lock()
+		q.orphanSweepErr = nil
+		q.mu.Unlock()
+		s.cycle(t.Context())
+		if got := q.orphanSweepCount(); got != 2 {
+			t.Fatalf("orphan sweeps = %d, want 2 — a failed sweep must re-arm", got)
+		}
+		if scopes := q.scopes(); scopes[1] != scopes[0] {
+			t.Errorf("retry scope = %v, want the failed sweep's own %v", scopes[1], scopes[0])
+		}
+	})
+}
+
+// A queue-scope sweep spares terminal orphans (review 3653203993): the
+// indexed content an edit just orphaned is exactly what an undo or a `git
+// checkout` re-references, and collecting it eagerly would turn each of
+// those into a full re-embed. It waits for the next process's startup sweep.
+func TestQueueScopeSweepSparesTerminalOrphansUntilRestart(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(domain.Content{Hash: "c_kept", State: domain.ContentStateIndexed})
+		sc := watchedScanner("/root")
+		s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+		s.cycle(t.Context()) // startup full sweep: c_kept is referenced, survives
+		if !q.has("c_kept") {
+			t.Fatal("the startup sweep collected referenced content")
+		}
+
+		// An edit re-points the path and orphans the indexed content; the
+		// scan reports it and arms a queue-scope sweep.
+		q.orphan("c_kept")
+		sc.mu.Lock()
+		sc.result = discovery.Result{Changed: 1}
+		sc.mu.Unlock()
+		s.requestScan()
+		s.cycle(t.Context())
+
+		if scopes := q.scopes(); len(scopes) != 2 || scopes[1] != domain.SweepScopeQueue {
+			t.Fatalf("sweep scopes = %v, want the edit to arm a queue-scope sweep", scopes)
+		}
+		if !q.has("c_kept") {
+			t.Fatal("the queue-scope sweep collected a terminal orphan — an undo would now cost a re-embed")
+		}
+
+		// The free-restore window is the life of the process: a fresh
+		// scheduler's startup sweep is full-scope and collects it.
+		s2 := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), nil)
+		s2.cycle(t.Context())
+		if q.has("c_kept") {
+			t.Error("the next process's startup sweep left the terminal orphan behind")
+		}
+		if got := s2.Snapshot().Collected; got != 1 {
+			t.Errorf("Collected = %d, want 1", got)
+		}
+	})
+}
+
+// An orphan already in the queue when the daemon starts is collected before
+// anything is claimed (review 3653204158): the sweep runs above the drain,
+// so the row is never claimed, never re-read, never Gone-skipped — the
+// "claimed and skipped forever" loop the sweep exists to end.
+func TestAnOrphanPresentAtStartupIsNeverClaimed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_orphan"))
+		q.orphan("c_orphan")
+		ix := newFakeIndexer()
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		if got := ix.processedHashes(); len(got) != 0 {
+			t.Errorf("processed %v, want nothing — the orphan was handed to the pipeline", got)
+		}
+		if got := q.getWorkHashes(); len(got) != 0 {
+			t.Errorf("GetWork called for %v, want never — the sweep runs before anything is claimed", got)
+		}
+		if q.has("c_orphan") {
+			t.Error("the orphan is still in the queue after the startup sweep")
+		}
+		if got := s.Snapshot().Gate; got != GateIdle {
+			t.Errorf("gate = %q, want %q", got, GateIdle)
+		}
+	})
+}
+
+// The sweep runs above the battery gate, with its producers: the walk and
+// the reconcile both run on battery and both orphan content, so a gated
+// sweep would let an unplugged day accumulate garbage its producers kept
+// making (review 3653204249).
+func TestTheOrphanSweepRunsWhileIndexingIsDeferred(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_orphan"))
+		q.orphan("c_orphan")
+		s := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), func(o *Options) {
+			o.Power = func() config.PowerPolicy {
+				return config.PowerPolicy{IndexInterval: config.Interval{Defer: true}}
+			}
+		})
+
+		s.cycle(t.Context())
+
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Errorf("orphan sweeps = %d on battery, want 1 — the sweep is a cheap stage and cheap stages always run", got)
+		}
+		if q.has("c_orphan") {
+			t.Error("the orphan survived a deferred cycle; garbage would accumulate all day on battery")
+		}
+		if _, _, _, claims := q.counts(); claims != 0 {
+			t.Errorf("claims = %d on battery, want 0 — sweeping must not drag the drain above the gate with it", claims)
+		}
+	})
+}
+
+// A walk that fails part-way still reports what it committed before dying
+// (review 3653204007): ScanPaths and the walk both flush as they go, so the
+// deletions and path errors met before the failure are real. Discarding
+// them with the error would be the silent-skip shape CLAUDE.md forbids —
+// and would leave real orphans with nothing armed to collect them.
+func TestAFailedScanStillReportsPartialResultsAndArmsTheSweep(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue()
+		sc := watchedScanner("/root")
+		s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+		s.cycle(t.Context()) // consumes the construction arm; records LastScan
+		lastScan := s.Snapshot().LastScan
+
+		time.Sleep(time.Minute) // separate the two cycles on the fake clock
+		sc.mu.Lock()
+		sc.err = errors.New("disk on fire")
+		sc.result = discovery.Result{
+			Changed: 1,
+			PathErrors: []discovery.PathError{
+				{Path: "/root/locked", Err: errors.New("operation not permitted")},
+			},
+		}
+		sc.mu.Unlock()
+		s.requestScan()
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.ScanErrs != 1 || len(snap.PathErrors) != 1 || snap.PathErrors[0].Path != "/root/locked" {
+			t.Errorf("ScanErrs = %d, PathErrors = %+v — the errors met before the failure were dropped", snap.ScanErrs, snap.PathErrors)
+		}
+		if snap.LastError == "" {
+			t.Error("no LastError recorded for the failed walk")
+		}
+		// The committed edit orphaned content, so the sweep must be armed
+		// despite the error — count 2: startup, then this one.
+		if got := q.orphanSweepCount(); got != 2 {
+			t.Errorf("orphan sweeps = %d, want 2 — a partial walk's committed edits still produce orphans", got)
+		}
+		// A partial walk proves nothing about the corpus: LastScan stays put.
+		if !snap.LastScan.Equal(lastScan) {
+			t.Errorf("LastScan = %v, want %v — a failed walk must not count as a completed one", snap.LastScan, lastScan)
+		}
+	})
+}
+
+// What the sweep collects reaches status: Collected is the visibility that
+// keeps a silently no-op sweep — the class ADR 0015 singles out —
+// diagnosable from `bsearch status` (review 3653204235).
+func TestCollectedOrphansReachTheSnapshot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_o1"), discoveredContent("c_o2"))
+		q.orphan("c_o1")
+		q.orphan("c_o2")
+		s := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		if got := s.Snapshot().Collected; got != 2 {
+			t.Errorf("Collected = %d, want 2 — every content the sweep removed", got)
 		}
 	})
 }

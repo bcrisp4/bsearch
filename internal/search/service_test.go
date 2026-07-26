@@ -27,7 +27,10 @@ type fakeIndex struct {
 	specErr  error
 	hits     []domain.Hit
 	searchEr error
-	gotLimit int
+	// hitsByLimit, when set, answers each call from the k it was asked for
+	// — how the k-escalation retry is exercised. hits answers otherwise.
+	hitsByLimit map[int][]domain.Hit
+	gotLimits   []int
 }
 
 func (f *fakeIndex) CurrentVecSpec(context.Context) (domain.EmbeddingSpec, int, error) {
@@ -38,9 +41,12 @@ func (f *fakeIndex) CurrentVecSpec(context.Context) (domain.EmbeddingSpec, int, 
 }
 
 func (f *fakeIndex) SearchVectors(_ context.Context, _ []float32, limit int) ([]domain.Hit, error) {
-	f.gotLimit = limit
+	f.gotLimits = append(f.gotLimits, limit)
 	if f.searchEr != nil {
 		return nil, f.searchEr
+	}
+	if f.hitsByLimit != nil {
+		return f.hitsByLimit[limit], nil
 	}
 	return f.hits, nil
 }
@@ -64,10 +70,10 @@ func (f *fakeEmbedder) EmbedPassages(context.Context, []domain.Chunk) ([][]float
 
 func (f *fakeEmbedder) Spec() domain.EmbeddingSpec { return f.spec }
 
-func hit(docID, path, text string, distance float64) domain.Hit {
+func hit(hash, path, text string, distance float64) domain.Hit {
 	return domain.Hit{
-		Doc:      domain.Document{ID: docID, Path: path, MTime: time.Unix(1700000000, 0)},
-		Chunk:    domain.Chunk{DocID: docID, Text: text, HeadingPath: "Doc > Section"},
+		Doc:      domain.Document{Path: path, ContentHash: hash, MTime: time.Unix(1700000000, 0)},
+		Chunk:    domain.Chunk{Text: text, HeadingPath: "Doc > Section"},
 		Distance: distance,
 	}
 }
@@ -78,7 +84,7 @@ func newService(t *testing.T) (*search.Service, *fakeIndex, *fakeEmbedder) {
 	index := &fakeIndex{
 		spec: indexedSpec,
 		dims: 3,
-		hits: []domain.Hit{hit("d_1", "/notes/a.md", "alpha text", 0.1)},
+		hits: []domain.Hit{hit("h1", "/notes/a.md", "alpha text", 0.1)},
 	}
 	embedder := &fakeEmbedder{spec: indexedSpec, vec: []float32{1, 0, 0}}
 	return search.New(index, embedder), index, embedder
@@ -95,8 +101,10 @@ func TestSearchReturnsHits(t *testing.T) {
 		t.Fatalf("got %d hits, want 1", len(resp.Hits))
 	}
 	got := resp.Hits[0]
-	if got.DocID != "d_1" || got.Path != "/notes/a.md" {
-		t.Errorf("hit = %+v, want doc d_1 at /notes/a.md", got)
+	// The wire hash is prefixed with the algorithm (DESIGN.md); the store
+	// hands the service bare hex.
+	if got.ContentHash != "sha256:h1" || got.Path != "/notes/a.md" {
+		t.Errorf("hit = %+v, want content sha256:h1 at /notes/a.md", got)
 	}
 	if got.Distance != 0.1 {
 		t.Errorf("distance = %v, want 0.1", got.Distance)
@@ -147,8 +155,8 @@ func TestSearchOverFetchesChunks(t *testing.T) {
 	if _, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 5}); err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if want := search.KnnK(5); index.gotLimit != want {
-		t.Errorf("SearchVectors limit = %d, want the over-fetch %d", index.gotLimit, want)
+	if want := search.KnnK(5); len(index.gotLimits) == 0 || index.gotLimits[0] != want {
+		t.Errorf("SearchVectors limits = %v, want the first call at the over-fetch %d", index.gotLimits, want)
 	}
 }
 
@@ -158,19 +166,83 @@ func TestSearchDefaultsLimit(t *testing.T) {
 	if _, err := svc.Search(context.Background(), search.Request{Query: "alpha"}); err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if want := search.KnnK(search.DefaultLimit); index.gotLimit != want {
-		t.Errorf("SearchVectors limit = %d, want the default-limit over-fetch %d", index.gotLimit, want)
+	if want := search.KnnK(search.DefaultLimit); len(index.gotLimits) == 0 || index.gotLimits[0] != want {
+		t.Errorf("SearchVectors limits = %v, want the first call at the default-limit over-fetch %d", index.gotLimits, want)
 	}
 }
 
-func TestSearchCollapsesToBestChunkPerDoc(t *testing.T) {
+// Orphaned vectors (deleted content pending the sweep) occupy KNN slots and
+// are dropped by the store's documents join, so a bulk delete can starve a
+// query that over-fetched "enough". When the collapse comes up short of the
+// limit, the service retries once at the k ceiling.
+func TestSearchEscalatesKWhenCollapseComesUpShort(t *testing.T) {
+	svc, index, _ := newService(t)
+	index.hitsByLimit = map[int][]domain.Hit{
+		// The first pass finds one live content; the ceiling finds two —
+		// the shape of a top-k full of dead rows with live matches past it.
+		search.KnnK(2): {hit("h1", "/notes/a.md", "alpha", 0.1)},
+		search.MaxKNNK: {
+			hit("h1", "/notes/a.md", "alpha", 0.1),
+			hit("h2", "/notes/b.md", "beta", 0.9),
+		},
+	}
+
+	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 2})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(resp.Hits) != 2 {
+		t.Fatalf("hits = %+v, want both contents after the retry", resp.Hits)
+	}
+	want := []int{search.KnnK(2), search.MaxKNNK}
+	if len(index.gotLimits) != 2 || index.gotLimits[0] != want[0] || index.gotLimits[1] != want[1] {
+		t.Errorf("SearchVectors limits = %v, want %v", index.gotLimits, want)
+	}
+}
+
+func TestSearchDoesNotEscalateWhenTheLimitIsMet(t *testing.T) {
+	svc, index, _ := newService(t)
+	index.hitsByLimit = map[int][]domain.Hit{
+		search.KnnK(1): {hit("h1", "/notes/a.md", "alpha", 0.1)},
+	}
+
+	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 1})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(resp.Hits) != 1 {
+		t.Fatalf("hits = %+v, want one", resp.Hits)
+	}
+	if len(index.gotLimits) != 1 {
+		t.Errorf("SearchVectors called %d times (%v), want once — a full response must not pay a rescan", len(index.gotLimits), index.gotLimits)
+	}
+}
+
+func TestSearchDoesNotEscalatePastTheCeiling(t *testing.T) {
+	// At MaxLimit the first pass is already at MaxKNNK; a retry at the same
+	// k would repeat the identical query for the identical answer.
+	svc, index, _ := newService(t)
+	index.hits = nil
+
+	if _, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: search.MaxLimit}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(index.gotLimits) != 1 || index.gotLimits[0] != search.MaxKNNK {
+		t.Errorf("SearchVectors limits = %v, want one call at MaxKNNK", index.gotLimits)
+	}
+}
+
+func TestSearchCollapsesToBestChunkPerContent(t *testing.T) {
 	svc, index, _ := newService(t)
 	// Ascending by distance — the SearchVectors contract, which
-	// CollapseBestPerDoc relies on to know a document's first hit is its best.
+	// CollapseBestPerContent relies on to know a content's first hit is its
+	// best. The worse chunk is a different ordinal of the same content.
+	worse := hit("h1", "/notes/a.md", "worse chunk", 0.4)
+	worse.Chunk.Ordinal = 1
 	index.hits = []domain.Hit{
-		hit("d_1", "/notes/a.md", "better chunk", 0.1),
-		hit("d_2", "/notes/b.md", "other doc", 0.2),
-		hit("d_1", "/notes/a.md", "worse chunk", 0.4),
+		hit("h1", "/notes/a.md", "better chunk", 0.1),
+		hit("h2", "/notes/b.md", "other doc", 0.2),
+		worse,
 	}
 
 	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 10})
@@ -178,10 +250,57 @@ func TestSearchCollapsesToBestChunkPerDoc(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 	if len(resp.Hits) != 2 {
-		t.Fatalf("got %d hits, want 2 (one per document)", len(resp.Hits))
+		t.Fatalf("got %d hits, want 2 (one per content)", len(resp.Hits))
 	}
-	if resp.Hits[0].DocID != "d_1" || resp.Hits[0].ChunkPreview != "better chunk" {
-		t.Errorf("first hit = %+v, want d_1's best chunk", resp.Hits[0])
+	if resp.Hits[0].ContentHash != "sha256:h1" || resp.Hits[0].ChunkPreview != "better chunk" {
+		t.Errorf("first hit = %+v, want h1's best chunk", resp.Hits[0])
+	}
+}
+
+func TestSearchFansOutDuplicatePathsIntoAlsoAt(t *testing.T) {
+	// One content at two paths arrives as consecutive fan-out rows, newest
+	// mtime first (the SearchVectors contract). The response is one hit whose
+	// Path is the primary and whose AlsoAt holds the rest.
+	svc, index, _ := newService(t)
+	newer := hit("h1", "/notes/newer.md", "shared chunk", 0.1)
+	newer.Doc.MTime = time.Unix(1700000100, 0)
+	older := hit("h1", "/notes/older.md", "shared chunk", 0.1)
+	index.hits = []domain.Hit{newer, older}
+
+	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(resp.Hits) != 1 {
+		t.Fatalf("got %d hits, want 1 (one per content, however many paths)", len(resp.Hits))
+	}
+	got := resp.Hits[0]
+	if got.Path != "/notes/newer.md" {
+		t.Errorf("path = %q, want the primary (newest mtime) path", got.Path)
+	}
+	if len(got.AlsoAt) != 1 || got.AlsoAt[0] != "/notes/older.md" {
+		t.Errorf("also_at = %v, want the duplicate's other path", got.AlsoAt)
+	}
+}
+
+func TestSearchOmitsAlsoAtWhenUnique(t *testing.T) {
+	// The overwhelmingly common case is a content at one path; the wire field
+	// must then be absent, not [].
+	svc, _, _ := newService(t)
+
+	resp, err := svc.Search(context.Background(), search.Request{Query: "alpha"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if resp.Hits[0].AlsoAt != nil {
+		t.Errorf("AlsoAt = %v, want nil for a unique content", resp.Hits[0].AlsoAt)
+	}
+	encoded, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(encoded), "also_at") {
+		t.Errorf("response %s carries also_at for a unique content; want it omitted", encoded)
 	}
 }
 

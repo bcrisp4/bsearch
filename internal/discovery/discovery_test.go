@@ -2,12 +2,13 @@ package discovery
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -15,39 +16,43 @@ import (
 	"github.com/bcrisp4/bsearch/internal/domain"
 )
 
-// fakeStore is an in-memory DocumentStore that records calls, keeping
-// these unit tests independent of cgo/sqlite (the real-store integration
-// lands with issue #6).
+// fakeStore is an in-memory DocumentStore that records calls, keeping the
+// unit tests fast and their assertions precise (which batches, in what
+// order). Not isolation: reconcile_integration_test.go links the real
+// sqlite store into this same test binary, so the package's tests are
+// cgo-built regardless.
 type fakeStore struct {
-	docs map[string]domain.Document // keyed by path
+	docs    map[string]domain.Document // keyed by path
+	content map[string]bool            // content rows, keyed by hash
 
-	upserts       []domain.Document
-	statUpdates   []string // doc IDs
-	pathLookups   []string // paths passed to GetByPath
-	prefixDeletes []string // paths passed to DeleteByPathPrefix
-	failWith      error    // returned by every method when set
+	batches       [][]domain.Document // every UpsertDocuments call
+	upserts       []domain.Document   // the batches, flattened
+	pathLookups   []string            // paths passed to GetByPath
+	prefixDeletes []string            // paths passed to DeleteByPathPrefix
+	ops           []string            // write calls in order: "upsert", "delete"
+	failWith      error               // returned by every method when set
+
+	// onGetByPath, when set, runs at the top of every lookup — the seam for
+	// injecting mid-scan cancellation or filesystem races at the exact point
+	// between the walk's stat and the read.
+	onGetByPath func(path string)
+	// failUpsert, when set, is consulted with the 1-based UpsertDocuments
+	// call number; a non-nil return fails that flush before anything is
+	// recorded — the seam for testing that counts track committed batches.
+	failUpsert func(call int) error
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{docs: map[string]domain.Document{}}
-}
-
-func (f *fakeStore) UpsertDocument(_ context.Context, doc domain.Document, _ []domain.Chunk) ([]int64, error) {
-	if f.failWith != nil {
-		return nil, f.failWith
+	return &fakeStore{
+		docs:    map[string]domain.Document{},
+		content: map[string]bool{},
 	}
-	// Displace any other row holding the path (mirrors the sqlite store).
-	for path, d := range f.docs {
-		if d.ID == doc.ID && path != doc.Path {
-			delete(f.docs, path)
-		}
-	}
-	f.docs[doc.Path] = doc
-	f.upserts = append(f.upserts, doc)
-	return nil, nil
 }
 
 func (f *fakeStore) GetByPath(_ context.Context, path string) (domain.Document, bool, error) {
+	if f.onGetByPath != nil {
+		f.onGetByPath(path)
+	}
 	if f.failWith != nil {
 		return domain.Document{}, false, f.failWith
 	}
@@ -56,43 +61,25 @@ func (f *fakeStore) GetByPath(_ context.Context, path string) (domain.Document, 
 	return doc, ok, nil
 }
 
-func (f *fakeStore) GetByContentHash(_ context.Context, hash string) ([]domain.Document, error) {
-	if f.failWith != nil {
-		return nil, f.failWith
-	}
-	var docs []domain.Document
-	for _, d := range f.docs {
-		if d.ContentHash == hash {
-			docs = append(docs, d)
-		}
-	}
-	sort.Slice(docs, func(i, j int) bool { return docs[i].ID < docs[j].ID })
-	return docs, nil
-}
-
-func (f *fakeStore) UpdateDocumentStat(_ context.Context, docID string, size int64, mtime time.Time) error {
+func (f *fakeStore) UpsertDocuments(_ context.Context, docs []domain.Document) error {
 	if f.failWith != nil {
 		return f.failWith
 	}
-	for path, d := range f.docs {
-		if d.ID == docID {
-			d.Size, d.MTime = size, mtime
-			f.docs[path] = d
-			f.statUpdates = append(f.statUpdates, docID)
-			return nil
+	if f.failUpsert != nil {
+		if err := f.failUpsert(len(f.batches) + 1); err != nil {
+			return err
 		}
 	}
-	return errors.New("no such document")
-}
-
-func (f *fakeStore) DeleteDocument(_ context.Context, docID string) error {
-	if f.failWith != nil {
-		return f.failWith
-	}
-	for path, d := range f.docs {
-		if d.ID == docID {
-			delete(f.docs, path)
+	f.batches = append(f.batches, slices.Clone(docs))
+	f.ops = append(f.ops, "upsert")
+	for _, doc := range docs {
+		f.docs[doc.Path] = doc
+		// Eager content creation (INSERT ... ON CONFLICT DO NOTHING):
+		// a new hash gets a row, an existing one is left alone.
+		if doc.ContentHash != "" {
+			f.content[doc.ContentHash] = true
 		}
+		f.upserts = append(f.upserts, doc)
 	}
 	return nil
 }
@@ -102,6 +89,7 @@ func (f *fakeStore) DeleteByPathPrefix(_ context.Context, dir string) (int, erro
 		return 0, f.failWith
 	}
 	f.prefixDeletes = append(f.prefixDeletes, dir)
+	f.ops = append(f.ops, "delete")
 	var removed int
 	for path := range f.docs {
 		if path == dir || strings.HasPrefix(path, dir+string(filepath.Separator)) {
@@ -110,24 +98,6 @@ func (f *fakeStore) DeleteByPathPrefix(_ context.Context, dir string) (int, erro
 		}
 	}
 	return removed, nil
-}
-
-// Discovery never lists, flips state, reads by id, or fails documents —
-// pipeline-side methods are stubs to satisfy the port.
-func (f *fakeStore) ListIndexable(context.Context) ([]domain.Document, error) {
-	return nil, errors.New("not used by discovery")
-}
-
-func (f *fakeStore) GetByID(context.Context, string) (domain.Document, error) {
-	return domain.Document{}, errors.New("not used by discovery")
-}
-
-func (f *fakeStore) UpdateDocumentState(context.Context, string, domain.DocState) error {
-	return errors.New("not used by discovery")
-}
-
-func (f *fakeStore) MarkFailed(context.Context, string, string) error {
-	return errors.New("not used by discovery")
 }
 
 var _ domain.DocumentStore = (*fakeStore)(nil)
@@ -163,7 +133,23 @@ func scan(t *testing.T, store *fakeStore, opts Options) Result {
 	return res
 }
 
-var docIDRe = regexp.MustCompile(`^d_[0-9a-f]{16}$`)
+// hashOf is the lowercase hex sha256 of content — what discovery stores.
+func hashOf(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+// upsertsFor returns every upsert written for path, in order — the way to
+// assert steady state ("no second write") for one file among many.
+func upsertsFor(store *fakeStore, path string) []domain.Document {
+	var out []domain.Document
+	for _, d := range store.upserts {
+		if d.Path == path {
+			out = append(out, d)
+		}
+	}
+	return out
+}
 
 func TestScanNewFile(t *testing.T) {
 	dir := tmpDir(t)
@@ -172,24 +158,25 @@ func TestScanNewFile(t *testing.T) {
 
 	res := scan(t, store, Options{Include: []string{dir}})
 
-	if res.Discovered != 1 || res.Unchanged != 0 || len(res.PathErrors) != 0 {
+	if res.Discovered != 1 || res.Unchanged != 0 || res.Changed != 0 || len(res.PathErrors) != 0 {
 		t.Fatalf("Result = %+v, want 1 discovered", res)
 	}
-	if len(store.upserts) != 1 {
-		t.Fatalf("upserts = %d, want 1", len(store.upserts))
+	if len(store.batches) != 1 || len(store.upserts) != 1 {
+		t.Fatalf("batches = %d, upserts = %d, want 1/1", len(store.batches), len(store.upserts))
 	}
 	doc := store.upserts[0]
-	if doc.State != domain.DocStateDiscovered {
-		t.Errorf("State = %q, want discovered", doc.State)
-	}
-	if !docIDRe.MatchString(doc.ID) {
-		t.Errorf("ID = %q, want match %v", doc.ID, docIDRe)
-	}
 	if doc.Path != filepath.Join(dir, "a.md") || doc.Size != 5 {
 		t.Errorf("doc = %+v", doc)
 	}
-	if doc.StageVersions != nil {
-		t.Errorf("StageVersions = %v, want nil on discovery", doc.StageVersions)
+	if doc.ContentHash != hashOf("hello") {
+		t.Errorf("ContentHash = %q, want sha256 of the bytes", doc.ContentHash)
+	}
+	if doc.UnreadReason != "" {
+		t.Errorf("UnreadReason = %q, want empty for a read file", doc.UnreadReason)
+	}
+	// The eager insert: a new hash gets a content row at discovered.
+	if !store.content[doc.ContentHash] {
+		t.Errorf("no content row for %q", doc.ContentHash)
 	}
 }
 
@@ -202,16 +189,15 @@ func TestScanUnchangedNoWrites(t *testing.T) {
 	scan(t, store, opts)
 	res := scan(t, store, opts)
 
-	if res.Unchanged != 1 || res.Discovered != 0 {
+	if res.Unchanged != 1 || res.Discovered != 0 || res.Changed != 0 {
 		t.Errorf("rescan Result = %+v, want 1 unchanged", res)
 	}
-	if len(store.upserts) != 1 || len(store.statUpdates) != 0 {
-		t.Errorf("writes after rescan: upserts=%d statUpdates=%d, want 1/0",
-			len(store.upserts), len(store.statUpdates))
+	if len(store.upserts) != 1 {
+		t.Errorf("upserts after rescan = %d, want 1 (no writes)", len(store.upserts))
 	}
 }
 
-func TestScanTouchedSameContent(t *testing.T) {
+func TestScanTouchedSameContentRefreshesStat(t *testing.T) {
 	dir := tmpDir(t)
 	path := filepath.Join(dir, "a.md")
 	write(t, path, "hello")
@@ -225,18 +211,31 @@ func TestScanTouchedSameContent(t *testing.T) {
 	}
 	res := scan(t, store, opts)
 
-	if res.Unchanged != 1 || res.Discovered != 0 {
+	if res.Unchanged != 1 || res.Discovered != 0 || res.Changed != 0 {
 		t.Errorf("Result = %+v, want 1 unchanged", res)
 	}
-	if len(store.upserts) != 1 {
-		t.Errorf("upserts = %d, want 1 (no re-upsert on touch)", len(store.upserts))
+	// Touched-but-identical re-upserts so the next scan's cheap check hits.
+	if len(store.upserts) != 2 {
+		t.Fatalf("upserts = %d, want 2 (stat refresh is an upsert)", len(store.upserts))
 	}
-	if len(store.statUpdates) != 1 {
-		t.Errorf("statUpdates = %d, want 1", len(store.statUpdates))
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := store.docs[path]
+	if stored.MTime.UnixNano() != info.ModTime().UnixNano() {
+		t.Errorf("stored MTime = %v, want refreshed to %v", stored.MTime, info.ModTime())
+	}
+	if stored.Size != 5 {
+		t.Errorf("stored Size = %d, want 5", stored.Size)
+	}
+	// Same bytes → no new content row.
+	if len(store.content) != 1 {
+		t.Errorf("content rows = %d, want 1", len(store.content))
 	}
 }
 
-func TestScanEditedKeepsID(t *testing.T) {
+func TestScanEditedRepointsPath(t *testing.T) {
 	dir := tmpDir(t)
 	path := filepath.Join(dir, "a.md")
 	write(t, path, "hello")
@@ -244,25 +243,43 @@ func TestScanEditedKeepsID(t *testing.T) {
 	opts := Options{Include: []string{dir}}
 
 	scan(t, store, opts)
-	firstID, firstHash := store.upserts[0].ID, store.upserts[0].ContentHash
+	oldHash := store.upserts[0].ContentHash
 	write(t, path, "hello, edited")
 	res := scan(t, store, opts)
 
-	if res.Discovered != 1 || res.Renamed != 0 {
-		t.Errorf("Result = %+v, want 1 discovered", res)
+	if res.Discovered != 1 || res.Changed != 1 {
+		t.Errorf("Result = %+v, want 1 discovered / 1 changed", res)
 	}
-	if len(store.upserts) != 2 {
-		t.Fatalf("upserts = %d, want 2", len(store.upserts))
+	doc := store.docs[path]
+	if doc.ContentHash != hashOf("hello, edited") {
+		t.Errorf("ContentHash = %q, want the new hash", doc.ContentHash)
 	}
-	second := store.upserts[1]
-	if second.ID != firstID {
-		t.Errorf("edit minted new id %q, want %q kept", second.ID, firstID)
+	// The old content row is orphaned, not deleted: the sweep collects it.
+	if !store.content[oldHash] || !store.content[doc.ContentHash] {
+		t.Errorf("content rows = %v, want both old %q and new %q", store.content, oldHash, doc.ContentHash)
 	}
-	if second.ContentHash == firstHash {
-		t.Error("edit kept the old content hash")
+}
+
+func TestScanCopySchedulesNoNewContent(t *testing.T) {
+	dir := tmpDir(t)
+	write(t, filepath.Join(dir, "a.md"), "same content")
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scan(t, store, opts)
+	// Copy: a second path with identical bytes.
+	write(t, filepath.Join(dir, "b.md"), "same content")
+	res := scan(t, store, opts)
+
+	if res.Discovered != 1 || res.Changed != 0 {
+		t.Errorf("Result = %+v, want 1 discovered / 0 changed", res)
 	}
-	if second.State != domain.DocStateDiscovered {
-		t.Errorf("State = %q, want discovered", second.State)
+	if len(store.docs) != 2 {
+		t.Errorf("documents = %v, want a row per path", catalogPaths(store))
+	}
+	// One distinct content → one content row; the copy schedules no work.
+	if len(store.content) != 1 {
+		t.Errorf("content rows = %d, want 1", len(store.content))
 	}
 }
 
@@ -348,46 +365,6 @@ func TestScanSymlinkRootResolvingToIncludedRootVisitsOnce(t *testing.T) {
 	}
 }
 
-func TestScanRenameStatFailureRecorded(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("running as root: permission bits do not apply")
-	}
-	dir := tmpDir(t)
-	locked := filepath.Join(dir, "locked")
-	write(t, filepath.Join(locked, "old.md"), "stable content")
-	store := newFakeStore()
-	opts := Options{Include: []string{dir}}
-
-	scan(t, store, opts)
-	oldID := store.upserts[0].ID
-	// Make the old path unverifiable (EPERM on Lstat), then present the
-	// same content at a new path: rename detection must mint a fresh id
-	// (can't confirm the old path is gone) but record why.
-	if err := os.Chmod(locked, 0); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
-	write(t, filepath.Join(dir, "new.md"), "stable content")
-	res := scan(t, store, opts)
-
-	if res.Renamed != 0 {
-		t.Errorf("unverifiable old path resolved as rename: %+v", res)
-	}
-	final := store.upserts[len(store.upserts)-1]
-	if final.ID == oldID {
-		t.Errorf("id %q reused despite unverifiable old path", final.ID)
-	}
-	found := false
-	for _, pe := range res.PathErrors {
-		if pe.Path == filepath.Join(locked, "old.md") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("PathErrors = %+v, want stat failure on old path recorded", res.PathErrors)
-	}
-}
-
 func TestScanExcludedFile(t *testing.T) {
 	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "server.pem.md"), "not really a cert but excluded")
@@ -462,6 +439,344 @@ func TestScanPermissionError(t *testing.T) {
 	if len(res.PathErrors) != 1 || res.PathErrors[0].Path != locked {
 		t.Fatalf("PathErrors = %+v, want one for %s", res.PathErrors, locked)
 	}
+	// An unreadable directory is a walkErr: the file inside was never even
+	// statted, so there is nothing to persist an unread row for.
+	if res.Unread != 0 || len(store.docs) != 1 {
+		t.Errorf("Unread = %d, docs = %v, want the walk error only", res.Unread, catalogPaths(store))
+	}
+}
+
+// An unreadable file — stat succeeds, open fails — persists a denied row, so
+// `bsearch status` reports the TCC denial in steady state, not just in the
+// scan that met it.
+func TestScanUnreadableFilePersistsDeniedRow(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not apply")
+	}
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "secret.md")
+	write(t, path, "cannot read")
+	write(t, filepath.Join(dir, "open.md"), "readable")
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	store := newFakeStore()
+
+	res := scan(t, store, Options{Include: []string{dir}})
+
+	if res.Unread != 1 || res.Discovered != 1 {
+		t.Fatalf("Result = %+v, want 1 unread / 1 discovered", res)
+	}
+	if len(res.PathErrors) != 1 || res.PathErrors[0].Path != path {
+		t.Fatalf("PathErrors = %+v, want one for %s", res.PathErrors, path)
+	}
+	doc, ok := store.docs[path]
+	if !ok {
+		t.Fatalf("no unread row persisted; docs = %v", catalogPaths(store))
+	}
+	if doc.UnreadReason != domain.UnreadDenied || doc.ContentHash != "" {
+		t.Errorf("doc = %+v, want reason denied and no hash", doc)
+	}
+	if doc.Size != int64(len("cannot read")) {
+		t.Errorf("Size = %d, want the stat size", doc.Size)
+	}
+	// Bytes never obtained → no content row for this path.
+	if len(store.content) != 1 || !store.content[hashOf("readable")] {
+		t.Errorf("content rows = %v, want only the readable sibling's", store.content)
+	}
+}
+
+// Steady state: the denial is counted every scan, but recorded only once —
+// the second scan sees the same reason, size and mtime and writes nothing.
+func TestScanUnreadableFileSteadyState(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not apply")
+	}
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "secret.md")
+	write(t, path, "cannot read")
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scan(t, store, opts)
+	res := scan(t, store, opts)
+
+	if res.Unread != 1 {
+		t.Errorf("rescan Unread = %d, want the denial counted again", res.Unread)
+	}
+	if got := upsertsFor(store, path); len(got) != 1 {
+		t.Errorf("upserts for the denied path = %d, want 1 (no steady-state rewrite)", len(got))
+	}
+}
+
+// A file that became unreadable after its bytes were obtained keeps its row
+// and its hash: unread_reason is for bytes never obtained (ADR 0015), and
+// de-referencing content a re-grant would only re-embed helps no one.
+func TestScanUnreadableFileKeepsExistingHash(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not apply")
+	}
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "a.md")
+	write(t, path, "hello")
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scan(t, store, opts)
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	// Bump mtime so the cheap check cannot answer and the read is attempted.
+	newTime := time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, newTime, newTime); err != nil {
+		t.Fatal(err)
+	}
+	res := scan(t, store, opts)
+
+	if res.Unread != 0 {
+		t.Errorf("Unread = %d, want 0: the bytes were obtained before the denial", res.Unread)
+	}
+	if len(res.PathErrors) != 1 || res.PathErrors[0].Path != path {
+		t.Errorf("PathErrors = %+v, want the read failure reported", res.PathErrors)
+	}
+	doc := store.docs[path]
+	if doc.ContentHash != hashOf("hello") || doc.UnreadReason != "" {
+		t.Errorf("doc = %+v, want the hash kept and no reason", doc)
+	}
+	if got := upsertsFor(store, path); len(got) != 1 {
+		t.Errorf("upserts = %d, want 1 (no unread rewrite over a hashed row)", len(got))
+	}
+}
+
+// unread→readable: an unread row is re-tried every scan (no cheap check
+// without a hash), so granting access clears the denial without the file
+// having to change.
+func TestScanDeniedFileBecomesReadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not apply")
+	}
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "secret.md")
+	write(t, path, "now visible")
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scan(t, store, opts)
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := scan(t, store, opts)
+
+	if res.Unread != 0 || res.Discovered != 1 || len(res.PathErrors) != 0 {
+		t.Fatalf("Result = %+v, want the denial cleared and the file discovered", res)
+	}
+	doc := store.docs[path]
+	if doc.ContentHash != hashOf("now visible") || doc.UnreadReason != "" {
+		t.Errorf("doc = %+v, want hash set and reason cleared", doc)
+	}
+	if !store.content[hashOf("now visible")] {
+		t.Error("no content row created once the bytes were obtained")
+	}
+}
+
+// Result arithmetic: denied and io_error land in Unread; dataless stays in
+// Dataless only — the two must never double-count a path.
+func TestScanUnreadCountsExcludeDataless(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits do not apply")
+	}
+	dir := tmpDir(t)
+	denied := filepath.Join(dir, "denied.md")
+	write(t, denied, "no access")
+	write(t, filepath.Join(dir, "cloud.md"), "placeholder")
+	write(t, filepath.Join(dir, "local.md"), "on disk")
+	if err := os.Chmod(denied, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(denied, 0o644) })
+	store := newFakeStore()
+
+	s := New(store, Options{Include: []string{dir}})
+	s.dataless = func(info os.FileInfo) bool { return info.Name() == "cloud.md" }
+	res, err := s.Scan(t.Context())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	if res.Unread != 1 || res.Dataless != 1 || res.Discovered != 1 {
+		t.Errorf("Result = %+v, want 1 unread / 1 dataless / 1 discovered", res)
+	}
+}
+
+// A scan larger than one batch lands in multiple transactions, none over
+// flushEvery, with nothing dropped between flushes.
+func TestScanFlushesInBatches(t *testing.T) {
+	dir := tmpDir(t)
+	const n = flushEvery + 44
+	for i := range n {
+		write(t, filepath.Join(dir, fmt.Sprintf("f%03d.md", i)), fmt.Sprintf("content %d", i))
+	}
+	store := newFakeStore()
+
+	res := scan(t, store, Options{Include: []string{dir}})
+
+	if res.Discovered != n {
+		t.Fatalf("Discovered = %d, want %d", res.Discovered, n)
+	}
+	if len(store.batches) < 2 {
+		t.Errorf("batches = %d, want the scan split across transactions", len(store.batches))
+	}
+	var total int
+	for i, b := range store.batches {
+		if len(b) > flushEvery {
+			t.Errorf("batch %d holds %d docs, want at most %d", i, len(b), flushEvery)
+		}
+		total += len(b)
+	}
+	if total != n || len(store.docs) != n {
+		t.Errorf("rows: %d upserted, %d stored, want %d — a flush lost documents", total, len(store.docs), n)
+	}
+}
+
+// The committed-state property under cancellation: counts coupled to
+// buffered rows must not survive the buffer being abandoned. The watcher
+// records a Result before it looks at the error, so an overcount here
+// becomes a cumulative lie in `bsearch status`.
+func TestScanCountsMatchCommittedRowsOnCancel(t *testing.T) {
+	dir := tmpDir(t)
+	for i := range 5 {
+		write(t, filepath.Join(dir, fmt.Sprintf("f%d.md", i)), fmt.Sprintf("content %d", i))
+	}
+	store := newFakeStore()
+	ctx, cancel := context.WithCancel(t.Context())
+	var lookups int
+	store.onGetByPath = func(string) {
+		if lookups++; lookups == 3 {
+			cancel()
+		}
+	}
+
+	res, err := New(store, Options{Include: []string{dir}}).Scan(ctx)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Scan = %v, want context.Canceled", err)
+	}
+	if committed := len(store.upserts); res.Discovered != committed {
+		t.Errorf("Discovered = %d but %d rows committed — counts must describe committed state", res.Discovered, committed)
+	}
+	if res.Discovered != 0 {
+		t.Errorf("Discovered = %d, want 0: nothing was flushed before the cancel", res.Discovered)
+	}
+}
+
+// The same property when a flush itself fails: batches committed before the
+// failure stay counted, the batch that never landed does not.
+func TestScanCountsMatchCommittedRowsOnFlushFailure(t *testing.T) {
+	dir := tmpDir(t)
+	const n = flushEvery + 10
+	for i := range n {
+		write(t, filepath.Join(dir, fmt.Sprintf("f%03d.md", i)), fmt.Sprintf("content %d", i))
+	}
+	store := newFakeStore()
+	store.failUpsert = func(call int) error {
+		if call == 2 {
+			return errors.New("disk full")
+		}
+		return nil
+	}
+
+	res, err := New(store, Options{Include: []string{dir}}).Scan(t.Context())
+
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("Scan = %v, want the second flush's failure", err)
+	}
+	if committed := len(store.upserts); res.Discovered != committed || committed != flushEvery {
+		t.Errorf("Discovered = %d, committed = %d, want both %d — the durable batch counted, the failed one not",
+			res.Discovered, committed, flushEvery)
+	}
+}
+
+// A file deleted between the walk's stat and the open is the same race the
+// walk filters at d.Info(): no PathError, and never an io_error row — that
+// would be a phantom documents row for a path no walk can ever purge.
+func TestScanDeletedBetweenStatAndOpenLeavesNoTrace(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "a.md")
+	write(t, path, "here and gone")
+	store := newFakeStore()
+	store.onGetByPath = func(p string) {
+		if p == path {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	res := scan(t, store, Options{Include: []string{dir}})
+
+	if res.Unread != 0 || res.Discovered != 0 || len(res.PathErrors) != 0 {
+		t.Errorf("Result = %+v, want the race swallowed", res)
+	}
+	if len(store.docs) != 0 || len(store.upserts) != 0 {
+		t.Errorf("docs = %v, want no row for a deleted path", catalogPaths(store))
+	}
+}
+
+// io_error is the one unread reason whose retry is not free: the last
+// attempt died mid-read after hashing every byte up to the failure point.
+// While the stat is unchanged the row is counted without re-reading; the
+// stat moving is what re-arms the attempt.
+func TestScanIOErrorRowRetriedOnlyWhenStatMoves(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "big.md")
+	write(t, path, "readable now")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newFakeStore()
+	store.docs[path] = domain.Document{
+		Path: path, UnreadReason: domain.UnreadIOError,
+		Size: info.Size(), MTime: info.ModTime(),
+	}
+	opts := Options{Include: []string{dir}}
+
+	res := scan(t, store, opts)
+
+	// Steady stat → counted, never opened: no PathError (the file was not
+	// touched), no write, and the row untouched even though a read would
+	// now succeed.
+	if res.Unread != 1 || len(res.PathErrors) != 0 || len(store.upserts) != 0 {
+		t.Fatalf("Result = %+v with %d upserts, want the row counted without a read", res, len(store.upserts))
+	}
+	if store.docs[path].UnreadReason != domain.UnreadIOError {
+		t.Errorf("doc = %+v, want the io_error row untouched", store.docs[path])
+	}
+
+	// The stat moving re-arms the read, which succeeds and clears the row.
+	newTime := time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, newTime, newTime); err != nil {
+		t.Fatal(err)
+	}
+	res = scan(t, store, opts)
+
+	if res.Unread != 0 || res.Discovered != 1 {
+		t.Fatalf("Result = %+v, want the retry to succeed once the stat moved", res)
+	}
+	doc := store.docs[path]
+	if doc.ContentHash != hashOf("readable now") || doc.UnreadReason != "" {
+		t.Errorf("doc = %+v, want hash set and reason cleared", doc)
+	}
 }
 
 func TestScanMissingRoot(t *testing.T) {
@@ -494,93 +809,15 @@ func TestScanOverlappingRootsVisitOnce(t *testing.T) {
 	}
 }
 
-func TestScanRenameKeepsID(t *testing.T) {
+func TestScanDatalessPersistsUnreadRow(t *testing.T) {
 	dir := tmpDir(t)
-	old := filepath.Join(dir, "old.md")
-	write(t, old, "stable content")
-	store := newFakeStore()
-	opts := Options{Include: []string{dir}}
-
-	scan(t, store, opts)
-	id := store.upserts[0].ID
-	if err := os.Rename(old, filepath.Join(dir, "new.md")); err != nil {
-		t.Fatal(err)
-	}
-	res := scan(t, store, opts)
-
-	if res.Discovered != 1 || res.Renamed != 1 {
-		t.Errorf("Result = %+v, want 1 discovered / 1 renamed", res)
-	}
-	moved := store.upserts[len(store.upserts)-1]
-	if moved.ID != id {
-		t.Errorf("rename minted new id %q, want %q kept", moved.ID, id)
-	}
-	if moved.Path != filepath.Join(dir, "new.md") {
-		t.Errorf("Path = %q", moved.Path)
-	}
-}
-
-func TestScanCopyMintsNewID(t *testing.T) {
-	dir := tmpDir(t)
-	write(t, filepath.Join(dir, "a.md"), "same content")
-	store := newFakeStore()
-	opts := Options{Include: []string{dir}}
-
-	scan(t, store, opts)
-	// Copy: original still on disk → hash match must NOT merge.
-	write(t, filepath.Join(dir, "b.md"), "same content")
-	res := scan(t, store, opts)
-
-	if res.Renamed != 0 {
-		t.Errorf("copy detected as rename: %+v", res)
-	}
-	ids := map[string]bool{}
-	for _, d := range store.docs {
-		ids[d.ID] = true
-	}
-	if len(ids) != 2 {
-		t.Errorf("ids = %v, want two distinct ids for duplicate content", ids)
-	}
-}
-
-func TestScanAmbiguousRenameMintsNewID(t *testing.T) {
-	dir := tmpDir(t)
-	store := newFakeStore()
-	opts := Options{Include: []string{dir}}
-
-	// Two rows share a hash (copy), then both files vanish.
-	write(t, filepath.Join(dir, "a.md"), "same content")
-	scan(t, store, opts)
-	write(t, filepath.Join(dir, "b.md"), "same content")
-	scan(t, store, opts)
-	var oldIDs []string
-	for _, d := range store.docs {
-		oldIDs = append(oldIDs, d.ID)
-	}
-	for _, name := range []string{"a.md", "b.md"} {
-		if err := os.Remove(filepath.Join(dir, name)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write(t, filepath.Join(dir, "c.md"), "same content")
-	res := scan(t, store, opts)
-
-	if res.Renamed != 0 {
-		t.Errorf("ambiguous rename resolved: %+v", res)
-	}
-	final := store.upserts[len(store.upserts)-1]
-	if slices.Contains(oldIDs, final.ID) {
-		t.Errorf("ambiguous candidate id %q reused; want fresh id", final.ID)
-	}
-}
-
-func TestScanDatalessSkipped(t *testing.T) {
-	dir := tmpDir(t)
-	write(t, filepath.Join(dir, "cloud.md"), "placeholder")
+	cloud := filepath.Join(dir, "cloud.md")
+	write(t, cloud, "placeholder")
 	write(t, filepath.Join(dir, "local.md"), "on disk")
 	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
 
-	s := New(store, Options{Include: []string{dir}})
+	s := New(store, opts)
 	s.dataless = func(info os.FileInfo) bool { return info.Name() == "cloud.md" }
 	res, err := s.Scan(t.Context())
 	if err != nil {
@@ -590,11 +827,99 @@ func TestScanDatalessSkipped(t *testing.T) {
 	if res.Dataless != 1 || res.Discovered != 1 {
 		t.Errorf("Result = %+v, want 1 dataless / 1 discovered", res)
 	}
-	// The placeholder must never be opened or looked up.
-	for _, p := range store.pathLookups {
-		if filepath.Base(p) == "cloud.md" {
-			t.Errorf("dataless file was processed: %s", p)
-		}
+	// Dataless is not Unread: the split keeps "broken" and "working as
+	// designed" from reporting as one number.
+	if res.Unread != 0 {
+		t.Errorf("Unread = %d, want 0 for a placeholder", res.Unread)
+	}
+	doc, ok := store.docs[cloud]
+	if !ok {
+		t.Fatalf("no unread row for the placeholder; docs = %v", catalogPaths(store))
+	}
+	if doc.UnreadReason != domain.UnreadDataless || doc.ContentHash != "" {
+		t.Errorf("doc = %+v, want reason dataless and no hash", doc)
+	}
+	// The file was never opened: no hash was ever computed for its bytes.
+	if len(store.content) != 1 || !store.content[hashOf("on disk")] {
+		t.Errorf("content rows = %v, want only the local file's", store.content)
+	}
+
+	// Steady state: rescan counts it again, writes nothing new.
+	res, err = s.Scan(t.Context())
+	if err != nil {
+		t.Fatalf("rescan: %v", err)
+	}
+	if res.Dataless != 1 {
+		t.Errorf("rescan Dataless = %d, want 1", res.Dataless)
+	}
+	if got := upsertsFor(store, cloud); len(got) != 1 {
+		t.Errorf("upserts for the placeholder = %d, want 1 (no steady-state rewrite)", len(got))
+	}
+}
+
+// A file evicted after its bytes were indexed keeps its hash: the content is
+// still what the file holds, only the local copy is gone.
+func TestScanDatalessEvictedAfterIndexingKeepsHash(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "a.md")
+	write(t, path, "hello")
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scan(t, store, opts) // indexed while local
+
+	s := New(store, opts)
+	s.dataless = func(info os.FileInfo) bool { return true } // now evicted
+	res, err := s.Scan(t.Context())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	if res.Dataless != 1 {
+		t.Errorf("Result = %+v, want 1 dataless", res)
+	}
+	doc := store.docs[path]
+	if doc.ContentHash != hashOf("hello") || doc.UnreadReason != "" {
+		t.Errorf("doc = %+v, want the hash kept over the eviction", doc)
+	}
+	if got := upsertsFor(store, path); len(got) != 1 {
+		t.Errorf("upserts = %d, want 1 (no rewrite over a hashed row)", len(got))
+	}
+}
+
+// The keep-hash rule holds only while the stat holds: a placeholder whose
+// size or mtime moved was edited remotely after eviction, and keeping the
+// hash would serve the old version's chunks indefinitely with no record
+// that the file changed.
+func TestScanDatalessEvictedThenRemoteEditDropsHash(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "a.md")
+	write(t, path, "hello")
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scan(t, store, opts) // indexed while local
+
+	// Evicted, then edited on another device: the placeholder's stat moves
+	// while the file stays dataless.
+	write(t, path, "hello, edited remotely")
+	s := New(store, opts)
+	s.dataless = func(info os.FileInfo) bool { return true }
+	res, err := s.Scan(t.Context())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	if res.Dataless != 1 {
+		t.Errorf("Result = %+v, want 1 dataless", res)
+	}
+	doc := store.docs[path]
+	if doc.UnreadReason != domain.UnreadDataless || doc.ContentHash != "" {
+		t.Errorf("doc = %+v, want the hash dropped for a dataless row", doc)
+	}
+	// The old content row is orphaned for the sweep, never deleted here.
+	if !store.content[hashOf("hello")] {
+		t.Error("old content row deleted by discovery; the sweep owns that")
 	}
 }
 

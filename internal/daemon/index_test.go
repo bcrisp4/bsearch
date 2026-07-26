@@ -46,29 +46,44 @@ func newEmbedder() *fakeEmbedder {
 	return &fakeEmbedder{spec: testSpec, vec: []float32{1, 0, 0}}
 }
 
-// writeIndex builds a minimal but real index at path: one document, one
-// chunk, one vector, under testSpec.
-func writeIndex(t *testing.T, path, docID, text string) {
+// openStore opens the index database at path for a fixture write.
+func openStore(t *testing.T, path string) (*sqlite.Store, func()) {
 	t.Helper()
 	db, err := sqlite.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer db.Close() //nolint:errcheck // test fixture
+	return sqlite.NewStore(db), func() { _ = db.Close() }
+}
 
-	store := sqlite.NewStore(db)
-	ctx := context.Background()
-	// Two writes, because only discovery creates catalog rows: a
-	// pipeline-shaped upsert against a row that is not there reports
-	// domain.ErrDocumentGone rather than conjuring one.
-	doc := domain.Document{ID: docID, Path: "/notes/" + docID + ".md", ContentHash: "h", State: domain.DocStateDiscovered}
-	if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
-		t.Fatalf("UpsertDocument (discover): %v", err)
+// testDoc is a readable file at /notes/<hash>.md whose bytes hash to hash.
+func testDoc(hash string) domain.Document {
+	return domain.Document{
+		Path:        "/notes/" + hash + ".md",
+		ContentHash: hash,
+		Size:        42,
+		MTime:       time.Unix(1700000000, 0),
 	}
-	doc.State = domain.DocStateIndexed
-	chunkIDs, err := store.UpsertDocument(ctx, doc, []domain.Chunk{{DocID: docID, Ordinal: 0, Text: text}})
+}
+
+// writeIndex builds a minimal but real index at path: one document, one
+// chunk, one vector, under testSpec. Two modules write it, as in production
+// (ADR 0015): discovery announces the path (UpsertDocuments creates the
+// content row at discovered), then the pipeline stores chunks and advances
+// the content to indexed.
+func writeIndex(t *testing.T, path, hash, text string) {
+	t.Helper()
+	store, closeDB := openStore(t, path)
+	defer closeDB()
+	ctx := context.Background()
+
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc(hash)}); err != nil {
+		t.Fatalf("UpsertDocuments: %v", err)
+	}
+	c := domain.Content{Hash: hash, State: domain.ContentStateChunked}
+	chunkIDs, err := store.StoreChunks(ctx, c, []domain.Chunk{{Ordinal: 0, Text: text, ByteEnd: len(text)}})
 	if err != nil {
-		t.Fatalf("UpsertDocument: %v", err)
+		t.Fatalf("StoreChunks: %v", err)
 	}
 	if err := store.EnsureVecTable(ctx, testSpec, 3); err != nil {
 		t.Fatalf("EnsureVecTable: %v", err)
@@ -76,36 +91,45 @@ func writeIndex(t *testing.T, path, docID, text string) {
 	if err := store.UpsertVectors(ctx, chunkIDs, [][]float32{{1, 0, 0}}); err != nil {
 		t.Fatalf("UpsertVectors: %v", err)
 	}
+	if err := store.UpdateContentState(ctx, hash, domain.ContentStateIndexed); err != nil {
+		t.Fatalf("UpdateContentState: %v", err)
+	}
 }
 
-// addDocument adds a catalog row in the given state to an existing index,
-// with no chunks — the shape of a document the pipeline has not finished (or
-// has given up on). A non-empty failure reason is recorded as last_error.
-func addDocument(t *testing.T, path, docID string, state domain.DocState, failure string) {
+// addContent adds a path and its content row in the given state to an
+// existing index, with no chunks — the shape of content the pipeline has not
+// finished (or has given up on). A non-empty failure reason is recorded as
+// last_error.
+func addContent(t *testing.T, path, hash string, state domain.ContentState, failure string) {
 	t.Helper()
-	db, err := sqlite.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close() //nolint:errcheck // test fixture
-
-	store := sqlite.NewStore(db)
+	store, closeDB := openStore(t, path)
+	defer closeDB()
 	ctx := context.Background()
-	doc := domain.Document{
-		ID: docID, Path: "/notes/" + docID + ".md", ContentHash: "h", State: domain.DocStateDiscovered,
+
+	if err := store.UpsertDocuments(ctx, []domain.Document{testDoc(hash)}); err != nil {
+		t.Fatalf("UpsertDocuments: %v", err)
 	}
-	if _, err := store.UpsertDocument(ctx, doc, nil); err != nil {
-		t.Fatalf("UpsertDocument (discover): %v", err)
-	}
-	if state != domain.DocStateDiscovered {
-		if err := store.UpdateDocumentState(ctx, docID, state); err != nil {
-			t.Fatalf("UpdateDocumentState: %v", err)
-		}
-	}
-	if failure != "" {
-		if err := store.MarkFailed(ctx, docID, failure); err != nil {
+	switch {
+	case failure != "":
+		if err := store.MarkFailed(ctx, hash, failure); err != nil {
 			t.Fatalf("MarkFailed: %v", err)
 		}
+	case state != domain.ContentStateDiscovered:
+		if err := store.UpdateContentState(ctx, hash, state); err != nil {
+			t.Fatalf("UpdateContentState: %v", err)
+		}
+	}
+}
+
+// addUnread adds a documents row whose bytes were never obtained: no content
+// hash, just the reason (ADR 0015).
+func addUnread(t *testing.T, path, docPath string, reason domain.UnreadReason) {
+	t.Helper()
+	store, closeDB := openStore(t, path)
+	defer closeDB()
+	doc := domain.Document{Path: docPath, UnreadReason: reason, Size: 1, MTime: time.Unix(1700000000, 0)}
+	if err := store.UpsertDocuments(context.Background(), []domain.Document{doc}); err != nil {
+		t.Fatalf("UpsertDocuments (unread): %v", err)
 	}
 }
 
@@ -145,13 +169,13 @@ func TestIndexAppearingAfterStartupIsPickedUp(t *testing.T) {
 		t.Fatalf("precondition: want ErrNotIndexed, got %v", err)
 	}
 
-	writeIndex(t, dbPath, "d_1", "alpha text")
+	writeIndex(t, dbPath, "h1", "alpha text")
 
 	resp, err := d.Search(context.Background(), search.Request{Query: "alpha"})
 	if err != nil {
 		t.Fatalf("Search after the index appeared: %v", err)
 	}
-	if len(resp.Hits) != 1 || resp.Hits[0].DocID != "d_1" {
+	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "sha256:h1" {
 		t.Errorf("hits = %+v, want the indexed document", resp.Hits)
 	}
 }
@@ -161,14 +185,14 @@ func TestReplacedIndexFileIsPickedUp(t *testing.T) {
 	// would serve results from a file nothing else can see, with no error
 	// to notice.
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_old", "alpha text")
+	writeIndex(t, dbPath, "h_old", "alpha text")
 	d := newDaemon(t, dbPath)
 
 	resp, err := d.Search(context.Background(), search.Request{Query: "alpha"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if len(resp.Hits) != 1 || resp.Hits[0].DocID != "d_old" {
+	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "sha256:h_old" {
 		t.Fatalf("hits = %+v, want the original document", resp.Hits)
 	}
 
@@ -177,20 +201,20 @@ func TestReplacedIndexFileIsPickedUp(t *testing.T) {
 			t.Fatalf("remove %s: %v", dbPath+suffix, err)
 		}
 	}
-	writeIndex(t, dbPath, "d_new", "alpha text")
+	writeIndex(t, dbPath, "h_new", "alpha text")
 
 	resp, err = d.Search(context.Background(), search.Request{Query: "alpha"})
 	if err != nil {
 		t.Fatalf("Search after replacement: %v", err)
 	}
-	if len(resp.Hits) != 1 || resp.Hits[0].DocID != "d_new" {
+	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "sha256:h_new" {
 		t.Errorf("hits = %+v, want the replacement index's document — the daemon is serving a ghost inode", resp.Hits)
 	}
 }
 
 func TestSearchAfterCloseDoesNotReopen(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_1", "alpha text")
+	writeIndex(t, dbPath, "h1", "alpha text")
 	d := daemon.New(daemon.Options{DBPath: dbPath, Embedder: newEmbedder()})
 
 	if _, err := d.Search(context.Background(), search.Request{Query: "alpha"}); err != nil {
@@ -211,7 +235,7 @@ func TestSearchAfterCloseDoesNotReopen(t *testing.T) {
 
 func TestConcurrentSearchesOpenTheIndexOnce(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_1", "alpha text")
+	writeIndex(t, dbPath, "h1", "alpha text")
 	d := newDaemon(t, dbPath)
 
 	var wg sync.WaitGroup
@@ -233,7 +257,7 @@ func TestConcurrentSearchesOpenTheIndexOnce(t *testing.T) {
 
 func TestSearchHonoursContextWhileWaitingToOpen(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_1", "alpha text")
+	writeIndex(t, dbPath, "h1", "alpha text")
 	d := newDaemon(t, dbPath)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -261,7 +285,7 @@ func TestStatusWithoutAnIndex(t *testing.T) {
 
 func TestStatusWithAnIndex(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_1", "alpha text")
+	writeIndex(t, dbPath, "h1", "alpha text")
 	d := newDaemon(t, dbPath)
 
 	status, err := d.Status(context.Background())
@@ -274,24 +298,58 @@ func TestStatusWithAnIndex(t *testing.T) {
 	if status.Model != testSpec.Model || status.Dims != 3 {
 		t.Errorf("status = %+v, want the indexed model and dims", status)
 	}
-	if status.Documents["indexed"] != 1 {
-		t.Errorf("documents = %v, want one indexed document", status.Documents)
+	if status.Files != 1 {
+		t.Errorf("files = %d, want the one path", status.Files)
 	}
-	// Every state present, so a consumer never has to tell absent from zero.
-	for _, state := range domain.DocStates {
-		if _, ok := status.Documents[string(state)]; !ok {
-			t.Errorf("documents is missing state %q", state)
+	if status.Content["indexed"] != 1 {
+		t.Errorf("content = %v, want one indexed content", status.Content)
+	}
+	// Every state and reason present, so a consumer never has to tell absent
+	// from zero.
+	for _, state := range domain.ContentStates {
+		if _, ok := status.Content[string(state)]; !ok {
+			t.Errorf("content is missing state %q", state)
 		}
+	}
+	for _, reason := range domain.UnreadReasons {
+		if _, ok := status.Unread[string(reason)]; !ok {
+			t.Errorf("unread is missing reason %q", reason)
+		}
+	}
+}
+
+func TestStatusCountsUnreadFiles(t *testing.T) {
+	// A path whose bytes were never obtained has no content and no pipeline
+	// state, but it is still a file — Files includes it, and Unread says why
+	// it is invisible to search (ADR 0015: denied is the Full Disk Access
+	// signal and must never fold into a healthy-looking total).
+	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
+	writeIndex(t, dbPath, "h1", "alpha text")
+	addUnread(t, dbPath, "/notes/locked.md", domain.UnreadDenied)
+	d := newDaemon(t, dbPath)
+
+	status, err := d.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if status.Files != 2 {
+		t.Errorf("files = %d, want both paths counted", status.Files)
+	}
+	if status.Unread["denied"] != 1 {
+		t.Errorf("unread = %v, want the denied file counted", status.Unread)
+	}
+	if status.Content["indexed"] != 1 {
+		t.Errorf("content = %v, want the readable file's content indexed", status.Content)
 	}
 }
 
 func TestStatusReportsTheBacklogAndFootprint(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_1", "alpha text")
-	// A document waiting to be worked and one given up on, so the backlog and
+	writeIndex(t, dbPath, "h1", "alpha text")
+	// A content waiting to be worked and one given up on, so the backlog and
 	// the failure list both have something to say.
-	addDocument(t, dbPath, "d_2", domain.DocStateDiscovered, "")
-	addDocument(t, dbPath, "d_3", domain.DocStateFailed, "not valid UTF-8")
+	addContent(t, dbPath, "h2", domain.ContentStateDiscovered, "")
+	addContent(t, dbPath, "h3", domain.ContentStateFailed, "not valid UTF-8")
 	d := newDaemon(t, dbPath)
 
 	status, err := d.Status(context.Background())
@@ -299,9 +357,9 @@ func TestStatusReportsTheBacklogAndFootprint(t *testing.T) {
 		t.Fatalf("Status: %v", err)
 	}
 	if status.Queue == nil || status.Queue.Pending != 1 {
-		t.Errorf("queue = %+v, want one pending document", status.Queue)
+		t.Errorf("queue = %+v, want one pending content", status.Queue)
 	}
-	want := []server.FailureGroup{{Reason: "not valid UTF-8", Documents: 1, ExamplePath: "/notes/d_3.md"}}
+	want := []server.FailureGroup{{Reason: "not valid UTF-8", Contents: 1, ExamplePath: "/notes/h3.md"}}
 	if len(status.Failures) != 1 || status.Failures[0] != want[0] {
 		t.Errorf("failures = %+v, want %+v", status.Failures, want)
 	}
@@ -317,7 +375,7 @@ func TestStatusReportsTheBacklogAndFootprint(t *testing.T) {
 // the CLI hides the section entirely, and "Failures (0)" is noise.
 func TestStatusOmitsFailuresWhenNothingFailed(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_1", "alpha text")
+	writeIndex(t, dbPath, "h1", "alpha text")
 	d := newDaemon(t, dbPath)
 
 	status, err := d.Status(context.Background())
@@ -333,7 +391,7 @@ func TestStatusReportsAModelMismatch(t *testing.T) {
 	// Searching is impossible in this state, so "ready" would be a lie —
 	// and the reason is the one thing that explains the 409s.
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_1", "alpha text")
+	writeIndex(t, dbPath, "h1", "alpha text")
 
 	embedder := newEmbedder()
 	embedder.spec.Model = "some-other-model"
@@ -352,8 +410,8 @@ func TestStatusReportsAModelMismatch(t *testing.T) {
 	}
 	// Counts still come through: they are what tells the user whether the
 	// index is worth re-embedding or empty anyway.
-	if status.Documents["indexed"] != 1 {
-		t.Errorf("documents = %v, want counts even when not ready", status.Documents)
+	if status.Content["indexed"] != 1 {
+		t.Errorf("content = %v, want counts even when not ready", status.Content)
 	}
 }
 
@@ -362,7 +420,7 @@ func TestUnconfiguredEmbedderIsReportedNotCrashed(t *testing.T) {
 	// crash-loop: status is the only thing that can explain the problem, so
 	// it has to stay reachable.
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_1", "alpha text")
+	writeIndex(t, dbPath, "h1", "alpha text")
 	d := daemon.New(daemon.Options{
 		DBPath:   dbPath,
 		Embedder: nil,
@@ -377,8 +435,8 @@ func TestUnconfiguredEmbedderIsReportedNotCrashed(t *testing.T) {
 	if status.Ready || !strings.Contains(status.Reason, "embedding_model") {
 		t.Errorf("status = %+v, want not-ready naming the missing setting", status)
 	}
-	if status.Documents["indexed"] != 1 {
-		t.Errorf("documents = %v, want counts even without an embedder", status.Documents)
+	if status.Content["indexed"] != 1 {
+		t.Errorf("content = %v, want counts even without an embedder", status.Content)
 	}
 
 	_, err = d.Search(context.Background(), search.Request{Query: "alpha"})
@@ -412,7 +470,7 @@ func TestReplacingTheIndexDoesNotBreakAnInFlightSearch(t *testing.T) {
 	// no sentinel, so the user gets an opaque 500 for something they did
 	// nothing wrong to cause.
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
-	writeIndex(t, dbPath, "d_old", "alpha text")
+	writeIndex(t, dbPath, "h_old", "alpha text")
 
 	embedder := &blockingEmbedder{
 		fakeEmbedder: *newEmbedder(),
@@ -440,7 +498,7 @@ func TestReplacingTheIndexDoesNotBreakAnInFlightSearch(t *testing.T) {
 			t.Fatalf("remove: %v", err)
 		}
 	}
-	writeIndex(t, dbPath, "d_new", "alpha text")
+	writeIndex(t, dbPath, "h_new", "alpha text")
 
 	// A concurrent request notices the replacement and retires the old
 	// handle. It must not close a database another request is still using.
@@ -482,5 +540,84 @@ func TestUnreadableIndexIsReportedAsNotIndexed(t *testing.T) {
 	}
 	if status.Ready || status.Reason == "" {
 		t.Errorf("status = %+v, want not-ready with a reason", status)
+	}
+}
+
+// One content at two paths is one hit end to end: the primary is the newest
+// copy, the rest ride in also_at, and deleting the primary re-points the hit
+// to the survivor immediately — before any orphan sweep runs, because result
+// assembly inner-joins documents (ADR 0015).
+// addCopy adds another documents row referencing hash — a duplicate file —
+// with the given mtime.
+func addCopy(t *testing.T, dbPath, hash, path string, mtime time.Time) {
+	t.Helper()
+	store, closeDB := openStore(t, dbPath)
+	defer closeDB()
+	doc := domain.Document{Path: path, ContentHash: hash, Size: 42, MTime: mtime}
+	if err := store.UpsertDocuments(context.Background(), []domain.Document{doc}); err != nil {
+		t.Fatalf("UpsertDocuments (%s): %v", path, err)
+	}
+}
+
+// deletePath removes the documents row(s) at/under prefix, the way the
+// watcher's purge would.
+func deletePath(t *testing.T, dbPath, prefix string) {
+	t.Helper()
+	store, closeDB := openStore(t, dbPath)
+	defer closeDB()
+	if _, err := store.DeleteByPathPrefix(context.Background(), prefix); err != nil {
+		t.Fatalf("DeleteByPathPrefix(%s): %v", prefix, err)
+	}
+}
+
+// One content at two paths is one hit end to end: the primary is the newest
+// copy, the rest ride in also_at, and deletions take effect immediately —
+// before any orphan sweep — because result assembly inner-joins documents
+// (ADR 0015). The duplicate's path deliberately sorts AFTER the original
+// (/zz/ vs /notes/), so the primary pick passing proves mtime precedence,
+// not path order.
+func TestSearchDeduplicatesIdenticalFiles(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
+	writeIndex(t, dbPath, "h1", "alpha text")
+	addCopy(t, dbPath, "h1", "/zz/copy.md", time.Unix(1800000000, 0)) // newer than testDoc's
+
+	d := newDaemon(t, dbPath)
+	resp, err := d.Search(context.Background(), search.Request{Query: "alpha"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(resp.Hits) != 1 {
+		t.Fatalf("hits = %+v, want exactly one — duplicates collapse per content", resp.Hits)
+	}
+	hit := resp.Hits[0]
+	if hit.Path != "/zz/copy.md" || hit.ContentHash != "sha256:h1" {
+		t.Errorf("hit = %+v, want the newest copy as primary (mtime beats path order)", hit)
+	}
+	if len(hit.AlsoAt) != 1 || hit.AlsoAt[0] != "/notes/h1.md" {
+		t.Errorf("also_at = %v, want the older copy", hit.AlsoAt)
+	}
+
+	deletePath(t, dbPath, "/zz/copy.md")
+	resp, err = d.Search(context.Background(), search.Request{Query: "alpha"})
+	if err != nil {
+		t.Fatalf("Search after deleting the primary: %v", err)
+	}
+	if len(resp.Hits) != 1 || resp.Hits[0].Path != "/notes/h1.md" {
+		t.Fatalf("hits = %+v, want the surviving copy as primary, immediately and pre-sweep", resp.Hits)
+	}
+	if len(resp.Hits[0].AlsoAt) != 0 {
+		t.Errorf("also_at = %v, want empty once the content is unique again", resp.Hits[0].AlsoAt)
+	}
+
+	// Deleting the LAST path is what proves the join is inner: the chunks
+	// and vectors are all still present (no sweep has run), so a weakened
+	// LEFT JOIN would keep serving the hit — or 500 on a NULL path scan.
+	deletePath(t, dbPath, "/notes/h1.md")
+	resp, err = d.Search(context.Background(), search.Request{Query: "alpha"})
+	if err != nil {
+		t.Fatalf("Search after deleting the last path: %v", err)
+	}
+	if len(resp.Hits) != 0 {
+		t.Fatalf("hits = %+v, want none — content with no referencing path contributes nothing, pre-sweep", resp.Hits)
 	}
 }

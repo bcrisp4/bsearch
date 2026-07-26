@@ -162,36 +162,34 @@ func (d *Daemon) Status(ctx context.Context) (server.IndexStatus, error) {
 	}
 	defer h.release()
 
-	status := server.IndexStatus{Documents: map[string]int{}, Disk: diskUsage(d.dbPath)}
-	counts, err := h.store.CountsByState(ctx)
+	status := server.IndexStatus{
+		Content: map[string]int{},
+		Unread:  map[string]int{},
+		Disk:    diskUsage(d.dbPath),
+	}
+	// One snapshot for counts, depth and failures: the CLI cross-references
+	// them (queue pending against the state breakdown, the failure heading
+	// against the failed count), and three separate reads mid-drain would
+	// let status contradict itself. The store gates the failure query on
+	// failed > 0 itself, inside the same transaction.
+	counts, depth, groups, err := h.store.StatusSnapshot(ctx, time.Now(), maxFailureGroups)
 	if err != nil {
 		return server.IndexStatus{}, err
 	}
-	for state, n := range counts {
-		status.Documents[string(state)] = n
+	status.Files = counts.Files
+	for state, n := range counts.Content {
+		status.Content[string(state)] = n
 	}
-
-	depth, err := h.store.QueueDepth(ctx, time.Now())
-	if err != nil {
-		return server.IndexStatus{}, err
+	for reason, n := range counts.Unread {
+		status.Unread[string(reason)] = n
 	}
 	status.Queue = &server.QueueStatus{Pending: depth.Pending, Retrying: depth.Retrying}
-
-	// Only queried when the counts say there is something to report: the
-	// common case is a corpus with no failures at all, and status runs on
-	// every `bsearch status`.
-	if counts[domain.DocStateFailed] > 0 {
-		groups, err := h.store.FailureReasons(ctx, maxFailureGroups)
-		if err != nil {
-			return server.IndexStatus{}, err
-		}
-		for _, g := range groups {
-			status.Failures = append(status.Failures, server.FailureGroup{
-				Reason:      g.Reason,
-				Documents:   g.Documents,
-				ExamplePath: g.ExamplePath,
-			})
-		}
+	for _, g := range groups {
+		status.Failures = append(status.Failures, server.FailureGroup{
+			Reason:      g.Reason,
+			Contents:    g.Contents,
+			ExamplePath: g.ExamplePath,
+		})
 	}
 
 	indexed, dims, err := h.store.CurrentVecSpec(ctx)
