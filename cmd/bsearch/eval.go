@@ -194,15 +194,15 @@ func runEvalRun(args []string, out io.Writer) error {
 	for _, pe := range scanRes.PathErrors {
 		fmt.Fprintf(out, "warning: %s: %v\n", stripControl(pe.Path), pe.Err)
 	}
-	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d skipped (iCloud placeholder)\n",
-		scanRes.Discovered, scanRes.Unchanged, scanRes.Dataless)
+	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d skipped (iCloud placeholder), %d unread\n",
+		scanRes.Discovered, scanRes.Unchanged, scanRes.Dataless, scanRes.Unread)
 	// Unlike index.go's equivalent guard (which only fires alongside
 	// PathErrors, since a live filesystem scan legitimately turning up zero
 	// files elsewhere is not by itself suspicious), a golden corpus must
 	// contain files regardless of whether any PathErrors were reported —
 	// an empty corpus/ scores every query against nothing and reports
 	// misleadingly clean zeros instead of failing loudly.
-	if scanRes.Discovered+scanRes.Unchanged+scanRes.Dataless == 0 {
+	if scanRes.Reached() == 0 {
 		return errors.New("scan reached no files — check --corpus points at a corpus directory with a corpus/ subtree (see warnings above, if any)")
 	}
 

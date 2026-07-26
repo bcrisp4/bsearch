@@ -614,7 +614,10 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 	// pattern, few enough that neither turns into a haystack.
 	sample := s.logPathErrors(res.PathErrors, "scan could not read a path",
 		"further scan path errors suppressed", maxLoggedPathErrors)
-	reached := res.Discovered + res.Unchanged + res.Dataless + res.Unread
+	// Reached excludes Unread on purpose: a denied file was not reached,
+	// and counting it would disarm this alarm for a listable root whose
+	// every file fails open with EPERM.
+	reached := res.Reached()
 	if len(res.PathErrors) > 0 && reached == 0 {
 		// Every root failed and nothing was reachable. That is a permissions
 		// problem — almost always a missing or revoked Full Disk Access grant
