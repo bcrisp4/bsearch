@@ -50,11 +50,17 @@ type fakeQueue struct {
 	sweepMoves []int
 	claims     int
 
-	// orphanSweeps counts SweepOrphans calls; orphanSweepErr fails them;
-	// orphanRemoved is what each call reports collected.
+	// orphanSweeps counts SweepOrphans calls, sweepScopes records each
+	// call's scope, and orphanSweepErr fails them. The sweep itself is
+	// modelled, not stubbed: it removes pathGone rows the way the store
+	// does, so tests can observe orphans actually leaving the queue.
 	orphanSweeps   int
+	sweepScopes    []domain.SweepScope
 	orphanSweepErr error
-	orphanRemoved  int
+
+	// getWorks records every GetWork call, so a test can assert an orphan
+	// was never handed toward the pipeline at all.
+	getWorks []string
 }
 
 type rescheduled struct {
@@ -113,6 +119,7 @@ func (q *fakeQueue) setPath(hash, path string) {
 func (q *fakeQueue) GetWork(_ context.Context, hash string) (domain.WorkItem, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	q.getWorks = append(q.getWorks, hash)
 	c, ok := q.contents[hash]
 	if !ok || q.pathGone[hash] {
 		return domain.WorkItem{}, fmt.Errorf("get work %s: %w", hash, domain.ErrContentGone)
@@ -190,20 +197,66 @@ func (q *fakeQueue) MarkFailed(_ context.Context, hash, reason string) error {
 	return nil
 }
 
-func (q *fakeQueue) SweepOrphans(_ context.Context) (int, error) {
+// SweepOrphans models the store's sweep (review 3653204158): every pathGone
+// row is an orphan, and the scope decides whether terminal orphans go too.
+// Removing the rows is the point — it is what lets a test observe that a
+// swept orphan is never claimed again.
+func (q *fakeQueue) SweepOrphans(_ context.Context, scope domain.SweepScope) (int, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.orphanSweeps++
+	q.sweepScopes = append(q.sweepScopes, scope)
 	if q.orphanSweepErr != nil {
 		return 0, q.orphanSweepErr
 	}
-	return q.orphanRemoved, nil
+	removed := 0
+	kept := q.order[:0]
+	for _, hash := range q.order {
+		c := q.contents[hash]
+		if q.pathGone[hash] && (scope == domain.SweepScopeAll || !c.State.Terminal()) {
+			delete(q.contents, hash)
+			delete(q.pathGone, hash)
+			removed++
+			continue
+		}
+		kept = append(kept, hash)
+	}
+	q.order = kept
+	return removed, nil
 }
 
 func (q *fakeQueue) orphanSweepCount() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.orphanSweeps
+}
+
+func (q *fakeQueue) scopes() []domain.SweepScope {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return slices.Clone(q.sweepScopes)
+}
+
+// orphan marks a hash as referenced by no live document — the state a
+// deletion or an edit leaves the old content in.
+func (q *fakeQueue) orphan(hash string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.pathGone[hash] = true
+}
+
+// has reports whether the content row is still in the catalog.
+func (q *fakeQueue) has(hash string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	_, ok := q.contents[hash]
+	return ok
+}
+
+func (q *fakeQueue) getWorkHashes() []string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return slices.Clone(q.getWorks)
 }
 
 func (q *fakeQueue) snapshotContent(hash string) domain.Content {
@@ -1450,7 +1503,7 @@ func TestSupersededContentIsReportedAndRescheduled(t *testing.T) {
 // charges no attempt and moves no counter — but seen must still bound a
 // hot-edited file to one abandoned read per drain, because the row stays
 // claimable the whole time.
-func TestChangedContentIsAbandonedWithoutChargeOrCount(t *testing.T) {
+func TestChangedContentIsDeferredWithoutChargeAndCounted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newFakeQueue(discoveredContent("c_1"))
 		ix := newFakeIndexer()
@@ -1465,21 +1518,53 @@ func TestChangedContentIsAbandonedWithoutChargeOrCount(t *testing.T) {
 			t.Errorf("counters = indexed %d failed %d skipped %d retried %d superseded %d, want all zero — a changed file is nobody's failure",
 				snap.Indexed, snap.Failed, snap.Skipped, snap.Retried, snap.Superseded)
 		}
-		reschedules, failures, _, claims := q.counts()
-		if reschedules != 0 || failures != 0 {
-			t.Errorf("reschedules = %d, failures = %d, want 0 and 0 — nothing is charged", reschedules, failures)
+		if snap.Changed != 1 {
+			t.Errorf("Changed = %d, want 1 — the abandoned claim must be visible in status", snap.Changed)
 		}
-		// The row stays claimable (discovered, no backoff), so the drain
-		// re-claims it — and seen is the only thing standing between that and
-		// re-reading a hot file forever within one drain.
-		if claims < 2 {
-			t.Fatalf("claims = %d, want the drain to have re-claimed after the abandoned read", claims)
+		// Deferred at the backoff cap without charging: attempts unchanged,
+		// next_retry_at in the future, so the pathological shapes (a
+		// continuously-rewritten file, a size-and-mtime-preserving edit
+		// discovery can never notice) cost one read per cap interval, not
+		// one per drain.
+		reschedules, failures, _, _ := q.counts()
+		if reschedules != 1 || failures != 0 {
+			t.Errorf("reschedules = %d, failures = %d, want 1 and 0", reschedules, failures)
+		}
+		if got := q.reschedules[0]; got.hash != "c_1" || got.attempts != 0 {
+			t.Errorf("reschedule = %+v, want c_1 deferred with attempts unchanged (0)", got)
 		}
 		if got := ix.processedHashes(); len(got) != 1 || got[0] != "c_1" {
 			t.Errorf("processed %v, want exactly one abandoned read of c_1 in this drain", got)
 		}
 		if c := q.snapshotContent("c_1"); c.State != domain.ContentStateDiscovered || c.Attempts != 0 {
-			t.Errorf("c_1 = state %q attempts %d, want the row untouched", c.State, c.Attempts)
+			t.Errorf("c_1 = state %q attempts %d, want state and budget untouched", c.State, c.Attempts)
+		}
+	})
+}
+
+// pipeline.movedOn folds two sentinels into OutcomeSuperseded and documents
+// that the caller tells them apart. ErrContentGone is routine — the row was
+// swept mid-flight once the orphan sweep exists — and must not trip the
+// ADR 0014 invariant alarm or charge backoff to a row that no longer
+// exists.
+func TestSupersededWithContentGoneIsRoutineNotAnAlarm(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_1"))
+		ix := newFakeIndexer()
+		ix.outcomes["c_1"] = pipeline.Result{
+			Outcome: pipeline.OutcomeSuperseded,
+			Err:     fmt.Errorf("store chunks: %w", domain.ErrContentGone),
+		}
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.Superseded != 0 {
+			t.Errorf("Superseded = %d, want 0 — a mid-flight sweep is not a broken invariant", snap.Superseded)
+		}
+		if reschedules, failures, _, _ := q.counts(); reschedules != 0 || failures != 0 {
+			t.Errorf("reschedules = %d, failures = %d, want 0 and 0 — nothing is owed to a swept row", reschedules, failures)
 		}
 	})
 }
@@ -1489,18 +1574,27 @@ func TestChangedContentIsAbandonedWithoutChargeOrCount(t *testing.T) {
 // marks it seen and carries on with the rest of the batch. Gating on it
 // would let one deleted file stop indexing for everything behind it, and
 // counting it as skipped would report a deletion as a permissions problem.
+//
+// The deletion lands mid-drain — after the startup sweep, while the batch is
+// in flight — because that is the only window this path serves: an orphan
+// already present when the cycle starts is collected by the sweep and never
+// re-read at all (its own test below).
 func TestContentGoneAtTheReReadIsSkippedWithoutStoppingTheDrain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		q := newFakeQueue(discoveredContent("c_1"), discoveredContent("c_2"))
-		q.pathGone["c_1"] = true
+		q := newFakeQueue(discoveredContent("c_live"), discoveredContent("c_gone"))
 		ix := newFakeIndexer()
-		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
+		ix.markIndexed = func(hash string) {
+			q.setState(hash, domain.ContentStateIndexed)
+			// The file backing c_gone is deleted while c_live is indexing —
+			// between c_gone's claim and its re-read.
+			q.orphan("c_gone")
+		}
 		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
 
 		s.cycle(t.Context())
 
-		if got := ix.processedHashes(); !slices.Equal(got, []string{"c_2"}) {
-			t.Errorf("processed %v, want [c_2] — the gone content skipped, the rest worked", got)
+		if got := ix.processedHashes(); !slices.Equal(got, []string{"c_live"}) {
+			t.Errorf("processed %v, want [c_live] — the gone content skipped, the rest worked", got)
 		}
 		snap := s.Snapshot()
 		if snap.Gate != GateIdle {
@@ -1516,9 +1610,9 @@ func TestContentGoneAtTheReReadIsSkippedWithoutStoppingTheDrain(t *testing.T) {
 	})
 }
 
-// The orphan sweep is armed at construction — the first drain collects
-// whatever a crash or a previous build left behind — and a quiet cycle
-// afterwards must not pay for it again.
+// The orphan sweep is armed at construction — the first cycle collects
+// whatever a crash or a previous build left behind, terminal orphans
+// included — and a quiet cycle afterwards must not pay for it again.
 func TestOrphanSweepRunsOnceAtStartThenNotOnQuietCycles(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newFakeQueue()
@@ -1527,6 +1621,9 @@ func TestOrphanSweepRunsOnceAtStartThenNotOnQuietCycles(t *testing.T) {
 		s.cycle(t.Context())
 		if got := q.orphanSweepCount(); got != 1 {
 			t.Fatalf("orphan sweeps after first cycle = %d, want 1", got)
+		}
+		if scopes := q.scopes(); scopes[0] != domain.SweepScopeAll {
+			t.Errorf("startup sweep scope = %v, want SweepScopeAll — a previous process's terminal orphans have no other collector", scopes[0])
 		}
 
 		s.cycle(t.Context())
@@ -1537,7 +1634,9 @@ func TestOrphanSweepRunsOnceAtStartThenNotOnQuietCycles(t *testing.T) {
 }
 
 // Deletions and edits are the two orphan producers, so a scan reporting
-// either arms the next drain's sweep.
+// either arms a sweep — at queue scope, so a terminal orphan keeps its
+// derived data for the free-restore window (an undo must not cost a
+// re-embed).
 func TestDeletionsAndEditsArmTheOrphanSweep(t *testing.T) {
 	for name, res := range map[string]discovery.Result{
 		"deletions": {Deleted: 1},
@@ -1562,6 +1661,9 @@ func TestDeletionsAndEditsArmTheOrphanSweep(t *testing.T) {
 				if got := q.orphanSweepCount(); got != 2 {
 					t.Errorf("orphan sweeps = %d, want 2 — a scan with orphan producers must arm the sweep", got)
 				}
+				if scopes := q.scopes(); len(scopes) == 2 && scopes[1] != domain.SweepScopeQueue {
+					t.Errorf("armed sweep scope = %v, want SweepScopeQueue — eager collection of terminal orphans turns every undo into a re-embed", scopes[1])
+				}
 
 				s.cycle(t.Context())
 				if got := q.orphanSweepCount(); got != 2 {
@@ -1572,29 +1674,236 @@ func TestDeletionsAndEditsArmTheOrphanSweep(t *testing.T) {
 	}
 }
 
-// A failed sweep re-arms itself and stops the drain before anything is
-// claimed: the deletions that armed it exist nowhere else, and an orphaned
-// row must never be handed to the pipeline.
-func TestOrphanSweepFailureRearmsAndStopsTheDrain(t *testing.T) {
+// A scan that only found new and unchanged files arms nothing: neither
+// produces an orphan, and a bulk initial index must never pay for sweeping.
+// This is the negative half of noteOrphanProducers' predicate — the
+// mutation `|| res.Discovered > 0` must fail here (review 3653204192).
+func TestAScanWithoutOrphanProducersDoesNotArmTheSweep(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue()
+		sc := watchedScanner("/root")
+		s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+		s.cycle(t.Context()) // consumes the construction arm
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Fatalf("orphan sweeps = %d, want the startup sweep only", got)
+		}
+
+		sc.mu.Lock()
+		sc.result = discovery.Result{Discovered: 5, Unchanged: 3}
+		sc.mu.Unlock()
+		s.requestScan()
+		s.cycle(t.Context())
+
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Errorf("orphan sweeps = %d after a discover-only scan, want still 1 — new files produce no orphans", got)
+		}
+	})
+}
+
+// A failed sweep re-arms itself and the cycle carries on to the drain: the
+// deletions that armed it exist nowhere else, but the drain tolerates
+// orphans (GetWork answers ErrContentGone), so wedging indexing behind
+// garbage collection would trade a benign Gone-skip for a stalled queue.
+func TestOrphanSweepFailureRearmsAndTheCycleContinues(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newFakeQueue(discoveredContent("c_1"))
 		q.orphanSweepErr = errors.New("disk full")
-		s := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), nil)
+		ix := newFakeIndexer()
+		ix.markIndexed = func(hash string) { q.setState(hash, domain.ContentStateIndexed) }
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
 
 		s.cycle(t.Context())
-		if snap := s.Snapshot(); snap.Gate != GateStoreFail {
-			t.Errorf("gate = %q, want %q", snap.Gate, GateStoreFail)
+
+		// The drain ran despite the failed sweep, and worked the queue down.
+		if _, _, _, claims := q.counts(); claims == 0 {
+			t.Error("claims = 0 — a failed sweep stopped the drain, wedging indexing behind garbage collection")
 		}
-		if _, _, _, claims := q.counts(); claims != 0 {
-			t.Errorf("claims = %d, want 0 — the sweep runs before anything is claimed", claims)
+		if got := ix.processedHashes(); !slices.Equal(got, []string{"c_1"}) {
+			t.Errorf("processed %v, want [c_1] indexed despite the failed sweep", got)
+		}
+		snap := s.Snapshot()
+		if snap.Gate == GateStoreFail {
+			t.Errorf("gate = %q — the sweep alone must not report the store as failed while indexing works", snap.Gate)
+		}
+		if snap.LastError == "" {
+			t.Error("no LastError recorded; status would show nothing about the failing sweep")
 		}
 
+		// The failure re-armed the same scope, and the next cycle retries it.
 		q.mu.Lock()
 		q.orphanSweepErr = nil
 		q.mu.Unlock()
 		s.cycle(t.Context())
 		if got := q.orphanSweepCount(); got != 2 {
-			t.Errorf("orphan sweeps = %d, want 2 — a failed sweep must re-arm", got)
+			t.Fatalf("orphan sweeps = %d, want 2 — a failed sweep must re-arm", got)
+		}
+		if scopes := q.scopes(); scopes[1] != scopes[0] {
+			t.Errorf("retry scope = %v, want the failed sweep's own %v", scopes[1], scopes[0])
+		}
+	})
+}
+
+// A queue-scope sweep spares terminal orphans (review 3653203993): the
+// indexed content an edit just orphaned is exactly what an undo or a `git
+// checkout` re-references, and collecting it eagerly would turn each of
+// those into a full re-embed. It waits for the next process's startup sweep.
+func TestQueueScopeSweepSparesTerminalOrphansUntilRestart(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(domain.Content{Hash: "c_kept", State: domain.ContentStateIndexed})
+		sc := watchedScanner("/root")
+		s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+		s.cycle(t.Context()) // startup full sweep: c_kept is referenced, survives
+		if !q.has("c_kept") {
+			t.Fatal("the startup sweep collected referenced content")
+		}
+
+		// An edit re-points the path and orphans the indexed content; the
+		// scan reports it and arms a queue-scope sweep.
+		q.orphan("c_kept")
+		sc.mu.Lock()
+		sc.result = discovery.Result{Changed: 1}
+		sc.mu.Unlock()
+		s.requestScan()
+		s.cycle(t.Context())
+
+		if scopes := q.scopes(); len(scopes) != 2 || scopes[1] != domain.SweepScopeQueue {
+			t.Fatalf("sweep scopes = %v, want the edit to arm a queue-scope sweep", scopes)
+		}
+		if !q.has("c_kept") {
+			t.Fatal("the queue-scope sweep collected a terminal orphan — an undo would now cost a re-embed")
+		}
+
+		// The free-restore window is the life of the process: a fresh
+		// scheduler's startup sweep is full-scope and collects it.
+		s2 := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), nil)
+		s2.cycle(t.Context())
+		if q.has("c_kept") {
+			t.Error("the next process's startup sweep left the terminal orphan behind")
+		}
+		if got := s2.Snapshot().Collected; got != 1 {
+			t.Errorf("Collected = %d, want 1", got)
+		}
+	})
+}
+
+// An orphan already in the queue when the daemon starts is collected before
+// anything is claimed (review 3653204158): the sweep runs above the drain,
+// so the row is never claimed, never re-read, never Gone-skipped — the
+// "claimed and skipped forever" loop the sweep exists to end.
+func TestAnOrphanPresentAtStartupIsNeverClaimed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_orphan"))
+		q.orphan("c_orphan")
+		ix := newFakeIndexer()
+		s := newScheduler(t, q, ix, watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		if got := ix.processedHashes(); len(got) != 0 {
+			t.Errorf("processed %v, want nothing — the orphan was handed to the pipeline", got)
+		}
+		if got := q.getWorkHashes(); len(got) != 0 {
+			t.Errorf("GetWork called for %v, want never — the sweep runs before anything is claimed", got)
+		}
+		if q.has("c_orphan") {
+			t.Error("the orphan is still in the queue after the startup sweep")
+		}
+		if got := s.Snapshot().Gate; got != GateIdle {
+			t.Errorf("gate = %q, want %q", got, GateIdle)
+		}
+	})
+}
+
+// The sweep runs above the battery gate, with its producers: the walk and
+// the reconcile both run on battery and both orphan content, so a gated
+// sweep would let an unplugged day accumulate garbage its producers kept
+// making (review 3653204249).
+func TestTheOrphanSweepRunsWhileIndexingIsDeferred(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_orphan"))
+		q.orphan("c_orphan")
+		s := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), func(o *Options) {
+			o.Power = func() config.PowerPolicy {
+				return config.PowerPolicy{IndexInterval: config.Interval{Defer: true}}
+			}
+		})
+
+		s.cycle(t.Context())
+
+		if got := q.orphanSweepCount(); got != 1 {
+			t.Errorf("orphan sweeps = %d on battery, want 1 — the sweep is a cheap stage and cheap stages always run", got)
+		}
+		if q.has("c_orphan") {
+			t.Error("the orphan survived a deferred cycle; garbage would accumulate all day on battery")
+		}
+		if _, _, _, claims := q.counts(); claims != 0 {
+			t.Errorf("claims = %d on battery, want 0 — sweeping must not drag the drain above the gate with it", claims)
+		}
+	})
+}
+
+// A walk that fails part-way still reports what it committed before dying
+// (review 3653204007): ScanPaths and the walk both flush as they go, so the
+// deletions and path errors met before the failure are real. Discarding
+// them with the error would be the silent-skip shape CLAUDE.md forbids —
+// and would leave real orphans with nothing armed to collect them.
+func TestAFailedScanStillReportsPartialResultsAndArmsTheSweep(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue()
+		sc := watchedScanner("/root")
+		s := newScheduler(t, q, newFakeIndexer(), sc, nil)
+
+		s.cycle(t.Context()) // consumes the construction arm; records LastScan
+		lastScan := s.Snapshot().LastScan
+
+		time.Sleep(time.Minute) // separate the two cycles on the fake clock
+		sc.mu.Lock()
+		sc.err = errors.New("disk on fire")
+		sc.result = discovery.Result{
+			Changed: 1,
+			PathErrors: []discovery.PathError{
+				{Path: "/root/locked", Err: errors.New("operation not permitted")},
+			},
+		}
+		sc.mu.Unlock()
+		s.requestScan()
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.ScanErrs != 1 || len(snap.PathErrors) != 1 || snap.PathErrors[0].Path != "/root/locked" {
+			t.Errorf("ScanErrs = %d, PathErrors = %+v — the errors met before the failure were dropped", snap.ScanErrs, snap.PathErrors)
+		}
+		if snap.LastError == "" {
+			t.Error("no LastError recorded for the failed walk")
+		}
+		// The committed edit orphaned content, so the sweep must be armed
+		// despite the error — count 2: startup, then this one.
+		if got := q.orphanSweepCount(); got != 2 {
+			t.Errorf("orphan sweeps = %d, want 2 — a partial walk's committed edits still produce orphans", got)
+		}
+		// A partial walk proves nothing about the corpus: LastScan stays put.
+		if !snap.LastScan.Equal(lastScan) {
+			t.Errorf("LastScan = %v, want %v — a failed walk must not count as a completed one", snap.LastScan, lastScan)
+		}
+	})
+}
+
+// What the sweep collects reaches status: Collected is the visibility that
+// keeps a silently no-op sweep — the class ADR 0015 singles out —
+// diagnosable from `bsearch status` (review 3653204235).
+func TestCollectedOrphansReachTheSnapshot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newFakeQueue(discoveredContent("c_o1"), discoveredContent("c_o2"))
+		q.orphan("c_o1")
+		q.orphan("c_o2")
+		s := newScheduler(t, q, newFakeIndexer(), watchedScanner("/root"), nil)
+
+		s.cycle(t.Context())
+
+		if got := s.Snapshot().Collected; got != 2 {
+			t.Errorf("Collected = %d, want 2 — every content the sweep removed", got)
 		}
 	})
 }

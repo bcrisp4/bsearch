@@ -29,6 +29,15 @@ type fakeStore struct {
 	prefixDeletes []string            // paths passed to DeleteByPathPrefix
 	ops           []string            // write calls in order: "upsert", "delete"
 	failWith      error               // returned by every method when set
+
+	// onGetByPath, when set, runs at the top of every lookup — the seam for
+	// injecting mid-scan cancellation or filesystem races at the exact point
+	// between the walk's stat and the read.
+	onGetByPath func(path string)
+	// failUpsert, when set, is consulted with the 1-based UpsertDocuments
+	// call number; a non-nil return fails that flush before anything is
+	// recorded — the seam for testing that counts track committed batches.
+	failUpsert func(call int) error
 }
 
 func newFakeStore() *fakeStore {
@@ -39,6 +48,9 @@ func newFakeStore() *fakeStore {
 }
 
 func (f *fakeStore) GetByPath(_ context.Context, path string) (domain.Document, bool, error) {
+	if f.onGetByPath != nil {
+		f.onGetByPath(path)
+	}
 	if f.failWith != nil {
 		return domain.Document{}, false, f.failWith
 	}
@@ -50,6 +62,11 @@ func (f *fakeStore) GetByPath(_ context.Context, path string) (domain.Document, 
 func (f *fakeStore) UpsertDocuments(_ context.Context, docs []domain.Document) error {
 	if f.failWith != nil {
 		return f.failWith
+	}
+	if f.failUpsert != nil {
+		if err := f.failUpsert(len(f.batches) + 1); err != nil {
+			return err
+		}
 	}
 	f.batches = append(f.batches, slices.Clone(docs))
 	f.ops = append(f.ops, "upsert")
@@ -629,6 +646,137 @@ func TestScanFlushesInBatches(t *testing.T) {
 	}
 }
 
+// The committed-state property under cancellation: counts coupled to
+// buffered rows must not survive the buffer being abandoned. The watcher
+// records a Result before it looks at the error, so an overcount here
+// becomes a cumulative lie in `bsearch status`.
+func TestScanCountsMatchCommittedRowsOnCancel(t *testing.T) {
+	dir := tmpDir(t)
+	for i := range 5 {
+		write(t, filepath.Join(dir, fmt.Sprintf("f%d.md", i)), fmt.Sprintf("content %d", i))
+	}
+	store := newFakeStore()
+	ctx, cancel := context.WithCancel(t.Context())
+	var lookups int
+	store.onGetByPath = func(string) {
+		if lookups++; lookups == 3 {
+			cancel()
+		}
+	}
+
+	res, err := New(store, Options{Include: []string{dir}}).Scan(ctx)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Scan = %v, want context.Canceled", err)
+	}
+	if committed := len(store.upserts); res.Discovered != committed {
+		t.Errorf("Discovered = %d but %d rows committed — counts must describe committed state", res.Discovered, committed)
+	}
+	if res.Discovered != 0 {
+		t.Errorf("Discovered = %d, want 0: nothing was flushed before the cancel", res.Discovered)
+	}
+}
+
+// The same property when a flush itself fails: batches committed before the
+// failure stay counted, the batch that never landed does not.
+func TestScanCountsMatchCommittedRowsOnFlushFailure(t *testing.T) {
+	dir := tmpDir(t)
+	const n = flushEvery + 10
+	for i := range n {
+		write(t, filepath.Join(dir, fmt.Sprintf("f%03d.md", i)), fmt.Sprintf("content %d", i))
+	}
+	store := newFakeStore()
+	store.failUpsert = func(call int) error {
+		if call == 2 {
+			return errors.New("disk full")
+		}
+		return nil
+	}
+
+	res, err := New(store, Options{Include: []string{dir}}).Scan(t.Context())
+
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("Scan = %v, want the second flush's failure", err)
+	}
+	if committed := len(store.upserts); res.Discovered != committed || committed != flushEvery {
+		t.Errorf("Discovered = %d, committed = %d, want both %d — the durable batch counted, the failed one not",
+			res.Discovered, committed, flushEvery)
+	}
+}
+
+// A file deleted between the walk's stat and the open is the same race the
+// walk filters at d.Info(): no PathError, and never an io_error row — that
+// would be a phantom documents row for a path no walk can ever purge.
+func TestScanDeletedBetweenStatAndOpenLeavesNoTrace(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "a.md")
+	write(t, path, "here and gone")
+	store := newFakeStore()
+	store.onGetByPath = func(p string) {
+		if p == path {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	res := scan(t, store, Options{Include: []string{dir}})
+
+	if res.Unread != 0 || res.Discovered != 0 || len(res.PathErrors) != 0 {
+		t.Errorf("Result = %+v, want the race swallowed", res)
+	}
+	if len(store.docs) != 0 || len(store.upserts) != 0 {
+		t.Errorf("docs = %v, want no row for a deleted path", catalogPaths(store))
+	}
+}
+
+// io_error is the one unread reason whose retry is not free: the last
+// attempt died mid-read after hashing every byte up to the failure point.
+// While the stat is unchanged the row is counted without re-reading; the
+// stat moving is what re-arms the attempt.
+func TestScanIOErrorRowRetriedOnlyWhenStatMoves(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "big.md")
+	write(t, path, "readable now")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newFakeStore()
+	store.docs[path] = domain.Document{
+		Path: path, UnreadReason: domain.UnreadIOError,
+		Size: info.Size(), MTime: info.ModTime(),
+	}
+	opts := Options{Include: []string{dir}}
+
+	res := scan(t, store, opts)
+
+	// Steady stat → counted, never opened: no PathError (the file was not
+	// touched), no write, and the row untouched even though a read would
+	// now succeed.
+	if res.Unread != 1 || len(res.PathErrors) != 0 || len(store.upserts) != 0 {
+		t.Fatalf("Result = %+v with %d upserts, want the row counted without a read", res, len(store.upserts))
+	}
+	if store.docs[path].UnreadReason != domain.UnreadIOError {
+		t.Errorf("doc = %+v, want the io_error row untouched", store.docs[path])
+	}
+
+	// The stat moving re-arms the read, which succeeds and clears the row.
+	newTime := time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, newTime, newTime); err != nil {
+		t.Fatal(err)
+	}
+	res = scan(t, store, opts)
+
+	if res.Unread != 0 || res.Discovered != 1 {
+		t.Fatalf("Result = %+v, want the retry to succeed once the stat moved", res)
+	}
+	doc := store.docs[path]
+	if doc.ContentHash != hashOf("readable now") || doc.UnreadReason != "" {
+		t.Errorf("doc = %+v, want hash set and reason cleared", doc)
+	}
+}
+
 func TestScanMissingRoot(t *testing.T) {
 	dir := tmpDir(t)
 	write(t, filepath.Join(dir, "a.md"), "hello")
@@ -734,6 +882,42 @@ func TestScanDatalessEvictedAfterIndexingKeepsHash(t *testing.T) {
 	}
 	if got := upsertsFor(store, path); len(got) != 1 {
 		t.Errorf("upserts = %d, want 1 (no rewrite over a hashed row)", len(got))
+	}
+}
+
+// The keep-hash rule holds only while the stat holds: a placeholder whose
+// size or mtime moved was edited remotely after eviction, and keeping the
+// hash would serve the old version's chunks indefinitely with no record
+// that the file changed.
+func TestScanDatalessEvictedThenRemoteEditDropsHash(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, "a.md")
+	write(t, path, "hello")
+	store := newFakeStore()
+	opts := Options{Include: []string{dir}}
+
+	scan(t, store, opts) // indexed while local
+
+	// Evicted, then edited on another device: the placeholder's stat moves
+	// while the file stays dataless.
+	write(t, path, "hello, edited remotely")
+	s := New(store, opts)
+	s.dataless = func(info os.FileInfo) bool { return true }
+	res, err := s.Scan(t.Context())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	if res.Dataless != 1 {
+		t.Errorf("Result = %+v, want 1 dataless", res)
+	}
+	doc := store.docs[path]
+	if doc.UnreadReason != domain.UnreadDataless || doc.ContentHash != "" {
+		t.Errorf("doc = %+v, want the hash dropped for a dataless row", doc)
+	}
+	// The old content row is orphaned for the sweep, never deleted here.
+	if !store.content[hashOf("hello")] {
+		t.Error("old content row deleted by discovery; the sweep owns that")
 	}
 }
 

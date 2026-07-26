@@ -183,6 +183,46 @@ func TestSearchVectorsFansOutPerReferencingPath(t *testing.T) {
 	}
 }
 
+// The fan-out's mtime tie-break is a sort in Go, not an ORDER BY — this is
+// the mutation trap for it. The two paths tie on mtime and are inserted in
+// reverse-lexical order (separate upserts, so their rowids — and any index
+// scan over them — come back z-then-a): only the explicit path tie-break
+// puts them back ascending, so dropping it fails here where the old SQL
+// ORDER BY version could not.
+func TestSearchVectorsEqualMTimeTieBreaksByPathAscending(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.EnsureVecTable(ctx, vecSpec("test-model"), 3); err != nil {
+		t.Fatalf("EnsureVecTable: %v", err)
+	}
+	tie := time.Unix(100, 0)
+	last := testDoc("hash-1", "/w/z-last.md")
+	last.MTime = tie
+	first := testDoc("hash-1", "/w/a-first.md")
+	first.MTime = tie
+
+	ids := seedChunked(t, store, last, testChunks("alpha"))
+	if err := store.UpsertDocuments(ctx, []domain.Document{first}); err != nil {
+		t.Fatalf("upsert second path: %v", err)
+	}
+	if err := store.UpsertVectors(ctx, ids, [][]float32{{1, 0, 0}}); err != nil {
+		t.Fatalf("UpsertVectors: %v", err)
+	}
+
+	hits, err := store.SearchVectors(ctx, []float32{1, 0, 0}, 1)
+	if err != nil {
+		t.Fatalf("SearchVectors: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("hits = %d, want 2 (one chunk fanned over two paths)", len(hits))
+	}
+	if hits[0].Doc.Path != "/w/a-first.md" || hits[1].Doc.Path != "/w/z-last.md" {
+		t.Errorf("fan-out order = [%q, %q], want path ascending on an mtime tie",
+			hits[0].Doc.Path, hits[1].Doc.Path)
+	}
+}
+
 // Deletion follows the source the moment the documents row goes: search's
 // inner join stops serving the path immediately, without waiting for the
 // orphan sweep to collect the content.
@@ -224,6 +264,22 @@ func TestDeleteByPathPrefixRemovesPathFromSearchImmediately(t *testing.T) {
 	// sweep is what collects it later.
 	if n := countRows(t, db, "SELECT count(*) FROM content WHERE content_hash = 'hash-1'"); n != 1 {
 		t.Error("content row gone after a documents-only delete")
+	}
+
+	// Deleting the LAST path is what pins the fan-out's inner-join
+	// semantics: chunks and vectors are all still present (pre-sweep), so
+	// content with no referencing document surviving into the results —
+	// under a LEFT-ish rewrite of the documents lookup — would show here
+	// and nowhere else.
+	if _, err := store.DeleteByPathPrefix(ctx, "/notes/keep.md"); err != nil {
+		t.Fatalf("DeleteByPathPrefix (last path): %v", err)
+	}
+	hits, err = store.SearchVectors(ctx, []float32{1, 0, 0}, 1)
+	if err != nil {
+		t.Fatalf("SearchVectors after deleting the last path: %v", err)
+	}
+	if len(hits) != 0 {
+		t.Errorf("hits = %+v, want none — unreferenced content contributes nothing, pre-sweep", hits)
 	}
 }
 

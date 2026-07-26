@@ -154,15 +154,44 @@ type Content struct {
 	LastError string
 }
 
-// WorkItem is one claimed piece of work: the content row plus the path the
-// pipeline should read bytes from. The path is chosen at re-read time
-// (Queue.GetWork) — the referencing document with the newest mtime,
-// tie-broken by path ascending, the same rule that picks a search hit's
-// primary path.
+// WorkItem is one claimed piece of work: the content row plus every path
+// holding those bytes, resolved at re-read time (Queue.GetWork). Paths is
+// ordered newest mtime first, tie-broken by path ascending — the same rule
+// that picks a search hit's primary path — and Path is its head, the
+// primary.
+//
+// All paths ride along because any copy is as good as another: the pipeline
+// verifies the bytes it reads against Content.Hash, so it may fall back to
+// the next copy when one is unreadable — one unmounted volume or revoked
+// grant must not block a perfectly readable duplicate.
 type WorkItem struct {
 	Content Content
 	Path    string
+	Paths   []string
 }
+
+// SweepScope selects which orphaned content an orphan sweep collects.
+//
+// The split exists because the two orphan populations cost differently.
+// Non-terminal orphans pollute the queue — claimed and Gone-skipped every
+// drain — so they are collected eagerly. Terminal orphans cost nothing to
+// leave (the partial claim index excludes them) and are precisely the
+// expensive-to-rebuild ones: an undo, a `git checkout`, or a rename whose
+// halves land in different debounce windows re-references them, and an
+// eager collection would turn each of those into a full re-embed. They
+// wait for the startup sweep, so the free-restore window is the life of
+// the process.
+type SweepScope int
+
+const (
+	// SweepScopeQueue collects only non-terminal orphans — the ones that
+	// would otherwise be claimed and skipped forever.
+	SweepScopeQueue SweepScope = iota
+	// SweepScopeAll collects every orphan, terminal included. Run at
+	// startup: whatever a crash or a previous build left, plus terminal
+	// orphans accumulated over the last process's lifetime.
+	SweepScopeAll
+)
 
 // QueueDepth is the dispatchable backlog: content the scheduler would work
 // on now, and content waiting out a retry backoff. Reported by `bsearch

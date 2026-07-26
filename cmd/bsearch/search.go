@@ -110,6 +110,11 @@ func writeSearchHuman(out io.Writer, resp search.Response) {
 			fmt.Fprintf(out, "    %s\n", hp)
 		}
 		fmt.Fprintf(out, "    %s\n", search.Preview(h.ChunkPreview, search.PreviewRunes))
+		// Duplicate copies fold into one hit (ADR 0015); without these
+		// lines the collapse would read as results silently going missing.
+		for _, p := range h.AlsoAt {
+			fmt.Fprintf(out, "    also at: %s\n", stripControl(tildePath(home, p)))
+		}
 	}
 }
 

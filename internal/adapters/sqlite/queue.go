@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -91,36 +90,51 @@ func (s *Store) ClaimBatch(ctx context.Context, now time.Time, limit int) ([]dom
 }
 
 // GetWork re-reads one claimed content row immediately before working it and
-// picks the path the pipeline should read bytes from: the referencing
-// document with the newest mtime, tie-broken by path ascending — the same
-// rule that picks a search hit's primary path (see SearchVectors), so "which
-// path does bsearch mean by this content" has one answer everywhere.
+// resolves every path referencing it, newest mtime first, tie-broken by
+// path ascending — the same rule that picks a search hit's primary path
+// (see SearchVectors), so "which path does bsearch mean by this content"
+// has one answer everywhere. All paths, not just the primary: the bytes at
+// any copy are the bytes (the pipeline verifies the hash), so an unreadable
+// primary — an unmounted volume, a revoked grant — must not block a
+// readable duplicate.
 //
 // ErrContentGone covers both "swept" and "no live path references it" —
 // deleted while in flight, with the sweep still to run. Either way the
 // content is not workable and the caller moves on.
 func (s *Store) GetWork(ctx context.Context, hash string) (domain.WorkItem, error) {
-	var (
-		item domain.WorkItem
-		raw  contentRow
-	)
-	targets := append(raw.targets(&item.Content), &item.Path)
-	err := s.db.Reader().QueryRowContext(ctx, `
+	rows, err := s.db.Reader().QueryContext(ctx, `
 		SELECT `+prefixedContentColumns+`, d.path
 		FROM content c
 		JOIN documents d ON d.content_hash = c.content_hash
 		WHERE c.content_hash = ?
-		ORDER BY d.mtime DESC, d.path ASC
-		LIMIT 1`, hash).Scan(targets...)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return domain.WorkItem{}, fmt.Errorf("get work %s: %w", hash, domain.ErrContentGone)
-	case err != nil:
+		ORDER BY d.mtime DESC, d.path ASC`, hash)
+	if err != nil {
 		return domain.WorkItem{}, fmt.Errorf("get work %s: %w", hash, err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
+
+	var (
+		item domain.WorkItem
+		raw  contentRow
+	)
+	for rows.Next() {
+		var path string
+		targets := append(raw.targets(&item.Content), &path)
+		if err := rows.Scan(targets...); err != nil {
+			return domain.WorkItem{}, fmt.Errorf("get work %s: %w", hash, err)
+		}
+		item.Paths = append(item.Paths, path)
+	}
+	if err := rows.Err(); err != nil {
+		return domain.WorkItem{}, fmt.Errorf("get work %s: %w", hash, err)
+	}
+	if len(item.Paths) == 0 {
+		return domain.WorkItem{}, fmt.Errorf("get work %s: %w", hash, domain.ErrContentGone)
 	}
 	if err := raw.finish(&item.Content); err != nil {
 		return domain.WorkItem{}, err
 	}
+	item.Path = item.Paths[0]
 	return item, nil
 }
 

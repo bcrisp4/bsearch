@@ -175,7 +175,7 @@ func TestIndexAppearingAfterStartupIsPickedUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search after the index appeared: %v", err)
 	}
-	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "h1" {
+	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "sha256:h1" {
 		t.Errorf("hits = %+v, want the indexed document", resp.Hits)
 	}
 }
@@ -192,7 +192,7 @@ func TestReplacedIndexFileIsPickedUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "h_old" {
+	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "sha256:h_old" {
 		t.Fatalf("hits = %+v, want the original document", resp.Hits)
 	}
 
@@ -207,7 +207,7 @@ func TestReplacedIndexFileIsPickedUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search after replacement: %v", err)
 	}
-	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "h_new" {
+	if len(resp.Hits) != 1 || resp.Hits[0].ContentHash != "sha256:h_new" {
 		t.Errorf("hits = %+v, want the replacement index's document — the daemon is serving a ghost inode", resp.Hits)
 	}
 }
@@ -547,23 +547,39 @@ func TestUnreadableIndexIsReportedAsNotIndexed(t *testing.T) {
 // copy, the rest ride in also_at, and deleting the primary re-points the hit
 // to the survivor immediately — before any orphan sweep runs, because result
 // assembly inner-joins documents (ADR 0015).
+// addCopy adds another documents row referencing hash — a duplicate file —
+// with the given mtime.
+func addCopy(t *testing.T, dbPath, hash, path string, mtime time.Time) {
+	t.Helper()
+	store, closeDB := openStore(t, dbPath)
+	defer closeDB()
+	doc := domain.Document{Path: path, ContentHash: hash, Size: 42, MTime: mtime}
+	if err := store.UpsertDocuments(context.Background(), []domain.Document{doc}); err != nil {
+		t.Fatalf("UpsertDocuments (%s): %v", path, err)
+	}
+}
+
+// deletePath removes the documents row(s) at/under prefix, the way the
+// watcher's purge would.
+func deletePath(t *testing.T, dbPath, prefix string) {
+	t.Helper()
+	store, closeDB := openStore(t, dbPath)
+	defer closeDB()
+	if _, err := store.DeleteByPathPrefix(context.Background(), prefix); err != nil {
+		t.Fatalf("DeleteByPathPrefix(%s): %v", prefix, err)
+	}
+}
+
+// One content at two paths is one hit end to end: the primary is the newest
+// copy, the rest ride in also_at, and deletions take effect immediately —
+// before any orphan sweep — because result assembly inner-joins documents
+// (ADR 0015). The duplicate's path deliberately sorts AFTER the original
+// (/zz/ vs /notes/), so the primary pick passing proves mtime precedence,
+// not path order.
 func TestSearchDeduplicatesIdenticalFiles(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
 	writeIndex(t, dbPath, "h1", "alpha text")
-
-	store, closeDB := openStore(t, dbPath)
-	newer := domain.Document{
-		Path: "/archive/copy.md", ContentHash: "h1",
-		Size: 42, MTime: time.Unix(1800000000, 0), // newer than testDoc's
-	}
-	if err := store.UpsertDocuments(context.Background(), []domain.Document{newer}); err != nil {
-		closeDB()
-		t.Fatalf("UpsertDocuments (copy): %v", err)
-	}
-	closeDB()
-	// An unread row rides along, as everywhere: the join must be untroubled
-	// by a NULL content_hash in documents.
-	addUnread(t, dbPath, "/notes/locked.md", domain.UnreadDenied)
+	addCopy(t, dbPath, "h1", "/zz/copy.md", time.Unix(1800000000, 0)) // newer than testDoc's
 
 	d := newDaemon(t, dbPath)
 	resp, err := d.Search(context.Background(), search.Request{Query: "alpha"})
@@ -574,20 +590,14 @@ func TestSearchDeduplicatesIdenticalFiles(t *testing.T) {
 		t.Fatalf("hits = %+v, want exactly one — duplicates collapse per content", resp.Hits)
 	}
 	hit := resp.Hits[0]
-	if hit.Path != "/archive/copy.md" || hit.ContentHash != "h1" {
-		t.Errorf("hit = %+v, want the newest copy as primary", hit)
+	if hit.Path != "/zz/copy.md" || hit.ContentHash != "sha256:h1" {
+		t.Errorf("hit = %+v, want the newest copy as primary (mtime beats path order)", hit)
 	}
 	if len(hit.AlsoAt) != 1 || hit.AlsoAt[0] != "/notes/h1.md" {
 		t.Errorf("also_at = %v, want the older copy", hit.AlsoAt)
 	}
 
-	store, closeDB = openStore(t, dbPath)
-	if _, err := store.DeleteByPathPrefix(context.Background(), "/archive/copy.md"); err != nil {
-		closeDB()
-		t.Fatalf("DeleteByPathPrefix: %v", err)
-	}
-	closeDB()
-
+	deletePath(t, dbPath, "/zz/copy.md")
 	resp, err = d.Search(context.Background(), search.Request{Query: "alpha"})
 	if err != nil {
 		t.Fatalf("Search after deleting the primary: %v", err)
@@ -597,5 +607,17 @@ func TestSearchDeduplicatesIdenticalFiles(t *testing.T) {
 	}
 	if len(resp.Hits[0].AlsoAt) != 0 {
 		t.Errorf("also_at = %v, want empty once the content is unique again", resp.Hits[0].AlsoAt)
+	}
+
+	// Deleting the LAST path is what proves the join is inner: the chunks
+	// and vectors are all still present (no sweep has run), so a weakened
+	// LEFT JOIN would keep serving the hit — or 500 on a NULL path scan.
+	deletePath(t, dbPath, "/notes/h1.md")
+	resp, err = d.Search(context.Background(), search.Request{Query: "alpha"})
+	if err != nil {
+		t.Fatalf("Search after deleting the last path: %v", err)
+	}
+	if len(resp.Hits) != 0 {
+		t.Fatalf("hits = %+v, want none — content with no referencing path contributes nothing, pre-sweep", resp.Hits)
 	}
 }
