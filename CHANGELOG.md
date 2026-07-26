@@ -50,6 +50,15 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   ([#34](https://github.com/bcrisp4/bsearch/issues/34)), so the initial index
   of a big folder spends its time hashing and embedding, not committing.
 
+- **`bsearch status` now reports three populations that add up.** `files`
+  counts your files, `unread` counts the ones whose bytes could never be
+  read — split by reason, because a permission denial (broken — grant Full
+  Disk Access) and a skipped iCloud placeholder (working as intended) must
+  never report as one number — and `content` counts distinct contents by
+  pipeline state. The gap between files-with-content and distinct contents
+  is what deduplication saved you. The always-zero "deleted" count is gone,
+  and failure groups now count contents (`failures[].contents` in the JSON).
+
 - **Deleted and edited-away content is collected in the background.** When a
   file is deleted its search hits disappear immediately; the chunks, vectors
   and summaries its bytes produced are garbage-collected by a sweep that runs
