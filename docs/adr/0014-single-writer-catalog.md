@@ -59,10 +59,41 @@ ADR 0013's concurrent-reconcile decision.
 
 The watch goroutine stays. It keeps the FSEvents subscription and the 10 s
 debounce window — that window is armed by the first event of a burst and must
-not be coupled to drain progress — but it stops writing. It sends its debounced
-path set over a channel, and the scheduler drains that channel **between
-documents** inside `drain`'s loop, calling `ScanPaths` itself. This is a move
-of the write, not the deletion of a goroutine.
+not be coupled to drain progress — but it stops writing. It merges each closed
+window into a pending set the scheduler drains, calling `ScanPaths` itself.
+This is a move of the write, not the deletion of a goroutine.
+
+**The handoff is a mutex-guarded set, not a channel**, and the difference is
+not incidental. A set merges, so a file saved three times during one long embed
+is one path to stat; a channel of windows cannot dedup, so its bound would be
+total events rather than distinct paths. It is also non-blocking in the
+direction that matters: the watch goroutine's next duty is to be ready for the
+next FSEvents callback, and a send that blocked on the scheduler would stall
+the stream.
+
+**The set is capped, and overflow keeps what it holds rather than what
+arrives.** This is deliberately the opposite of the adapter's own overflow rule
+and is worth recording because it trades away deletions. The adapter collapses
+a batch the kernel has already declared incomplete — its paths have stopped
+being sufficient, so discarding them costs nothing. The scheduler's set is
+exact, so refusing the *incoming* window and keeping the held one is what
+minimises the loss: a walk buys back the refused window's creates and edits,
+and nothing buys back its deletions, because a walk sees what exists (#57).
+The refusal is logged, counted in `WatchRescans`, and asks for that walk.
+
+Drains happen at four points, and the placements are load-bearing: above the
+battery gate in `cycle` (reconciling named paths is a cheap stage, and below
+the gate an unplugged laptop would collect a day of deletions and purge none),
+below the walk in `cycle` (the walk *replaces* the path-error sample and a
+reconcile *appends* to it, so one order had to be chosen), at the top of
+`drain`'s loop, and between documents in `process`.
+
+One cost the "cheap stage" framing understates: `ScanPaths` descends into a
+directory path, because FSEvents reports a directory once rather than once per
+file inside it. So a directory event is a recursive walk with content hashing,
+not a stat — bounded only by the subtree. Ordinary windows are a handful of
+file paths and this does not arise; a bulk copy into a watched root is where it
+does, and bounding it is issue #70.
 
 **We will re-read each document's row immediately before processing it**, via a
 new `GetByID` on `DocumentStore`, and process the fresh copy. `ClaimBatch`
@@ -176,10 +207,24 @@ The costs are real and small. A deletion leaves search up to one document later
 than today. A document that hangs — a bscribe conversion of a large PDF once
 #21/#22 land, or a slow embedder — now stalls reconciles behind it, so
 per-request timeouts on the converter and embedder become load-bearing rather
-than merely good practice. And the shutdown flush currently owned by the watch
-goroutine has to be re-homed, since only the scheduler may write; the reason it
-exists is unchanged and sharp (a deletion dropped at shutdown is lost, not
-deferred, because no later walk notices an absence).
+than merely good practice.
+
+**Shutdown gets longer, and serially so.** The final reconcile used to run on
+the watch goroutine the instant the context fired, in parallel with the drain
+unwinding — `max(unwind, flush)`. Only the scheduler may write now, and it
+cannot flush until the watcher has handed its last window over, so the wait
+becomes a precondition: `unwind + flush`, after an HTTP drain of up to 10 s
+that precedes both. Against launchd's patience that is the whole safety margin,
+and what is at stake if it runs out is the one thing a later pass cannot
+recover — the last window's deletions.
+
+Accepted rather than engineered around, because every step of the unwind is
+fast for the corpus this indexes: the embedder cancels on context, and hashing
+and chunking a markdown file is milliseconds. `ExitTimeOut` in the documented
+plist is raised to 60 s to cover it with room. The step that will not be fast is
+the converter, which is why #21 now carries the constraint. A shutdown that
+still runs out of budget is bounded by `shutdownFlush` rather than by
+correctness, and the loss is the same one #57 owns.
 
 `DocumentStore` grows `GetByID`, so any future store implementation owes it.
 The re-read costs one primary-key `SELECT` per document, against an embed
@@ -190,7 +235,8 @@ design as written, and unfirable branches rot. Mitigated by unit-testing it
 directly, and by the fact that the condition it detects (#18's parallel
 summarizer) is scheduled rather than speculative.
 
-**Landing order is not free choice.** The assertions must ship *after* the
+**Landing order is not free choice, and the deferred half is tracked as
+[#69](https://github.com/bcrisp4/bsearch/issues/69).** The assertions must ship *after* the
 writer move, never before or alongside it in a separate release. A save landing
 during its own document's embed is ordinary use, and while the watcher still
 writes concurrently that event legitimately resets the row and clears its

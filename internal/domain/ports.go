@@ -43,15 +43,19 @@ var ErrDocumentGone = errors.New("the catalog row no longer exists (deleted whil
 // a write was in flight, so the write is aimed at a document that no longer
 // exists in the shape it was aimed at.
 //
-// The sibling of ErrDocumentGone, and for the same reason: the watcher's
-// reconcile now runs concurrently with a drain, so a file saved again during
-// its own embed resets the row to `discovered` and replaces its chunks. The
-// vectors coming back from that embed key on chunk IDs that have since been
-// deleted, and writing them anyway would attach one version's vectors to
-// another version's text. Reported rather than written, and the caller stands
-// down: the reconcile already re-queued the document, so the current content
-// is indexed by the next pass. Not a fault on either side — the file changed,
-// which is the one thing the pipeline cannot ask it not to do.
+// It exists because a file saved again during its own embed used to reset the
+// row to `discovered` and replace its chunks, while the vectors coming back
+// from that embed still keyed on chunk IDs that had since been deleted.
+// Writing them anyway would attach one version's vectors to another version's
+// text, so the store reports instead and the caller stands down.
+//
+// Since ADR 0014 that race cannot happen: one goroutine owns every catalog
+// write, and it is inside the pipeline for the whole window. The check that
+// produces this is kept anyway — an orphaned vector row is unreachable by
+// every delete in the store and silently displaces a real search hit, so it
+// is the one guard here that prevents rather than reports. What is left to do
+// is retire the sentinel and let the check be a plain error: nothing should be
+// able to recognise a broken invariant and stand down from it (#69).
 var ErrDocumentSuperseded = errors.New("the catalog row was rewritten while this write was in flight")
 
 // DocumentStore persists the catalog: documents and their chunks.

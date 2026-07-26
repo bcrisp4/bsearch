@@ -356,9 +356,16 @@ func (ix *Indexer) ProcessDocument(ctx context.Context, doc domain.Document, sv 
 //
 // Not failed: failed is a claim about the document's content that would sit
 // in `bsearch status` under a reason, and the content this pass was making
-// claims about is not the content in the catalog any more. Nothing is left
-// behind either — the row is purged, or already reset to `discovered` by the
-// reconcile that overtook us, so the next pass picks up the current file.
+// claims about is not the content in the catalog any more.
+//
+// Since ADR 0014 the two cases are no longer alike. A purge between documents
+// is ordinary — the scheduler drains reconciles there, so a row in the batch
+// it claimed really can be gone — and nothing is owed, because the row is
+// gone. A *rewrite* is not: the scheduler re-reads each row immediately
+// before working on it and nothing writes the catalog while it does, so
+// reaching that arm means the single-writer invariant broke. The caller is
+// what tells them apart; both arrive here as OutcomeSuperseded, and the
+// scheduler reports and reschedules rather than passing over it.
 func (ix *Indexer) movedOn(doc domain.Document, err error) (bool, Result) {
 	switch {
 	case errors.Is(err, domain.ErrDocumentGone):

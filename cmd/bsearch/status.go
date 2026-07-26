@@ -211,8 +211,9 @@ func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now ti
 		// count here means something else did — and the documents involved are
 		// being re-attempted rather than indexed. Worth a line that says so
 		// plainly rather than a number the reader has to interpret.
-		fields = append(fields, field{"superseded",
-			count(t.Superseded) + " — the index was written by something other than the daemon's indexer (please report)"})
+		detail := count(t.Superseded) +
+			" — the index was written by something other than the daemon's indexer (please report)"
+		fields = append(fields, field{"superseded", detail})
 	}
 	if indexing.LastError != "" {
 		fields = append(fields, field{"last error", search.Preview(indexing.LastError, maxProseRunes)})

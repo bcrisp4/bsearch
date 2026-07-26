@@ -181,9 +181,12 @@ with issue #15. Until then, this plist works if you write it to
   <key>KeepAlive</key>        <true/>
   <!-- Back off rather than spin if the daemon exits immediately. -->
   <key>ThrottleInterval</key> <integer>30</integer>
-  <!-- Longer than the daemon's 10s drain, so a restart is never killed
-       mid-shutdown. -->
-  <key>ExitTimeOut</key>      <integer>30</integer>
+  <!-- Shutdown is serial: up to 10s draining HTTP, then the indexing cycle
+       unwinding, then up to 5s reconciling the last window of filesystem
+       events (ADR 0014). Only that last step purges deleted files, and a
+       deletion dropped there is lost rather than deferred — so this is set
+       well clear of the sum rather than snugly above it. -->
+  <key>ExitTimeOut</key>      <integer>60</integer>
   <key>StandardErrorPath</key><string>/tmp/bsearch.log</string>
 </dict>
 </plist>
