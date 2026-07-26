@@ -68,6 +68,19 @@ type DocumentStore interface {
 	// GetByPath fetches the catalog row for a path; ok is false when the
 	// path has never been stored. Cheap change detection (hash/size/mtime).
 	GetByPath(ctx context.Context, path string) (doc Document, ok bool, err error)
+	// GetByID fetches one catalog row, reporting ErrDocumentGone when it is
+	// not there. The scheduler re-reads a claimed document through this
+	// immediately before working on it: a batch is read once and worked
+	// through over the following minutes, so by the time a document comes up
+	// its copy can name a path the file no longer has (ADR 0014).
+	//
+	// A missing row is an error here where GetByPath returns ok=false,
+	// because the two answer different questions. Discovery asks GetByPath
+	// about paths it has never seen, and "never seen" is the normal answer
+	// and the reason discovery exists. An id, by contrast, came out of a
+	// claim — the row was there, so its absence is a purge, which is exactly
+	// what ErrDocumentGone names.
+	GetByID(ctx context.Context, docID string) (Document, error)
 	// GetByContentHash returns every catalog row with this content hash,
 	// for discovery's rename detection (DESIGN.md: doc_id Closed issue).
 	GetByContentHash(ctx context.Context, hash string) ([]Document, error)

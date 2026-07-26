@@ -112,10 +112,14 @@ func (f *fakeStore) DeleteByPathPrefix(_ context.Context, dir string) (int, erro
 	return removed, nil
 }
 
-// Discovery never lists, flips state, or fails documents — pipeline-side
-// methods are stubs to satisfy the port.
+// Discovery never lists, flips state, reads by id, or fails documents —
+// pipeline-side methods are stubs to satisfy the port.
 func (f *fakeStore) ListIndexable(context.Context) ([]domain.Document, error) {
 	return nil, errors.New("not used by discovery")
+}
+
+func (f *fakeStore) GetByID(context.Context, string) (domain.Document, error) {
+	return domain.Document{}, errors.New("not used by discovery")
 }
 
 func (f *fakeStore) UpdateDocumentState(context.Context, string, domain.DocState) error {
