@@ -174,10 +174,10 @@ storage and vector-search rows first.
 | Language | Go | Self-contained single-file binary (cgo links only system libraries — no third-party dylibs; fully static isn't possible on macOS); strong daemon/concurrency story; near-zero background CPU when idle and small RSS (avoids memory-pressure churn); a language I know | Rewrite — mitigated by hexagonal boundaries |
 | Structure | Hexagonal (ports & adapters), ports as Go interfaces | Maintainability goal; makes the swap costs in this table real | n/a — this IS the swap mechanism |
 | Process model | One `bsearch` binary: daemon (`bsearch serve`, run as launchd LaunchAgent) + CLI subcommands as clients | launchd gives native supervision, start-at-login, restart | Low |
-| Storage | SQLite, one database file: catalog + queue + summaries in plain tables, FTS5 for keyword, sqlite-vec for vectors. Production pragmas from day one (WAL, `synchronous=NORMAL`, `busy_timeout=5000`, `foreign_keys=ON`, `temp_store=MEMORY`, tuned `mmap_size`/`cache_size`); writers use `BEGIN IMMEDIATE`; indexing writes in small batches so no write transaction outlives the busy timeout. Schema carries a version; migrations preferred, drop-and-reindex is the fallback of last resort (its true cost is battery-gated local inference over the whole corpus — potentially days) | One file, one engine, transactional consistency across catalog/queue/vectors/FTS; single-writer model fits (indexer writes, queries read; WAL keeps readers unblocked) | Storage behind ports; index is derived data (except doc_id continuity — see Data retention) |
+| Storage | SQLite, one database file: catalog + queue + summaries in plain tables, FTS5 for keyword, sqlite-vec for vectors. **Derived data (chunks, vectors, summaries) is keyed by content hash, not by document** ([ADR 0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)). Production pragmas from day one (WAL, `synchronous=NORMAL`, `busy_timeout=5000`, `foreign_keys=ON`, `temp_store=MEMORY`, tuned `mmap_size`/`cache_size`); writers use `BEGIN IMMEDIATE`; indexing writes in small batches so no write transaction outlives the busy timeout. Schema carries a version; migrations preferred, drop-and-reindex is the fallback of last resort (its true cost is battery-gated local inference over the whole corpus — potentially days) | One file, one engine, transactional consistency across catalog/queue/vectors/FTS; single-writer model fits (indexer writes, queries read; WAL keeps readers unblocked) | Storage behind ports; index is derived data (except doc_id continuity — see Data retention) |
 | SQLite driver | cgo-based driver (mattn/go-sqlite3-class) with sqlite-vec statically compiled in via its Go bindings | Pure-Go drivers can't load C extensions; static linking keeps self-contained distribution, no runtime extension loading | Locked to native builds (cross-compiling cgo is painful — a future Linux port builds on Linux CI). Escape hatch: ncruces/go-sqlite3 (wasm) — sqlite-vec ships officially documented bindings for it (`asg017/sqlite-vec-go-bindings/ncruces`); that pure-Go route would also ease cross-compilation |
 | Vector search | sqlite-vec `vec0`. Float32 brute-force KNN up to a few hundred thousand chunks; **binary quantization + rescore is the planned configuration at full corpus scale (~1M chunks)**, not an emergency lever. No ANN | Exact (or near-exact with rescore), zero index maintenance, delete-friendly. Scan cost is ~linear in vectors × dims: published 100k×768 runs well under 100 ms warm, but extrapolating the same numbers puts 1M×768 ≈ ~700 ms — over the SLO; the author's own ceiling for float vectors is "the hundreds of thousands". Quantized scan (32× smaller, XOR+popcount distance) + full-precision rescore of top-k×8 retains ~95% recall at ~1.03× total storage. ANN (DiskANN/IVF) immature in sqlite-vec and unneeded at this scale | Further levers: raise mmap/cache (make scan RAM-bound), partition keys. **Acknowledged bet:** sqlite-vec is pre-1.0 (no stable on-disk format guarantee) — version pinned; a format break is covered by drop-and-reindex |
-| Keyword search | FTS5 + BM25 over chunks, fused with chunk-level KNN via RRF (k=60 default; semantic/keyword weights configurable). Results collapse to best-chunk-per-document | Hybrid beats pure vector on exact terms (invoice numbers, names); same engine, same database file, one consistency/backup story. Pattern implemented in lore (chunk breadcrumbs + RRF) though never measured there — M2 measures it here | Same DB, additive |
+| Keyword search | FTS5 + BM25 over chunks, fused with chunk-level KNN via RRF (k=60 default; semantic/keyword weights configurable). Results collapse to best-chunk-per-**content** ([ADR 0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)) | Hybrid beats pure vector on exact terms (invoice numbers, names); same engine, same database file, one consistency/backup story. Pattern implemented in lore (chunk breadcrumbs + RRF) though never measured there — M2 measures it here | Same DB, additive |
 | Doc conversion | bscribe over HTTP behind `ConverterPort`; plain text/markdown handled in-process. Adapter sends bscribe's required bearer token (from config); v1 uses the sync `POST /v1/convert` endpoint and reads the JSON envelope's `content` field. bscribe's native port is 8000 — `localhost:18000` is this machine's host mapping | No parser deps in the binary; LibreOffice/OCR churn isolated in a hardened container (non-root baked into the image; read-only rootfs, capability drop, and memory cap are operator run-flags — required flags recorded in deployment docs); bscribe already runs here and anticipated bsearch as a consumer | Adapter swap (lit CLI subprocess, docling) without touching domain; async job API available if large-doc sync timeouts warrant it |
 | Change detection | FSEvents watch (macOS API behind `WatcherPort`, via `fsnotify/fsevents`) for near-real-time creates, edits, **and deletes**, plus periodic full scan for missed events; change = cheap size/mtime check, content hash to confirm. Events are debounced ~10 s and reconciled path-by-path against the same change detection the walk uses; an event stream that overflows or reports a volume appearing/disappearing escalates to a full walk rather than trusting a partial path list. The walk's cadence follows the watcher — 5 min scan-only, 15 min while watching ([ADR 0013](docs/adr/0013-fsevents-watcher-and-event-driven-reconcile.md)) | Freshness SLO without constant scanning; battery-friendly | Linux port = new watcher adapter (inotify) |
 | Chunking | Markdown-aware, hand-rolled in Go (see below) | Everything is markdown post-conversion; tractable, dependency-free algorithm | Isolated pure function, versioned |
@@ -242,6 +242,47 @@ The rules that follow from it:
 
 Across processes the same property is enforced by the single-instance flock in
 `socket.Listen`: one daemon, one indexing worker, one writer.
+
+#### Derived data is keyed by content
+
+Chunks, vectors and summaries are functions of a file's **content**, so they are
+keyed on the content hash, not on `doc_id` ([ADR
+0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)). `documents`,
+`doc_id`, the queue and the API contract are unaffected.
+
+```sql
+documents  (id, path, content_hash, state, attempts, …)
+chunks     (id INTEGER PRIMARY KEY AUTOINCREMENT, content_hash NOT NULL,
+            ordinal, text, heading_path, byte_start, byte_end,
+            UNIQUE (content_hash, ordinal))
+summaries  (content_hash, level, text, PRIMARY KEY (content_hash, level))
+vec_chunks (rowid = chunks.id)
+```
+
+What follows from it:
+
+- **A rename preserves everything derived.** `documents.path` updates; the hash
+  is unchanged, so chunks, vectors and summaries stay valid with no re-embed.
+- **Duplicate content is embedded once** and shares summaries — copies,
+  boilerplate, the same PDF filed in two folders.
+- **`chunks.id AUTOINCREMENT` is load-bearing** and survives unchanged.
+  `vec_chunks` keys on it, the FTS5 external-content table keys on it
+  (`content='chunks', content_rowid='id'`), and it is the schema's only
+  immutable version token — the liveness check that refuses to write a vector
+  against a freed chunk id depends on ids never being reused.
+- **The pipeline hashes the bytes it read**, rather than trusting the hash
+  discovery recorded earlier, and writes chunks under that hash. Free (sha256
+  over bytes already in memory) and strictly more correct: the chunks are
+  provably of the content they are filed under.
+- **Orphan chunks need a sweep**, because `ON DELETE CASCADE` from `documents`
+  no longer reaches them — other files may share them. `DELETE FROM chunks
+  WHERE content_hash NOT IN (SELECT content_hash FROM documents)`, on the
+  indexing worker, after deletions. It must be **one statement**: a
+  find-then-delete whose target is restored to prior content in the gap (editor
+  undo, `git checkout`) deletes chunks whose hash is referenced again.
+- **Search inner-joins chunks to documents**, so a content hash no path
+  references contributes nothing to results. Orphans are invisible from the
+  moment their last path goes, whenever the sweep happens to run.
 
 #### Queue
 
@@ -374,6 +415,16 @@ chunker version, embedding model + dimensions + **prefix templates** + input
 ceiling, summarizer model + context requirement. The database schema itself is
 versioned.
 
+`stage_versions` stays **per document** even though the derived data it
+describes is per content ([ADR
+0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)). That is what
+makes deduplication fall out of the existing queue instead of needing new
+machinery: a second file with identical content is discovered and claimed as
+usual, the pipeline hashes it, finds chunks already at current stage versions,
+skips the embed and records its own versions. One embed, two indexed documents.
+A chunker or model bump resets both rows, and whichever is claimed first does
+the single re-chunk that the other then reuses.
+
 A search can only use one embedding model — a query embedded with model A is
 meaningless against model B's vectors — so swapping embedding models always
 means re-embedding everything. The metadata buys:
@@ -483,9 +534,16 @@ are model-dependent and uncalibrated, so callers (especially agents) should
 judge relevance from summaries, not scores.
 
 Retrieval granularity: KNN and FTS both run at **chunk level**; RRF fuses the
-chunk rankings; results collapse to the best chunk per document. The response
-is per-document; `chunk_preview` and `heading_path` come from the winning
-chunk.
+chunk rankings; results collapse to the best chunk per **content**
+([ADR 0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)).
+`chunk_preview` and `heading_path` come from the winning chunk.
+
+One content can live at several paths (duplicate files), so a hit names one
+primary path and lists the rest in `also_at` — omitted when empty, which is the
+overwhelmingly common case. Returning one hit per path instead would undo
+deduplication exactly where it pays: the scores are identical, so N copies
+would consume N slots of `limit` with no ranking signal to order them, and an
+agent would pay N× the tokens for 1× the information.
 
 Response:
 
@@ -499,13 +557,22 @@ Response:
       "summary": "Vaillant aroTHERM quote from March 2025: supply and install, 7kW, £11,400 including cylinder.",
       "chunk_preview": "…total supply and installation cost of £11,400 inc. VAT…",
       "heading_path": "Quote > Cost breakdown",
-      "modified": "2025-03-14T10:22:00Z"
+      "modified": "2025-03-14T10:22:00Z",
+      "also_at": [
+        {"doc_id": "d_1c04b2", "path": "~/Archive/2025/heatpump-vaillant-2025.pdf"}
+      ]
     }
   ],
   "took_ms": 87
 }
 ```
 
+- `also_at` — the other paths holding this same content, absent when there are
+  none. `path` and `doc_id` name the **primary**: the referencing document with
+  the most recent `mtime`, tie-broken by path ascending so the same corpus
+  always yields the same answer. When a query is scoped to a path prefix, both
+  the primary and `also_at` are drawn only from documents inside that scope —
+  a scoped search never returns a path outside its own scope.
 - `score` — fused (RRF) relevance, higher = better. *Implementation status:
   the M1 CLI's `--json` output predates fusion and instead emits `distance`
   (raw KNN distance, lower = better, uncalibrated); `score` is deliberately
@@ -521,8 +588,11 @@ Response:
   a copy, not a rename → new id (no false merge of duplicate content — empty
   files, boilerplate, `cp`). Multiple candidate rows disqualify rename
   detection → new id. Known limitation: rename + edit within one scan window
-  looks like delete + create and mints a new id. A full drop-and-reindex
-  re-mints all ids (see Data retention).
+  looks like delete + create and mints a new id — which since [ADR
+  0015](docs/adr/0015-content-addressed-chunks-and-summaries.md) costs only a
+  stale agent reference, not lost derived data: chunks, vectors and summaries
+  key on the content hash, so they survive whatever the id does. A full
+  drop-and-reindex re-mints all ids (see Data retention).
 
 **`GET /v1/docs`** — enumeration (the pyramid "survey the terrain" interface).
 
@@ -739,10 +809,18 @@ listener ships. Recorded so it isn't bolted on casually.
   integrations. Rare and accepted — schema migrations are preferred precisely
   so rebuilds stay exceptional.
 - **Deletion follows source, near-real-time.** Deletes arrive via FSEvents
-  like creates and edits → catalog row, chunks, vectors, summaries, FTS
-  entries purged, for the path and everything beneath it (an event does not
-  say whether the vanished path was a file or a directory). At the index
-  level the content is gone — no longer searchable or retrievable.
+  like creates and edits → catalog row purged, for the path and everything
+  beneath it (an event does not say whether the vanished path was a file or a
+  directory). Chunks, vectors, summaries and FTS entries key on the content
+  hash ([ADR
+  0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)), so they are
+  removed by the orphan sweep rather than by cascade — another file may hold
+  the same bytes, and deleting one copy must not blind the other. **Removal
+  from results is immediate regardless**: search inner-joins chunks to
+  documents, so content no path references contributes nothing from the moment
+  the catalog row goes. The sweep reclaims space; it is not what makes a
+  deletion take effect. At the index level the content is gone — no longer
+  searchable or retrievable.
   Storage-layer honesty: SQLite leaves deleted bytes in freelist/WAL pages
   until checkpoint/vacuum; accepted residue, covered by FileVault, not worth
   `secure_delete` write-amplification. *Implementation status: the event path
@@ -873,11 +951,13 @@ Missing features).
 - **doc_id: opaque surrogate over content/path hash.** Stable across edits
   and moves; agent references survive. Rename detection requires the old path
   to be gone and a unique hash match (duplicate-content false merges
-  excluded); rename+edit in one window churns the id — accepted limitation.
-  *Under active challenge:* [#67](https://github.com/bcrisp4/bsearch/issues/67)
-  proposes keying derived data by content hash, which would retire the
-  surrogate and delete the rename heuristic. Undecided, and it needs an ADR
-  before any code — noted here so this entry is not read as settled.
+  excluded); rename+edit in one window churns the id — accepted limitation,
+  and a much cheaper one since [ADR
+  0015](docs/adr/0015-content-addressed-chunks-and-summaries.md): derived data
+  keys on the content hash, so a churned id no longer destroys work. Retiring
+  the surrogate entirely (path as identity) was considered with ADR 0015 and
+  deferred — it buys `resolveID`'s deletion at the cost of the `doc_id` API
+  contract, and nothing forces it now.
 - **Local endpoint enforcement: rejected.** Considered refusing non-loopback
   inference endpoints; rejected — remote inference on a private tailnet is
   legitimate. Privacy guarantee documented as conditional on endpoint choice.
