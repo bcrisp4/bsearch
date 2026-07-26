@@ -136,6 +136,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/search", s.methodNotAllowed(http.MethodPost))
 	mux.HandleFunc("GET /v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/status", s.methodNotAllowed(http.MethodGet))
+	// #19 (list + get) registers here in the same double pattern:
+	// `GET /v1/docs` and `GET /v1/docs/content/{content_hash}` (path as the
+	// r.PathValue wildcard; `?path=` convenience resolved through
+	// documents). Keyed by content hash, never a doc_id — DESIGN.md: HTTP
+	// API, ADR 0015.
 	mux.HandleFunc("/", s.notFound)
 
 	// Logging is outermost so a panicking request still produces a request

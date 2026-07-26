@@ -327,6 +327,12 @@ func (s *Store) UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][
 // The join is deliberately inner: content no document references (deleted,
 // sweep pending) contributes nothing, so a deletion takes effect the moment
 // its documents row goes — and unread rows (NULL content_hash) never match.
+//
+// Path-prefix scoping, when it lands, attaches here as a range predicate on
+// d.path inside this same join (`d.path = ? OR (d.path > ? AND d.path <
+// ?)`, DeleteByPathPrefix's spelling) — which is what makes a scoped
+// query's primary and also_at come from inside the scope by construction
+// (DESIGN.md: HTTP API).
 func (s *Store) SearchVectors(ctx context.Context, query []float32, limit int) ([]domain.Hit, error) {
 	table, desc, err := currentVecTable(ctx, s.db.Reader())
 	if err != nil {

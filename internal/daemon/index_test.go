@@ -542,3 +542,60 @@ func TestUnreadableIndexIsReportedAsNotIndexed(t *testing.T) {
 		t.Errorf("status = %+v, want not-ready with a reason", status)
 	}
 }
+
+// One content at two paths is one hit end to end: the primary is the newest
+// copy, the rest ride in also_at, and deleting the primary re-points the hit
+// to the survivor immediately — before any orphan sweep runs, because result
+// assembly inner-joins documents (ADR 0015).
+func TestSearchDeduplicatesIdenticalFiles(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "data", "bsearch.db")
+	writeIndex(t, dbPath, "h1", "alpha text")
+
+	store, closeDB := openStore(t, dbPath)
+	newer := domain.Document{
+		Path: "/archive/copy.md", ContentHash: "h1",
+		Size: 42, MTime: time.Unix(1800000000, 0), // newer than testDoc's
+	}
+	if err := store.UpsertDocuments(context.Background(), []domain.Document{newer}); err != nil {
+		closeDB()
+		t.Fatalf("UpsertDocuments (copy): %v", err)
+	}
+	closeDB()
+	// An unread row rides along, as everywhere: the join must be untroubled
+	// by a NULL content_hash in documents.
+	addUnread(t, dbPath, "/notes/locked.md", domain.UnreadDenied)
+
+	d := newDaemon(t, dbPath)
+	resp, err := d.Search(context.Background(), search.Request{Query: "alpha"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(resp.Hits) != 1 {
+		t.Fatalf("hits = %+v, want exactly one — duplicates collapse per content", resp.Hits)
+	}
+	hit := resp.Hits[0]
+	if hit.Path != "/archive/copy.md" || hit.ContentHash != "h1" {
+		t.Errorf("hit = %+v, want the newest copy as primary", hit)
+	}
+	if len(hit.AlsoAt) != 1 || hit.AlsoAt[0] != "/notes/h1.md" {
+		t.Errorf("also_at = %v, want the older copy", hit.AlsoAt)
+	}
+
+	store, closeDB = openStore(t, dbPath)
+	if _, err := store.DeleteByPathPrefix(context.Background(), "/archive/copy.md"); err != nil {
+		closeDB()
+		t.Fatalf("DeleteByPathPrefix: %v", err)
+	}
+	closeDB()
+
+	resp, err = d.Search(context.Background(), search.Request{Query: "alpha"})
+	if err != nil {
+		t.Fatalf("Search after deleting the primary: %v", err)
+	}
+	if len(resp.Hits) != 1 || resp.Hits[0].Path != "/notes/h1.md" {
+		t.Fatalf("hits = %+v, want the surviving copy as primary, immediately and pre-sweep", resp.Hits)
+	}
+	if len(resp.Hits[0].AlsoAt) != 0 {
+		t.Errorf("also_at = %v, want empty once the content is unique again", resp.Hits[0].AlsoAt)
+	}
+}
