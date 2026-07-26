@@ -6,12 +6,18 @@ import (
 	"time"
 )
 
-// Ports for milestones M1 and M3. Converter and Summarizer ports land with
+// Ports for milestones M1–M3.5. Converter and Summarizer ports land with
 // their own issues (#21, #18).
 //
 // Naming: DESIGN.md's *Port suffix is conceptual. In code the ports are
 // this file's interfaces, with plain Go names (domain.Embedder is
 // DESIGN.md's EmbedderPort).
+//
+// The catalog has two subjects and two owners (ADR 0015): discovery writes
+// documents (and creates content rows); the pipeline mutates content and
+// writes chunks. ADR 0014 puts every catalog write on one goroutine, so
+// these are two modules called by the same worker — the split is a module
+// boundary, not a concurrency one.
 
 // Embedder turns text into vectors. Implementations embed the output of
 // EmbeddingSpec.ComposeQuery/ComposePassage — templates and breadcrumbs
@@ -27,124 +33,135 @@ type Embedder interface {
 	Spec() EmbeddingSpec
 }
 
-// ErrDocumentGone means the catalog row a write was aimed at is not there.
+// ErrContentGone means the content row a write or re-read was aimed at is
+// not there — swept as an orphan, or never created.
 //
-// It exists because discovery is the only thing that creates catalog rows,
-// and the pipeline writes to rows it claimed some seconds earlier. Those
-// seconds are enough for the file to be deleted and the watcher's reconcile
-// to purge it, and a write that quietly re-created the row would make the
-// deleted file permanently searchable — the index would keep serving content
-// whose source is gone, with nothing to notice it (DESIGN.md: Data
-// retention). So a write against a missing row reports the fact instead, and
-// the caller treats the document as what it is: gone, and nothing to index.
-var ErrDocumentGone = errors.New("the catalog row no longer exists (deleted while in flight?)")
+// It exists because discovery is the only thing that creates content rows,
+// and the pipeline works on rows it claimed some seconds earlier. Those
+// seconds are enough for every path referencing the content to vanish and
+// the sweep to collect the row, and a write that quietly re-created it would
+// make deleted content permanently searchable — the index would keep serving
+// bytes whose every source is gone, with nothing to notice it (DESIGN.md:
+// Data retention). So a write against a missing row reports the fact
+// instead, and the caller treats the content as what it is: gone, and
+// nothing to index.
+var ErrContentGone = errors.New("the content row no longer exists (swept while in flight?)")
 
-// ErrDocumentSuperseded means the row is still there but was rewritten while
-// a write was in flight, so the write is aimed at a document that no longer
-// exists in the shape it was aimed at.
+// ErrContentSuperseded means chunk rows a vector write keyed on were
+// replaced while the write was in flight, so the vectors are aimed at text
+// that no longer exists in the shape they were computed from.
 //
-// It exists because a file saved again during its own embed used to reset the
-// row to `discovered` and replace its chunks, while the vectors coming back
-// from that embed still keyed on chunk IDs that had since been deleted.
-// Writing them anyway would attach one version's vectors to another version's
-// text, so the store reports instead and the caller stands down.
+// It exists because a re-chunk during an embed would leave vectors keying on
+// chunk IDs that had since been deleted. Writing them anyway would attach one
+// version's vectors to another version's text, so the store reports instead
+// and the caller stands down.
 //
 // Since ADR 0014 that race cannot happen: one goroutine owns every catalog
 // write, and it is inside the pipeline for the whole window. The check that
 // produces this is kept anyway — an orphaned vector row is unreachable by
 // every delete in the store and silently displaces a real search hit, so it
-// is the one guard here that prevents rather than reports. What is left to do
-// is retire the sentinel and let the check be a plain error: nothing should be
-// able to recognise a broken invariant and stand down from it (#69).
-var ErrDocumentSuperseded = errors.New("the catalog row was rewritten while this write was in flight")
+// is the one guard here that prevents rather than reports. Reaching it means
+// the single-writer invariant broke, and the scheduler treats it as exactly
+// that.
+var ErrContentSuperseded = errors.New("the chunk rows were replaced while this write was in flight")
 
-// DocumentStore persists the catalog: documents and their chunks.
+// DocumentStore is discovery's port: the documents table, and the eager
+// creation of content rows. A documents row carries no pipeline state and no
+// chunks, so the whole write surface is one batch upsert.
 type DocumentStore interface {
-	// UpsertDocument writes the document row and replaces its chunks in one
-	// transaction, returning the storage IDs of the new chunks in ordinal
-	// order (vector upserts key on them).
-	//
-	// A state of `discovered` creates the row if it is missing — that is
-	// discovery announcing a file. Any other state is a pipeline write to a
-	// row that is expected to exist, and reports ErrDocumentGone rather than
-	// creating one.
-	UpsertDocument(ctx context.Context, doc Document, chunks []Chunk) ([]int64, error)
 	// GetByPath fetches the catalog row for a path; ok is false when the
 	// path has never been stored. Cheap change detection (hash/size/mtime).
 	GetByPath(ctx context.Context, path string) (doc Document, ok bool, err error)
-	// GetByID fetches one catalog row, reporting ErrDocumentGone when it is
-	// not there. The scheduler re-reads a claimed document through this
-	// immediately before working on it: a batch is read once and worked
-	// through over the following minutes, so by the time a document comes up
-	// its copy can name a path the file no longer has (ADR 0014).
+	// UpsertDocuments writes the batch in one transaction (#34). For each
+	// doc with a ContentHash, the content row is created at discovered if
+	// absent — the eager insert that keeps dispatch a plain predicate over
+	// content rather than an anti-join (ADR 0015). Existing content rows are
+	// never touched: a second identical file schedules no work.
 	//
-	// A missing row is an error here where GetByPath returns ok=false,
-	// because the two answer different questions. Discovery asks GetByPath
-	// about paths it has never seen, and "never seen" is the normal answer
-	// and the reason discovery exists. An id, by contrast, came out of a
-	// claim — the row was there, so its absence is a purge, which is exactly
-	// what ErrDocumentGone names.
-	GetByID(ctx context.Context, docID string) (Document, error)
-	// GetByContentHash returns every catalog row with this content hash,
-	// for discovery's rename detection (DESIGN.md: doc_id Closed issue).
-	GetByContentHash(ctx context.Context, hash string) ([]Document, error)
-	// UpdateDocumentStat refreshes size/mtime on an existing row without
-	// touching state, chunks, stage versions, or retry columns — for files
-	// touched on disk but content-identical.
-	UpdateDocumentStat(ctx context.Context, docID string, size int64, mtime time.Time) error
-	// DeleteDocument removes the document and everything derived from it
-	// (chunks, summaries, vectors).
-	DeleteDocument(ctx context.Context, docID string) error
+	// An upsert on an existing path replaces the row wholesale: rename,
+	// edit, unread→readable and readable→unread are all this one call.
+	// Unread docs record the reason with no hash.
+	UpsertDocuments(ctx context.Context, docs []Document) error
 	// DeleteByPathPrefix removes the document at dir and every document
 	// under it, returning how many went. Deletion follows the source
 	// (DESIGN.md: Data retention), and a vanished path does not say whether
 	// it was a file or a directory — so one call answers both.
+	//
+	// Documents only: content the deleted rows referenced is collected by
+	// the orphan sweep, and search's inner join stops serving it the moment
+	// the documents row goes — deletion never waits on the sweep.
 	DeleteByPathPrefix(ctx context.Context, dir string) (int, error)
-	// ListIndexable returns every catalog row the pipeline may need to work
-	// on — every state except deleted — ordered by path. Metadata only
-	// (no chunk text). Indexed and failed rows are included: whether a row
-	// is stale, or failed under stage versions that have since changed and
-	// deserves a fresh attempt, is the caller's call (DESIGN.md: Pipeline
-	// metadata).
-	ListIndexable(ctx context.Context) ([]Document, error)
-	// UpdateDocumentState flips state (and updated_at) only — never chunks,
-	// vectors, stage versions, or retry columns. UpsertDocument cannot serve
-	// this: it replaces chunks wholesale and deletes their vectors.
-	UpdateDocumentState(ctx context.Context, docID string, state DocState) error
-	// MarkFailed sets state=failed and records the reason in last_error.
-	// A subsequent file change resets it (UpsertDocument clears retry
-	// columns).
-	MarkFailed(ctx context.Context, docID, reason string) error
 }
 
-// Queue is the dispatch half of the catalog: which documents the scheduler
+// ContentStore is the pipeline's port: everything keyed by content hash.
+type ContentStore interface {
+	// StoreChunks replaces c.Hash's chunks and records c's state and stage
+	// versions in one transaction, returning the storage IDs of the new
+	// chunks in ordinal order (vector upserts key on them). Old vectors are
+	// deleted — every generation — while the old chunk IDs still resolve.
+	// Retry columns are untouched.
+	//
+	// It never creates the content row: discovery creates rows at
+	// discovered, and a missing row reports ErrContentGone rather than
+	// resurrecting content whose every source is gone.
+	StoreChunks(ctx context.Context, c Content, chunks []Chunk) ([]int64, error)
+	// UpdateContentState flips state (and updated_at) only — never chunks,
+	// vectors, stage versions, or retry columns. StoreChunks cannot serve
+	// this: it replaces chunks wholesale and deletes their vectors.
+	UpdateContentState(ctx context.Context, hash string, state ContentState) error
+	// MarkFailed sets state=failed and records the reason in last_error.
+	// Permanent by construction: content is immutable, so nothing resets
+	// it — a changed file is a different content row, and a config change
+	// re-queues it via ResetStale, which is a different event.
+	MarkFailed(ctx context.Context, hash, reason string) error
+}
+
+// Queue is the dispatch half of the catalog: which content the scheduler
 // should work on next, and how a failed attempt is recorded so the next pass
 // treats it correctly (DESIGN.md: Indexing pipeline and queue).
 //
 // There is no claim method and no claimed state. One daemon runs one indexing
 // worker, and every pipeline stage is an idempotent upsert, so a crash
-// mid-document is redone rather than recovered (ADR 0011). That is why
+// mid-content is redone rather than recovered (ADR 0011). That is why
 // ClaimBatch is a read: nothing is reserved, so nothing has to be released.
 type Queue interface {
-	// ClaimBatch returns up to limit documents due for work now: non-terminal
-	// state, and next_retry_at either unset or not in the future relative to
-	// now. Ordering is recency-first with aging, so a file saved a moment ago
-	// is worked before a backlog without the backlog ever starving.
-	ClaimBatch(ctx context.Context, now time.Time, limit int) ([]Document, error)
+	// ClaimBatch returns up to limit content rows due for work now:
+	// non-terminal state, and next_retry_at either unset or not in the
+	// future relative to now. Ordering is recency-first with aging, so a
+	// file saved a moment ago is worked before a backlog without the
+	// backlog ever starving.
+	ClaimBatch(ctx context.Context, now time.Time, limit int) ([]Content, error)
+	// GetWork re-reads one claimed row immediately before working it and
+	// picks the path the pipeline should read bytes from: the referencing
+	// document with the newest mtime, tie-broken by path ascending — the
+	// same rule that picks a search hit's primary path, so "which path does
+	// bsearch mean by this content" has one answer. A batch is read once
+	// and worked through over the following minutes, so a claimed copy can
+	// be stale by the time its turn comes (ADR 0014).
+	//
+	// ErrContentGone when the row was swept, or when no live path
+	// references it — deleted while in flight; the sweep will collect it.
+	//
+	// The chosen path can still change under the pipeline after this read;
+	// the pipeline hashes what it actually read and abandons on mismatch,
+	// so a wrong pick costs one file read, never a wrong index entry.
+	GetWork(ctx context.Context, hash string) (WorkItem, error)
 	// Reschedule records a transient failure: attempts, the next due time,
-	// and the reason. State is left alone — the document keeps whatever
+	// and the reason. State is left alone — the content keeps whatever
 	// progress it made, and the next pass resumes from there.
-	Reschedule(ctx context.Context, docID string, attempts int, at time.Time, reason string) error
-	// ResetStale moves documents whose derived data was produced by stage
+	Reschedule(ctx context.Context, hash string, attempts int, at time.Time, reason string) error
+	// ResetStale moves content whose derived data was produced by stage
 	// versions other than current back to discovered, clearing the retry
 	// columns, and reports how many moved. It is what makes a model or
 	// chunker change re-embed the corpus with no command run: the dispatch
 	// predicate skips terminal states, so without this a stale index would
 	// serve forever (DESIGN.md: Pipeline metadata — partial rebuilds).
+	// It applies to failed rows too — a chunker or model change is a
+	// legitimate fresh start for content that failed under the old config.
 	//
 	// current is keyed by the Stage* constants. Keys absent from current are
 	// ignored, so a stage that has not run yet (conversion, summaries) never
-	// makes every document look stale.
+	// makes every content look stale.
 	ResetStale(ctx context.Context, current map[string]string) (int, error)
 }
 
@@ -186,8 +203,15 @@ type WatchBatch struct {
 	Rescan bool
 }
 
-// Hit is one KNN result: the matching chunk, its document, and the raw
-// distance (model-dependent and uncalibrated — DESIGN.md: no score floor).
+// Hit is one KNN result row: the matching chunk, one document referencing
+// the chunk's content, and the raw distance (model-dependent and
+// uncalibrated — DESIGN.md: no score floor).
+//
+// One row per (chunk, referencing path): a chunk whose content lives at N
+// paths arrives N times, consecutively, ordered mtime-descending then path
+// ascending. CollapseBestPerContent reduces the fan-out to one ContentHit
+// per content. Doc.ContentHash is the chunk's content hash (the join key),
+// and (Doc.ContentHash, Chunk.Ordinal) identifies the chunk.
 type Hit struct {
 	Doc      Document
 	Chunk    Chunk
@@ -214,12 +238,13 @@ type VectorStore interface {
 	// from the first embedding batch — vec0 fixes them at CREATE.
 	EnsureVecTable(ctx context.Context, spec EmbeddingSpec, dims int) error
 	// UpsertVectors stores one vector per chunk storage ID (from
-	// DocumentStore.UpsertDocument), replacing any existing rows. A chunk ID
-	// that no longer exists means the document was re-chunked during the
-	// embed, and reports ErrDocumentSuperseded rather than orphaning vectors.
+	// ContentStore.StoreChunks), replacing any existing rows. A chunk ID
+	// that no longer exists means the content was re-chunked during the
+	// embed, and reports ErrContentSuperseded rather than orphaning vectors.
 	UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][]float32) error
-	// SearchVectors returns the limit nearest chunks by ascending distance.
-	// Loud error when no current vec table exists (nothing embedded yet or
-	// model mismatch) — never a silent empty result.
+	// SearchVectors returns the limit nearest chunks by ascending distance,
+	// fanned out per referencing path (see Hit). limit counts chunks, not
+	// rows. Loud error when no current vec table exists (nothing embedded
+	// yet or model mismatch) — never a silent empty result.
 	SearchVectors(ctx context.Context, query []float32, limit int) ([]Hit, error)
 }
