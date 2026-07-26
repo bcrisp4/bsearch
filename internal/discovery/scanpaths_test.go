@@ -37,8 +37,11 @@ func TestScanPathsNewFile(t *testing.T) {
 	if len(store.upserts) != 1 {
 		t.Fatalf("upserts = %d, want 1", len(store.upserts))
 	}
-	if doc := store.upserts[0]; doc.Path != path || !docIDRe.MatchString(doc.ID) {
+	if doc := store.upserts[0]; doc.Path != path || doc.ContentHash != hashOf("hello") {
 		t.Errorf("doc = %+v", doc)
+	}
+	if !store.content[hashOf("hello")] {
+		t.Error("no content row created for the new hash")
 	}
 }
 
@@ -172,6 +175,11 @@ func TestScanPathsDeletedFilePurged(t *testing.T) {
 	if _, ok := store.docs[path]; ok {
 		t.Error("catalog row survived the deletion")
 	}
+	// Deletion removes documents only; the orphaned content row is the
+	// sweep's to collect, never discovery's.
+	if !store.content[hashOf("hello")] {
+		t.Error("content row deleted by discovery; the sweep owns that")
+	}
 }
 
 // A vanished path does not say whether it was a file or a directory, so the
@@ -284,10 +292,10 @@ func TestScanPathsRecreatedFileNotPurged(t *testing.T) {
 	}
 }
 
-// The reason the two passes are ordered: a rename delivers the old path and
-// the new one together, and only reconciling what exists first lets the new
-// path claim the old row before the old path is considered for deletion.
-func TestScanPathsRenameKeepsDocID(t *testing.T) {
+// A rename is a documents row appearing at the new path with the same hash
+// while the old path purges (ADR 0015). The hash is already in the catalog,
+// so no content row is created and no pipeline work is scheduled.
+func TestScanPathsRenameRepointsPathNotContent(t *testing.T) {
 	dir := tmpDir(t)
 	old := filepath.Join(dir, "old.md")
 	renamed := filepath.Join(dir, "new.md")
@@ -296,33 +304,37 @@ func TestScanPathsRenameKeepsDocID(t *testing.T) {
 	opts := Options{Include: []string{dir}}
 
 	scanPaths(t, store, opts, old)
-	id := store.upserts[0].ID
+	hash := store.upserts[0].ContentHash
 	if err := os.Rename(old, renamed); err != nil {
 		t.Fatal(err)
 	}
 
-	// Old path first in the batch: the ordering must not depend on the
+	// Old path first in the batch: the outcome must not depend on the
 	// order the watcher happened to report them in.
 	res := scanPaths(t, store, opts, old, renamed)
 
-	if res.Renamed != 1 || res.Deleted != 0 {
-		t.Fatalf("Result = %+v, want 1 renamed and nothing deleted", res)
+	if res.Discovered != 1 || res.Changed != 0 || res.Deleted != 1 {
+		t.Fatalf("Result = %+v, want 1 discovered / 0 changed / 1 deleted", res)
 	}
 	doc, ok := store.docs[renamed]
 	if !ok {
 		t.Fatalf("no catalog row at the new path; rows = %v", catalogPaths(store))
 	}
-	if doc.ID != id {
-		t.Errorf("doc id = %q, want the original %q", doc.ID, id)
+	if doc.ContentHash != hash {
+		t.Errorf("ContentHash = %q, want the original %q", doc.ContentHash, hash)
 	}
 	if _, stale := store.docs[old]; stale {
 		t.Error("a row is still parked at the old path")
+	}
+	// Same bytes → the existing content row is reused, nothing new created.
+	if len(store.content) != 1 {
+		t.Errorf("content rows = %v, want just the original", store.content)
 	}
 }
 
 // The same property for a directory move, which arrives as two paths for the
 // directory and none for the files inside it.
-func TestScanPathsDirectoryRenameKeepsDocIDs(t *testing.T) {
+func TestScanPathsDirectoryRenameRepointsPaths(t *testing.T) {
 	dir := tmpDir(t)
 	old := filepath.Join(dir, "notes")
 	renamed := filepath.Join(dir, "archive")
@@ -332,28 +344,33 @@ func TestScanPathsDirectoryRenameKeepsDocIDs(t *testing.T) {
 	opts := Options{Include: []string{dir}}
 
 	scanPaths(t, store, opts, old)
-	before := map[string]string{} // content hash -> doc id
-	for _, doc := range store.upserts {
-		before[doc.ContentHash] = doc.ID
-	}
 	if err := os.Rename(old, renamed); err != nil {
 		t.Fatal(err)
 	}
 
 	res := scanPaths(t, store, opts, old, renamed)
 
-	if res.Renamed != 2 || res.Deleted != 0 {
-		t.Fatalf("Result = %+v, want 2 renamed and nothing deleted", res)
+	if res.Discovered != 2 || res.Changed != 0 || res.Deleted != 2 {
+		t.Fatalf("Result = %+v, want 2 discovered / 0 changed / 2 deleted", res)
 	}
-	for _, name := range []string{"a.md", "b.md"} {
+	for name, content := range map[string]string{"a.md": "one", "b.md": "two"} {
 		doc, ok := store.docs[filepath.Join(renamed, name)]
 		if !ok {
 			t.Errorf("no catalog row for %s at the new path", name)
 			continue
 		}
-		if want := before[doc.ContentHash]; doc.ID != want {
-			t.Errorf("%s: doc id = %q, want the original %q", name, doc.ID, want)
+		if doc.ContentHash != hashOf(content) {
+			t.Errorf("%s: ContentHash = %q, want %q", name, doc.ContentHash, hashOf(content))
 		}
+	}
+	for _, name := range []string{"a.md", "b.md"} {
+		if _, stale := store.docs[filepath.Join(old, name)]; stale {
+			t.Errorf("%s still parked at the old path", name)
+		}
+	}
+	// Two files, two hashes, no new content minted by the move.
+	if len(store.content) != 2 {
+		t.Errorf("content rows = %v, want the original two", store.content)
 	}
 }
 
