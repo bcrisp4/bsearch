@@ -195,6 +195,56 @@ document becomes searchable as soon as it is embedded; summaries are
 fill-later fields that enrich results when ready. A summarizer outage degrades
 summary richness, never searchability.
 
+**`∥` describes the dataflow graph, not concurrency.** It says the two branches
+both derive from chunks and that neither blocks the other — embedding does not
+wait for a summary, and a missing summary never gates searchability. It does
+**not** license running them on separate goroutines, and by default they do
+not: both run on the single indexing worker, in whatever order it chooses.
+Two concurrent local-inference calls are in any case the wrong shape for a
+battery-powered laptop (see the power-aware gate below), and a second goroutine
+would break the single-writer invariant stated next.
+
+#### Single-writer invariant
+
+**Exactly one goroutine writes the catalog** ([ADR
+0014](docs/adr/0014-single-writer-catalog.md)). This is a hard invariant, not a
+current implementation detail, and it governs every stage added later.
+
+It exists because both bugs the two-writer design produced were the same
+defect: a read-modify-write whose read and write sat in different transactions,
+with a second writer in between. [#62](https://github.com/bcrisp4/bsearch/issues/62)
+minted two ids for one path; [#63](https://github.com/bcrisp4/bsearch/issues/63)
+left a document `indexed` with no chunks — terminal, so nothing re-queued it,
+permanently unsearchable with nothing to signal it. Neither was found by a
+test; both were pre-registered in ADR 0013's own Consequences section and
+shipped anyway.
+
+The rules that follow from it:
+
+- **New pipeline stages run on the indexing worker.** Summarization included.
+  If a stage needs genuine concurrency, the concurrent part is the network or
+  CPU work — the *write* is handed back to the one goroutine that owns it.
+- **Reads are unrestricted.** WAL keeps readers unblocked; search, `status`
+  and the HTTP API read freely from any goroutine. The invariant is about
+  writes only.
+- **A stage that only records metadata uses a narrow setter**, never
+  `UpsertDocument`, which replaces a document's chunks wholesale and deletes
+  their vectors. Recording "my stage ran at version X" through a method that
+  also rewrites derived data is how #63's signature is reproduced without any
+  concurrency at all.
+- **Do not defend the invariant with in-row guards.** A compare-and-set on
+  `state` cannot see a writer that rewrites the row while leaving its state
+  alone, which is exactly what `UpsertDocument` does — the reason
+  [#69](https://github.com/bcrisp4/bsearch/issues/69) was closed unbuilt. The
+  invariant is held structurally, by there being one writer, or not at all.
+- **Changing this requires a superseding ADR**, and an answer to what replaces
+  the structural guarantee.
+
+Across processes the same property is enforced by the single-instance flock in
+`socket.Listen`: one daemon, one indexing worker, one writer.
+
+#### Queue
+
 The queue is a SQLite-backed state machine — no external queue infrastructure.
 
 - **Catalog row per file:** `path, content_hash, size, mtime, state,
@@ -217,11 +267,14 @@ The queue is a SQLite-backed state machine — no external queue infrastructure.
   next_retry_at <= now LIMIT n`), served by a partial index that excludes
   terminal rows so claim cost tracks the backlog rather than the corpus.
   Terminal states never re-enter dispatch; purging `deleted` rows is a
-  separate path. **One indexing worker**, so there is no claim at all — not a
-  claimed state, and not the in-memory claim set this section originally
-  anticipated: nothing is reserved, so nothing has to be released. A crash
-  mid-batch redoes in-flight items on restart, which is safe because every
-  stage is an idempotent upsert (ADR 0011).
+  separate path. **One indexing worker** (the single-writer invariant above),
+  so there is no claim at all — not a claimed state, and not the in-memory
+  claim set this section originally anticipated: nothing is reserved, so
+  nothing has to be released. A crash mid-batch redoes in-flight items on
+  restart, which is safe because every stage is an idempotent upsert (ADR
+  0011). The worker re-reads each document by id immediately before working on
+  it: a batch is read once and worked through over the following minutes, so a
+  claimed copy can name a path the file no longer has (ADR 0014).
 - **Overrun policy — Prefer Old.** The interval timer is reset after a cycle
   finishes rather than on an absolute schedule, so a trigger arriving during a
   cycle is shed, not queued and not pre-empting. A cycle that runs long is
@@ -821,6 +874,10 @@ Missing features).
   and moves; agent references survive. Rename detection requires the old path
   to be gone and a unique hash match (duplicate-content false merges
   excluded); rename+edit in one window churns the id — accepted limitation.
+  *Under active challenge:* [#67](https://github.com/bcrisp4/bsearch/issues/67)
+  proposes keying derived data by content hash, which would retire the
+  surrogate and delete the rename heuristic. Undecided, and it needs an ADR
+  before any code — noted here so this entry is not read as settled.
 - **Local endpoint enforcement: rejected.** Considered refusing non-loopback
   inference endpoints; rejected — remote inference on a private tailnet is
   legitimate. Privacy guarantee documented as conditional on endpoint choice.
