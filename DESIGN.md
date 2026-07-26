@@ -251,7 +251,8 @@ mirrors the filesystem and keys on **path**. `content` is the work queue and
 everything derived, and keys on the **content hash**. There is no `doc_id`.
 
 ```sql
-documents  (path PRIMARY KEY, content_hash → content, size, mtime)
+documents  (path PRIMARY KEY, content_hash → content, unread_reason,
+            size, mtime)   -- exactly one of content_hash / unread_reason set
 content    (content_hash PRIMARY KEY, state, stage_versions,
             attempts, next_retry_at, last_error, created_at, updated_at)
 chunks     (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -271,10 +272,21 @@ What follows:
   preserve, so rename *detection* disappears along with its heuristic.
 - **Duplicate content is embedded once**, structurally: one queue row per
   unique content, so a second identical file has no work to schedule.
-- **`documents.content_hash` may be NULL** — "seen this path, could not read
-  it." That is where TCC denials, dataless iCloud placeholders and unreadable
-  files live. A file with no content cannot have a processing state, so this is
-  a distinct fact rather than a value competing with the pipeline states.
+- **`documents.content_hash` may be NULL** — no bytes were ever obtained, with
+  `unread_reason` saying which: `denied` (TCC/EPERM — broken, grant Full Disk
+  Access), `dataless` (an iCloud placeholder skipped by design, working
+  correctly), or `io_error`. A file with no content cannot have a processing
+  state, so this is a distinct fact rather than a value competing with the
+  pipeline states — and the reason is recorded because reporting a denial and a
+  deliberate skip as one number is exactly the confusion `status` exists to
+  prevent.
+- **A file we read always has a hash**, however unpromising. An empty file
+  hashes to `sha256("")` and reaches `indexed` with zero chunks — so every
+  empty file in the corpus shares one `content` row. A whitespace-only file or
+  a PDF with no extractable text does the same. Undecodable bytes get a real
+  hash and a `failed` content row, permanently, because those bytes cannot
+  change. Zero chunks is a legitimate terminal outcome: the absence of chunks
+  *is* "not searchable", and needs no flag of its own.
 - **`chunks.id AUTOINCREMENT` is load-bearing.** `vec_chunks` keys on it, the
   FTS5 external-content table keys on it (`content='chunks',
   content_rowid='id'`), and a freed id must never be reused or a stale vector

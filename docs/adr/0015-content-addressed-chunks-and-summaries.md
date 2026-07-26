@@ -41,10 +41,13 @@ the filesystem; `content` keys on the content hash and is the work queue.
 
 ```sql
 documents (
-  path         TEXT PRIMARY KEY,
-  content_hash TEXT REFERENCES content(content_hash),  -- NULL = seen but unreadable
-  size         INTEGER NOT NULL,
-  mtime        INTEGER NOT NULL   -- unix nanoseconds
+  path          TEXT PRIMARY KEY,
+  content_hash  TEXT REFERENCES content(content_hash),  -- NULL: no bytes obtained
+  unread_reason TEXT CHECK (unread_reason IN ('denied','dataless','io_error')),
+  size          INTEGER NOT NULL,
+  mtime         INTEGER NOT NULL,  -- unix nanoseconds
+  -- Exactly one of the two is set: either we have the content, or we say why not.
+  CHECK ((content_hash IS NULL) <> (unread_reason IS NULL))
 ) STRICT;
 
 content (
@@ -114,12 +117,30 @@ the two members that were never about content:
   only reader is a `bsearch status` line that always prints 0. Under this
   record a deleted file is a removed `documents` row, and the content it
   referenced is collected by the sweep.
-- **Unreadable paths stop being a state.** A file we cannot read (TCC, EPERM,
-  a dataless iCloud placeholder) has no content to have a state, so
-  `documents.content_hash` is **NULL**: "seen this path, could not read it."
-  That is a distinct representable fact rather than a value competing with the
-  processing states, and it is what DESIGN.md asks for when it calls TCC
-  first-class state that is never a silent skip.
+- **Paths with no content stop being a state.** A file whose bytes we never
+  obtained has no content to have a state, so `documents.content_hash` is
+  **NULL** and `unread_reason` says which of three situations it is. That is a
+  distinct representable fact rather than a value competing with the processing
+  states, and it is what DESIGN.md asks for when it calls TCC first-class state
+  that is never a silent skip.
+
+  `unread_reason` exists because NULL alone conflates opposites: `denied` means
+  something is broken and Full Disk Access must be granted, while `dataless`
+  means an iCloud placeholder was skipped exactly as designed. Reporting those
+  as one number would reproduce the confusion `bsearch status` exists to
+  prevent. `io_error` is the residue — a read that failed for neither reason.
+
+  Note what is **not** in this category. A file we read successfully always has
+  a hash, however unpromising its contents:
+
+  | Situation | `content_hash` | Outcome |
+  |---|---|---|
+  | Empty file | `sha256("")` = `e3b0c442…` | `indexed`, zero chunks. Every empty file in the corpus shares this one `content` row. |
+  | Whitespace-only, or a PDF with no extractable text | real hash | `indexed`, zero chunks — never a search hit, because the chunk join finds nothing. |
+  | Undecodable bytes (`Normalize` rejects) | real hash | `content.state = failed`, and permanently: those bytes cannot change. |
+
+  Zero chunks is a legitimate terminal outcome, not an error, and it needs no
+  special representation — the absence of chunks *is* "not searchable".
 
 **`failed` becomes permanent by construction.** Content is immutable, so a
 failure against those bytes is a fact that cannot expire, and the "a file
@@ -245,11 +266,13 @@ a `docID` changes. This should land before
 [#18](https://github.com/bcrisp4/bsearch/issues/18) populates `summaries` and
 before M4's FTS5 triggers are written, purely to avoid writing them twice.
 
-**Risks.** The `documents.content_hash IS NULL` state is new and every read
-path has to handle it — a missed case shows up as an unreadable file silently
-vanishing from `status` rather than being reported, which is the exact failure
-DESIGN.md's TCC handling exists to prevent. Worth a test that a permission
-error survives a full scan cycle and appears in `status`.
+**Risks.** The `content_hash IS NULL` case is new and every read path has to
+handle it — a missed case shows up as an unreadable file silently vanishing
+from `status` rather than being reported, the exact failure DESIGN.md's TCC
+handling exists to prevent. Worth a test that a permission error survives a
+full scan cycle and appears in `status` under `denied`, distinct from
+`dataless`. The `CHECK` makes the invalid states unrepresentable at the storage
+layer, which is most of the defence.
 
 **Follow-up.** Discovery can then hash only paths whose size/mtime changed
 *and* which it has not seen before, letting the pipeline's hash serve the rest
