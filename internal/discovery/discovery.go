@@ -143,10 +143,15 @@ type Result struct {
 	// every path it delivers lands here — a daemon that is watching
 	// attentively and indexing nothing.
 	Ignored int
-	// Unmounted names the remembered mount points that are not mounted right
-	// now. It is the legible half of Unverified — "the drive is unplugged" is
-	// something a user can act on, where "some directory was unreadable" needs
-	// the PathErrors sample to mean anything.
+	// Unmounted names the volumes that are not mounted where they were *and*
+	// still hold catalog rows. It is the legible half of Unverified — "the
+	// drive is unplugged" is something a user can act on, where "some
+	// directory was unreadable" needs the PathErrors sample to mean anything.
+	//
+	// Restricted to volumes holding rows because status renders this as the
+	// reason for Unverified: an absent volume with nothing beneath it explains
+	// none of the count, and naming it would point at a USB port for a
+	// permissions problem somewhere else entirely.
 	Unmounted []string
 	// Reconciled says the catalog-side deletion pass ran to completion. A pass
 	// that never started (a fatal walk error returns first) or that stopped on

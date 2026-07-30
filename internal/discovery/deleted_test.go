@@ -1058,3 +1058,40 @@ func TestScanDoesNotEjectRememberedVolumesWhereMountsAreUnsupported(t *testing.T
 		t.Errorf("Result = %+v, want the deletion still noticed", res)
 	}
 }
+
+// status renders the unmounted list as the *reason* for Unverified, so it has
+// to be one. A volume that is absent but holds no rows explains none of the
+// count, and naming it alongside a decline produced by something else — a
+// directory the walk could not read — points the reader at a USB port for a
+// Full Disk Access problem.
+func TestScanNamesOnlyUnmountedVolumesThatHoldRows(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root defeats chmod 0")
+	}
+	dir := tmpDir(t)
+	// The real cause: a subtree the walk cannot read, with rows under it.
+	denied := filepath.Join(dir, "denied")
+	write(t, filepath.Join(denied, "a.md"), "a")
+	write(t, filepath.Join(denied, "b.md"), "b")
+	store := newFakeStore()
+	scan(t, store, Options{Include: []string{dir}})
+	if err := os.Chmod(denied, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(denied, 0o755) })
+
+	// A red herring: a volume remembered from an earlier scan, now unplugged,
+	// whose rows have since gone.
+	stick := filepath.Join(dir, "stick")
+	store.knownMounts = []string{"/", stick}
+
+	res := scanWith(t, withMounts(newScanner(store, Options{Include: []string{dir}}), "/"))
+
+	if res.Unverified != 2 {
+		t.Fatalf("Unverified = %d, want the two rows under the unreadable directory", res.Unverified)
+	}
+	if len(res.Unmounted) != 0 {
+		t.Errorf("Unmounted = %v, want empty — that volume holds nothing and explains none of the count",
+			res.Unmounted)
+	}
+}

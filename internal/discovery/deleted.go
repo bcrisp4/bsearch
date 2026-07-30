@@ -135,13 +135,17 @@ func (s *Scanner) reconcileDeleted(ctx context.Context, cov coverage, res *Resul
 	// would decline the whole catalog for ever on any database that carried
 	// mounts over — the opposite of what mounts_other.go documents ("declines
 	// nothing on volume grounds; every other guard still applies").
+	//
+	// absent is collected here but only *reported* after the enumeration, once
+	// it is known which of these volumes actually hold rows — see below.
+	var absent []string
 	if mountsReadable && supported {
 		for _, mount := range known {
 			if !slices.Contains(live, mount) {
 				// Remembered, and not mounted now. Everything beneath it is a
 				// volume that went away, not a corpus that was deleted.
 				cov.unknown[mount] = true
-				res.Unmounted = append(res.Unmounted, mount)
+				absent = append(absent, mount)
 			}
 		}
 	}
@@ -329,6 +333,20 @@ func (s *Scanner) reconcileDeleted(ctx context.Context, cov coverage, res *Resul
 		}
 		if len(batch) < flushEvery {
 			break
+		}
+	}
+
+	// Report only the volumes that actually held something back. An absent
+	// volume with no rows beneath it explains nothing, and naming it next to a
+	// count produced by something else — a permissions-denied directory, say —
+	// sends the reader to a USB port for a Full Disk Access problem. status
+	// renders this list as the reason for Unverified, so it has to be one.
+	//
+	// After the enumeration, because that is when `occupied` is complete.
+	// `known` is sorted, so this stays deterministic.
+	for _, mount := range absent {
+		if occupied[mount] {
+			res.Unmounted = append(res.Unmounted, mount)
 		}
 	}
 
