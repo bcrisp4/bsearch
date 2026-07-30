@@ -578,3 +578,89 @@ func TestAgoHandlesFutureTimestamps(t *testing.T) {
 		t.Errorf("ago(now) = %q, want %q", got, "just now")
 	}
 }
+
+// The two reasons a row leaves the catalog are reported apart. "Gone from
+// disk" and "no longer in the configured paths" are both removals, but only
+// one of them is something the user did on purpose, and a count that dropped
+// is unreadable without knowing which.
+func TestStatusSplitsDeletedFromPruned(t *testing.T) {
+	scan := time.Now().Add(-time.Minute)
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Index:    server.IndexStatus{Ready: true},
+		Indexing: &server.IndexingStatus{Running: true, LastScan: &scan},
+	}
+
+	for name, tc := range map[string]struct {
+		deleted, pruned int
+		want, notWant   string
+	}{
+		"both":    {3, 4, "3 deleted from disk · 4 no longer in the configured paths", ""},
+		"deleted": {3, 0, "3 deleted from disk", "configured paths"},
+		"pruned":  {0, 4, "4 no longer in the configured paths", "deleted from disk"},
+		"neither": {0, 0, "", "removed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp.Indexing.ScanDeleted, resp.Indexing.ScanPruned = tc.deleted, tc.pruned
+			var out strings.Builder
+			writeStatusHuman(&out, resp, "/home", time.Now())
+			got := out.String()
+			if tc.want != "" && !strings.Contains(got, tc.want) {
+				t.Errorf("report is missing %q:\n%s", tc.want, got)
+			}
+			if tc.notWant != "" && strings.Contains(got, tc.notWant) {
+				t.Errorf("report mentions %q with nothing to report:\n%s", tc.notWant, got)
+			}
+		})
+	}
+}
+
+// The line that carries the whole point of declining. Every other number in
+// the report says the scan succeeded and nothing was deleted; without this,
+// a corpus whose deletions are silently not being noticed looks identical to
+// a healthy one. An unmounted volume is named, because that is a state the
+// user can undo.
+func TestStatusReportsRowsTheScanDeclinedToReconcile(t *testing.T) {
+	scan := time.Now().Add(-time.Minute)
+	resp := server.StatusResponse{
+		Version: "v0.2.0", PID: 1,
+		Index: server.IndexStatus{Ready: true},
+		Indexing: &server.IndexingStatus{
+			Running: true, LastScan: &scan,
+			ScanUnverified: 412000,
+			ScanUnmounted:  []string{"/Volumes/Archive"},
+		},
+	}
+
+	var out strings.Builder
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	got := out.String()
+	for _, want := range []string{
+		"not reconciled",
+		"412,000 files — deletions are not being noticed there",
+		"not mounted: /Volumes/Archive",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("report is missing %q:\n%s", want, got)
+		}
+	}
+
+	// No volume to blame: point at the section that has the detail.
+	resp.Indexing.ScanUnmounted = nil
+	resp.Indexing.ScanErrors = 2
+	resp.Indexing.PathErrors = []server.PathError{{Path: "/home/Documents", Error: "operation not permitted"}}
+	out.Reset()
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); !strings.Contains(got, "see unreadable paths below") {
+		t.Errorf("report does not point at the unreadable-paths section:\n%s", got)
+	}
+
+	// Nothing declined: no line at all. A "not reconciled 0" on every healthy
+	// daemon trains the eye to skip the one that matters.
+	resp.Indexing.ScanUnverified = 0
+	out.Reset()
+	writeStatusHuman(&out, resp, "/home", time.Now())
+	if got := out.String(); strings.Contains(got, "not reconciled") {
+		t.Errorf("report carries the declined line with nothing declined:\n%s", got)
+	}
+}

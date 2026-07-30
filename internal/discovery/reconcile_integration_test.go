@@ -18,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/bcrisp4/bsearch/internal/adapters/sqlite"
 	"github.com/bcrisp4/bsearch/internal/domain"
@@ -92,7 +91,7 @@ func TestCatalogCountsReconcileThroughScanEditAndSweep(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	store := sqlite.NewStore(db)
 
-	s := New(store, Options{Include: []string{root}})
+	s := fixedMountScanner(store, Options{Include: []string{root}})
 	s.dataless = func(info fs.FileInfo) bool { return info.Name() == "cloud.md" }
 
 	// An io_error row rides along from the start: no portable fixture makes
@@ -100,9 +99,20 @@ func TestCatalogCountsReconcileThroughScanEditAndSweep(t *testing.T) {
 	// same port discovery writes through. Without it, a future accounting
 	// that folds io_error into denied reports every flaky-disk file as a
 	// Full Disk Access problem and no test notices.
-	ioErrPath := filepath.Join(root, "flaky.bin.md")
+	//
+	// The file has to exist on disk, and the row has to carry its real size
+	// and mtime. An io_error means the bytes could not be read, not that the
+	// path is gone: seeded against a phantom path the row is simply a deleted
+	// file, and Scan's reconcile purges it — correctly, and the accounting
+	// this test is about would never be exercised.
+	ioErrPath := writeFile("flaky.bin.md", "unreadable")
+	ioErrInfo, err := os.Stat(ioErrPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := store.UpsertDocuments(ctx, []domain.Document{{
-		Path: ioErrPath, UnreadReason: domain.UnreadIOError, Size: 9, MTime: time.Unix(1700000000, 0),
+		Path: ioErrPath, UnreadReason: domain.UnreadIOError,
+		Size: ioErrInfo.Size(), MTime: ioErrInfo.ModTime(),
 	}}); err != nil {
 		t.Fatalf("seed io_error row: %v", err)
 	}
@@ -170,4 +180,157 @@ func TestCatalogCountsReconcileThroughScanEditAndSweep(t *testing.T) {
 	if counts.Unread[domain.UnreadDenied] != 0 {
 		t.Errorf("unread = %v, want the denial cleared", counts.Unread)
 	}
+}
+
+// The gap ADR 0013 left open and #57 closes: a subtree deleted while the
+// daemon was not running. No event ever named it, so the walk is the only
+// thing that can notice — and the three populations must still reconcile
+// afterwards, before and after the sweep collects what it orphaned.
+func TestScanPurgesASubtreeDeletedWhileTheDaemonWasDown(t *testing.T) {
+	ctx := context.Background()
+	root := tmpDir(t)
+	sub := filepath.Join(root, "project")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "keep.md"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.md", "b.md", "c.md"} {
+		if err := os.WriteFile(filepath.Join(sub, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "bsearch.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	store := sqlite.NewStore(db)
+	s := fixedMountScanner(store, Options{Include: []string{root}})
+
+	if _, err := s.Scan(ctx); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	assertCounts(t, store, 4, 0, 4)
+
+	// The daemon is not running for this part; nothing observes it.
+	if err := os.RemoveAll(sub); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.Scan(ctx)
+	if err != nil {
+		t.Fatalf("Scan after deletion: %v", err)
+	}
+	if res.Deleted != 3 || res.Unverified != 0 {
+		t.Fatalf("Result = %+v, want the three rows purged", res)
+	}
+	// Contents linger until the sweep; the identity holds either side of it,
+	// which is what CatalogCounts scoping its state counts to *referenced*
+	// content buys.
+	assertCounts(t, store, 1, 0, 1)
+	if removed, err := store.SweepOrphans(ctx, domain.SweepScopeAll); err != nil || removed != 3 {
+		t.Fatalf("SweepOrphans = %d, %v; want the three orphaned contents collected", removed, err)
+	}
+	assertCounts(t, store, 1, 0, 1)
+	if n := countRows(t, db, "SELECT count(*) FROM content"); n != 1 {
+		t.Errorf("content rows = %d, want only keep.md's", n)
+	}
+}
+
+// A permissions blip must cost freshness, never the corpus — and must not
+// leave the daemon permanently blind once it clears. Three scans: denied,
+// re-granted, then actually deleted.
+func TestScanTCCBlipLeavesTheCorpusIntactAndRecovers(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root defeats chmod 0")
+	}
+	ctx := context.Background()
+	root := tmpDir(t)
+	locked := filepath.Join(root, "locked")
+	if err := os.MkdirAll(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.md", "b.md"} {
+		if err := os.WriteFile(filepath.Join(locked, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "bsearch.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	store := sqlite.NewStore(db)
+	s := fixedMountScanner(store, Options{Include: []string{root}})
+
+	if _, err := s.Scan(ctx); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	assertCounts(t, store, 2, 0, 2)
+
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	res, err := s.Scan(ctx)
+	if err != nil {
+		t.Fatalf("Scan while denied: %v", err)
+	}
+	if res.Deleted != 0 || res.Unverified != 2 {
+		t.Fatalf("Result = %+v, want nothing deleted and both rows declined", res)
+	}
+	assertCounts(t, store, 2, 0, 2)
+
+	// The grant comes back and the files were there all along: still nothing
+	// deleted, and the decline has cleared.
+	if err := os.Chmod(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, err = s.Scan(ctx)
+	if err != nil {
+		t.Fatalf("Scan after re-grant: %v", err)
+	}
+	if res.Deleted != 0 || res.Unverified != 0 {
+		t.Fatalf("Result = %+v, want a clean scan with nothing declined", res)
+	}
+	assertCounts(t, store, 2, 0, 2)
+
+	// And the pass is not permanently gun-shy: a real deletion now purges.
+	if err := os.Remove(filepath.Join(locked, "a.md")); err != nil {
+		t.Fatal(err)
+	}
+	res, err = s.Scan(ctx)
+	if err != nil {
+		t.Fatalf("Scan after deletion: %v", err)
+	}
+	if res.Deleted != 1 {
+		t.Fatalf("Result = %+v, want the deleted file purged", res)
+	}
+	assertCounts(t, store, 1, 0, 1)
+}
+
+// countRows is a scalar count against the reader, for assertions the
+// CatalogCounts identity deliberately cannot make (it is blind to orphans).
+func countRows(t *testing.T, db *sqlite.DB, query string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := db.Reader().QueryRow(query, args...).Scan(&n); err != nil {
+		t.Fatalf("%s: %v", query, err)
+	}
+	return n
+}
+
+// fixedMountScanner is newScanner for the sqlite-backed tests: a real store,
+// but never the machine's real mount table. The deletion pass declines
+// everything beneath a remembered-but-absent mount, so reading the live table
+// would make these tests depend on what happens to be plugged in — and they
+// assert exact Unverified counts.
+func fixedMountScanner(store *sqlite.Store, opts Options) *Scanner {
+	s := New(store, store, opts)
+	s.mounts = func() ([]string, bool, error) { return []string{"/"}, true, nil }
+	return s
 }

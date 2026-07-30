@@ -206,7 +206,7 @@ func newScheduler(cfg *config.Config, embedder domain.Embedder, dbPath string, l
 	sched, err := scheduler.New(scheduler.Options{
 		Queue:   store,
 		Indexer: indexer,
-		Scanner: discovery.New(store, discovery.Options{
+		Scanner: discovery.New(store, store, discovery.Options{
 			Include:  cfg.Paths.Include,
 			Excluded: cfg.ExcludeRules().Match,
 		}),
@@ -253,6 +253,12 @@ func indexingStatus(sched *scheduler.Scheduler, offReason string) server.Indexin
 		LastProgress:       optionalTime(snap.LastProgress),
 		ScanErrors:         snap.ScanErrs,
 		ScanReachedNothing: snap.ScanReachedNothing,
+		ScanDeleted:        snap.ScanDeleted,
+		ScanPruned:         snap.ScanPruned,
+		ScanUnverified:     snap.ScanUnverified,
+		ScanIgnored:        snap.ScanIgnored,
+		ScanUnmounted:      nonNil(snap.ScanUnmounted),
+		ScanDeclineReasons: nonNil(snap.ScanDeclineReasons),
 		Watch: &server.WatchStatus{
 			Running:    snap.Watching,
 			Reason:     snap.WatchReason,
@@ -298,4 +304,14 @@ func parseLogLevel(name string) (slog.Level, error) {
 		return 0, fmt.Errorf("--log-level %q: want debug, info, warn, or error", name)
 	}
 	return level, nil
+}
+
+// nonNil renders an empty slice as [] rather than null. The status document is
+// a contract (DESIGN.md: Interfaces) and its examples show [], so a consumer
+// indexing or measuring the field must not meet null on every healthy daemon.
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }

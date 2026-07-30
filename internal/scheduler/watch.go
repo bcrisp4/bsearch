@@ -224,8 +224,9 @@ func (s *Scheduler) enqueue(paths map[string]struct{}) {
 // discards its paths: that batch is one the kernel has already declared
 // incomplete, whereas this set is exact. What a refused set costs is its
 // deletions — a walk buys back the creates and the edits, and nothing buys
-// back the rest, because a walk sees what exists (#57). So the loss is logged,
-// it counts, and it asks for the walk that recovers everything recoverable.
+// back the rest at event speed — though the walk's catalog-side reconcile does
+// catch them on its own schedule (ADR 0016). So the loss is logged, it counts,
+// and it asks for the walk that recovers everything recoverable.
 //
 // held is the real size of the set that was kept, not the cap: an operator
 // diagnosing an overshoot needs the number the process actually holds.
@@ -324,7 +325,7 @@ func (s *Scheduler) hasPending() bool {
 // right answer: the file changed underneath it.
 //
 // A delete is not idempotent the same way. "Only discovery creates catalog
-// rows" (domain.ErrDocumentGone) is still worth keeping as a guard, but it is
+// rows" is still worth keeping as a guard, but it is
 // no longer the only thing standing between a purge and a resurrected
 // document: nothing can write between this call and the end of the drain step
 // that made it.
@@ -376,9 +377,9 @@ func (s *Scheduler) reconcilePending(ctx context.Context) {
 		s.log.Error("reconciling changed paths failed", "error", err)
 		s.mark(func(snap *Snapshot) { snap.LastError = err.Error() })
 		// The window is gone either way, so fall back to the mechanism that
-		// can rebuild most of it. A walk recovers the creates and edits; the
-		// deletions in this window are lost until #57, which is the same
-		// gap a rescan leaves and is worth no worse an answer.
+		// can rebuild most of it. A walk recovers the creates and edits at once
+		// and the deletions through its catalog-side reconcile (ADR 0016) — the
+		// same answer a rescan gives, at walk speed rather than event speed.
 		s.requestScan()
 		s.Notify()
 		return

@@ -26,6 +26,76 @@ func Within(path, prefix string) bool {
 	return strings.HasPrefix(path, prefix+string(os.PathSeparator))
 }
 
+// CanonicalCase returns path with every component spelled the way the
+// filesystem stores it. On a case-insensitive volume (default APFS)
+// `~/Notes` and `~/notes` open the same directory but are different strings,
+// and bsearch compares path strings in several places that must agree:
+// include roots, the catalog rows a walk writes from those roots, the mount
+// table, and the paths FSEvents delivers.
+//
+// Getting one of them in the wrong case is silent and total. A root typed
+// `~/Notes` against an on-disk `~/notes` walks and indexes perfectly well —
+// every row stored under the typed spelling — while the mount table reports
+// the real one, so no volume is ever recognised as in scope and the
+// unplugged-drive protection is disabled outright (ADR 0016). It is also why
+// a watch root in the wrong case subscribes, delivers, and matches nothing
+// (issue #64).
+//
+// Resolving it here, once, at the point a root is resolved, is the fix that
+// keeps every comparison byte-wise. Making Within case-insensitive instead
+// would be wrong on a case-sensitive volume, where two spellings really are
+// two directories.
+//
+// Best effort: a component that cannot be listed (permissions, or it does not
+// exist) is kept as written along with everything below it, which is exactly
+// today's behaviour. An exact match always wins over a case-folded one, so a
+// case-sensitive volume holding both `Notes` and `notes` is unaffected.
+func CanonicalCase(path string) string {
+	sep := string(os.PathSeparator)
+	if !strings.HasPrefix(path, sep) {
+		return path
+	}
+	parts := strings.Split(strings.TrimPrefix(path, sep), sep)
+	out := ""
+	for i, want := range parts {
+		if want == "" {
+			continue
+		}
+		parent := out
+		if parent == "" {
+			parent = sep
+		}
+		real, ok := onDiskName(parent, want)
+		if !ok {
+			return out + sep + strings.Join(parts[i:], sep)
+		}
+		out += sep + real
+	}
+	if out == "" {
+		return sep
+	}
+	return out
+}
+
+// onDiskName finds how dir spells want, ignoring case. An exact match wins.
+func onDiskName(dir, want string) (string, bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	folded := ""
+	for _, e := range entries {
+		name := e.Name()
+		if name == want {
+			return name, true
+		}
+		if folded == "" && strings.EqualFold(name, want) {
+			folded = name
+		}
+	}
+	return folded, folded != ""
+}
+
 // DataVolumeRoot is the firmlink mount of the writable volume on macOS
 // 10.15+, where /Users is really /System/Volumes/Data/Users.
 const DataVolumeRoot = "/System/Volumes/Data"

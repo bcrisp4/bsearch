@@ -237,7 +237,35 @@ type Snapshot struct {
 	// scan outcome that leaves the daemon looking healthy while indexing
 	// nothing (DESIGN.md: TCC is first-class state).
 	ScanReachedNothing bool
-	Deferring          bool
+	// ScanDeleted and ScanPruned count catalog rows the walk's reconcile
+	// removed since startup — files that vanished from disk, and files that
+	// fell outside the configured paths. Cumulative, like WatchDeleted, and
+	// kept apart because they answer different questions: one is the corpus
+	// changing, the other is the configuration changing.
+	ScanDeleted int
+	ScanPruned  int
+	// ScanUnverified is how many catalog rows the last reconcile declined to
+	// judge because it could not vouch for their subtree. A gauge, not a
+	// total: it describes a subtree that is blocked right now, and it clears
+	// on its own when the directory becomes readable or the volume comes
+	// back. Non-zero means deletions are not being noticed somewhere.
+	ScanUnverified int
+	// ScanIgnored is how many catalog rows sat outside every root in a pass
+	// where scope pruning was suspended, because a configured root would not
+	// resolve. The third of the reconcile's three declines, and a gauge for
+	// the same reason as ScanUnverified — it clears when the root resolves.
+	ScanIgnored int
+	// ScanUnmounted names the remembered volumes that are not mounted, the
+	// most legible reason for ScanUnverified and the one a user can act on.
+	ScanUnmounted []string
+	// ScanDeclineReasons are the reconcile's own explanations, in the user's
+	// terms, for the states nothing else names: no volume evidence recorded
+	// yet, nothing in scope, a mount table or a remembered set that could not
+	// be read. Without them the loudest line in the product fires with no
+	// reason attached in exactly the states every installation meets first.
+	ScanDeclineReasons []string
+
+	Deferring bool
 
 	// Watching means the filesystem watcher is subscribed and delivering.
 	// When it is false, WatchReason says why in the user's terms and the
@@ -400,15 +428,17 @@ func (s *Scheduler) Notify() {
 // Snapshot reports what the scheduler is doing. Safe for concurrent use —
 // the HTTP status handler calls it while a cycle is running.
 //
-// PathErrors is copied rather than shared. Returning the struct by value
-// copies the slice header, not the backing array, so the caller would
+// Every slice field is copied rather than shared. Returning the struct by
+// value copies the slice header, not the backing array, so the caller would
 // otherwise be reading the same memory the next scan overwrites — a data race
-// on the one field a user reads when something is already wrong.
+// on exactly the fields a user reads when something is already wrong.
 func (s *Scheduler) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	snap := s.snap
 	snap.PathErrors = slices.Clone(s.snap.PathErrors)
+	snap.ScanUnmounted = slices.Clone(s.snap.ScanUnmounted)
+	snap.ScanDeclineReasons = slices.Clone(s.snap.ScanDeclineReasons)
 	return snap
 }
 
@@ -655,6 +685,29 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 	s.mark(func(snap *Snapshot) {
 		snap.ScanErrs = len(res.PathErrors)
 		snap.PathErrors = sample
+		// Removals are committed in batches as the reconcile goes, so they
+		// belong with the other before-the-error bookkeeping: a fatal error
+		// part-way through must not leave status reporting that nothing was
+		// removed while rows are genuinely gone from the catalog.
+		snap.ScanDeleted += res.Deleted
+		snap.ScanPruned += res.Pruned
+		// The gauges belong here too, not in the success-only mark below:
+		// they describe an obstruction that exists right now, so a scan that
+		// failed part-way must not leave the previous pass's numbers standing
+		// — "412,000 files, volume not mounted" for a volume plugged back in
+		// an hour ago is worse than no line at all.
+		//
+		// But only when the reconcile actually ran. A fatal walk error returns
+		// before it, leaving these counts at zero, and zero is
+		// indistinguishable from "nothing was declined" — so writing it would
+		// silently clear a standing alarm on an unrelated failure, which is
+		// the same silent-skip shape in the opposite direction.
+		if res.Reconciled {
+			snap.ScanUnverified = res.Unverified
+			snap.ScanIgnored = res.Ignored
+			snap.ScanUnmounted = res.Unmounted
+			snap.ScanDeclineReasons = res.DeclineReasons
+		}
 	})
 	s.noteOrphanProducers(res)
 
@@ -677,8 +730,13 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 	// Reached excludes Unread on purpose: a denied file was not reached,
 	// and counting it would disarm this alarm for a listable root whose
 	// every file fails open with EPERM.
+	// WalkErrors, not len(PathErrors): the deletion reconcile appends to the
+	// same slice, and its stat failures say nothing about whether the walk
+	// could see the corpus. Keyed on the full slice, a symlink loop or an
+	// unreadable mount table would produce a Full Disk Access diagnosis for a
+	// machine with no permissions problem at all.
 	reached := res.Reached()
-	if len(res.PathErrors) > 0 && reached == 0 {
+	if res.WalkErrors > 0 && reached == 0 {
 		// Every root failed and nothing was reachable. That is a permissions
 		// problem — almost always a missing or revoked Full Disk Access grant
 		// — not a successful scan of an empty machine, and it is the one scan
@@ -688,7 +746,16 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 		// `bsearch status` will find it (CLAUDE.md: EPERM on scan is
 		// first-class state, never a silent skip).
 		s.log.Error("scan reached no files at all — check Full Disk Access for bsearch in System Settings",
-			"path_errors", len(res.PathErrors))
+			"path_errors", res.WalkErrors)
+	}
+
+	if res.Unverified > 0 {
+		// Said at Warn and separately from the counts below, because it is
+		// the one outcome that reads as success from every other number: the
+		// scan worked, nothing was deleted, and deletions are silently not
+		// being noticed under some subtree.
+		s.log.Warn("some catalog rows were not reconciled — deletions are not being noticed there",
+			"rows", res.Unverified, "unmounted", res.Unmounted, "reasons", res.DeclineReasons)
 	}
 
 	s.log.Info("scan complete",
@@ -697,23 +764,45 @@ func (s *Scheduler) scan(ctx context.Context, forced bool) {
 		"changed", res.Changed,
 		"dataless", res.Dataless,
 		"unread", res.Unread,
+		"deleted", res.Deleted,
+		"pruned", res.Pruned,
+		"unverified", res.Unverified,
+		"ignored", res.Ignored,
 		"path_errors", len(res.PathErrors),
 		"duration_ms", s.now().Sub(start).Milliseconds())
 
 	s.mark(func(snap *Snapshot) {
 		snap.LastScan = s.now()
-		snap.ScanReachedNothing = len(res.PathErrors) > 0 && reached == 0
+		snap.ScanReachedNothing = res.WalkErrors > 0 && reached == 0
 	})
 }
 
-// noteOrphanProducers arms the orphan sweep when a discovery result did
-// either of the two things that orphan content: deleted documents rows, or
-// re-pointed a path away from its old hash (an edit). New files and
-// unchanged files produce no orphans, so a bulk initial index never pays
-// for sweeping (ADR 0015; the issue's "after deletions, not every cycle",
-// widened to edits because they orphan identically).
+// noteOrphanProducers arms the orphan sweep when a discovery result did any
+// of the things that orphan content: removed documents rows — whether the
+// file vanished (Deleted) or fell out of the configured paths (Pruned) — or
+// re-pointed a path away from its old hash (an edit). New files and unchanged
+// files produce no orphans, so a bulk initial index never pays for sweeping
+// (ADR 0015; the issue's "after deletions, not every cycle", widened to edits
+// because they orphan identically).
+// Always queue scope, so terminal orphans keep their derived data for the
+// free-restore window: an accidental delete or an editor undo must not cost a
+// re-embed.
+//
+// A scope prune has no such window — it follows a deliberate config edit and
+// there is nothing to restore — and escalating on it was tried and reverted.
+// The scope is a property of the *pass*, not of the content, so one pruned row
+// in a cycle that also saw 400 deletions collected all 400 as well, destroying
+// the very window this branch exists to hold open. Scoping the sweep per
+// content is the real fix.
+//
+// The cost of staying at queue scope is that pruned-but-indexed content keeps
+// its vectors until the next daemon start, where they still consume KNN result
+// slots — search reads k neighbours and then drops the ones no document
+// references, so a query whose nearest hits were all pruned comes back short.
+// That is pre-existing for deletions and widened by pruning; it wants
+// over-fetching in the vector search, and has its own issue.
 func (s *Scheduler) noteOrphanProducers(res discovery.Result) {
-	if res.Deleted > 0 || res.Changed > 0 {
+	if res.Deleted > 0 || res.Pruned > 0 || res.Changed > 0 {
 		s.requestOrphanSweep(domain.SweepScopeQueue)
 	}
 }

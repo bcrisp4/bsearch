@@ -179,7 +179,7 @@ storage and vector-search rows first.
 | Vector search | sqlite-vec `vec0`. Float32 brute-force KNN up to a few hundred thousand chunks; **binary quantization + rescore is the planned configuration at full corpus scale (~1M chunks)**, not an emergency lever. No ANN | Exact (or near-exact with rescore), zero index maintenance, delete-friendly. Scan cost is ~linear in vectors × dims: published 100k×768 runs well under 100 ms warm, but extrapolating the same numbers puts 1M×768 ≈ ~700 ms — over the SLO; the author's own ceiling for float vectors is "the hundreds of thousands". Quantized scan (32× smaller, XOR+popcount distance) + full-precision rescore of top-k×8 retains ~95% recall at ~1.03× total storage. ANN (DiskANN/IVF) immature in sqlite-vec and unneeded at this scale | Further levers: raise mmap/cache (make scan RAM-bound), partition keys. **Acknowledged bet:** sqlite-vec is pre-1.0 (no stable on-disk format guarantee) — version pinned; a format break is covered by drop-and-reindex |
 | Keyword search | FTS5 + BM25 over chunks, fused with chunk-level KNN via RRF (k=60 default; semantic/keyword weights configurable). Results collapse to best-chunk-per-**content** ([ADR 0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)) | Hybrid beats pure vector on exact terms (invoice numbers, names); same engine, same database file, one consistency/backup story. Pattern implemented in lore (chunk breadcrumbs + RRF) though never measured there — M2 measures it here | Same DB, additive |
 | Doc conversion | bscribe over HTTP behind `ConverterPort`; plain text/markdown handled in-process. Adapter sends bscribe's required bearer token (from config); v1 uses the sync `POST /v1/convert` endpoint and reads the JSON envelope's `content` field. bscribe's native port is 8000 — `localhost:18000` is this machine's host mapping | No parser deps in the binary; LibreOffice/OCR churn isolated in a hardened container (non-root baked into the image; read-only rootfs, capability drop, and memory cap are operator run-flags — required flags recorded in deployment docs); bscribe already runs here and anticipated bsearch as a consumer | Adapter swap (lit CLI subprocess, docling) without touching domain; async job API available if large-doc sync timeouts warrant it |
-| Change detection | FSEvents watch (macOS API behind `WatcherPort`, via `fsnotify/fsevents`) for near-real-time creates, edits, **and deletes**, plus periodic full scan for missed events; change = cheap size/mtime check, content hash to confirm. Events are debounced ~10 s and reconciled path-by-path against the same change detection the walk uses; an event stream that overflows or reports a volume appearing/disappearing escalates to a full walk rather than trusting a partial path list. The walk's cadence follows the watcher — 5 min scan-only, 15 min while watching ([ADR 0013](docs/adr/0013-fsevents-watcher-and-event-driven-reconcile.md)) | Freshness SLO without constant scanning; battery-friendly | Linux port = new watcher adapter (inotify) |
+| Change detection | FSEvents watch (macOS API behind `WatcherPort`, via `fsnotify/fsevents`) for near-real-time creates, edits, **and deletes**, plus periodic full scan for missed events; change = cheap size/mtime check, content hash to confirm. Events are debounced ~10 s and reconciled path-by-path against the same change detection the walk uses; an event stream that overflows or reports a volume appearing/disappearing escalates to a full walk rather than trusting a partial path list. The walk's cadence follows the watcher — 5 min scan-only, 15 min while watching ([ADR 0013](docs/adr/0013-fsevents-watcher-and-event-driven-reconcile.md)). **The walk also reconciles absences**: a second phase enumerates the catalog and stats each row, deleting the ones the filesystem has lost — the backstop for deletions no event reported ([ADR 0016](docs/adr/0016-scan-side-deletion-reconciliation.md)). A partial walk never reads as mass deletion: only `ENOENT` counts, a subtree the walk could not read is declined untouched, and a volume that is not mounted is recognised from the mount table rather than inferred from its files being gone | Freshness SLO without constant scanning; battery-friendly; deletion follows the source in both directions | Linux port = new watcher adapter (inotify) and a `/proc/self/mountinfo` reader |
 | Chunking | Markdown-aware, hand-rolled in Go (see below) | Everything is markdown post-conversion; tractable, dependency-free algorithm | Isolated pure function, versioned |
 | Summaries | Pyramid summaries per distinct content (ADR 0015 — so duplicates and renamed files share one set): 4 / 16 / 64 words + full text, generated at index time by the summary LLM. Word counts are targets, not contracts (validated and trimmed post-hoc). Documents exceeding the summarizer's context are handled map-reduce style: section/chunk summaries reduced to document summaries; the summarizer's minimum context requirement is part of the versioned stage | Agent context economy — survey cheap, zoom on demand (StrongDM pyramid-summaries technique, which pairs the ladder with MapReduce for over-context inputs) | Additive; regenerable without touching vectors |
 | Embeddings / LLM | OpenAI-compatible HTTP (`EmbedderPort`, `SummarizerPort`); model names + endpoints in config. **Per-model query/passage prefix templates** (E5 `query:`/`passage:`, Nomic `search_query:`/`search_document:`, BGE/Qwen3 query instructions) stored in versioned pipeline metadata and applied identically at index and query time — asymmetric embedders lose substantial recall without matched prefixes (lore solves this per model family; lesson carried alongside the breadcrumb one) | BYO inference; LM Studio today | Config change; embedding model swap requires full re-embed (see pipeline metadata for the migration path) |
@@ -672,6 +672,8 @@ even when there is no database at all.
               "last_scan": "2026-07-25T11:58:00Z", "last_cycle": "2026-07-25T11:58:30Z",
               "last_progress": "2026-07-25T11:56:00Z",
               "scan_errors": 0, "scan_reached_nothing": false,
+              "scan_deleted": 12, "scan_pruned": 0,
+              "scan_unverified": 0, "scan_ignored": 0, "scan_unmounted": [],
               "watch": {"running": true, "roots": 1,
                         "last_event": "2026-07-25T11:56:00Z",
                         "reconciled": 42, "deleted": 3, "rescans": 0},
@@ -701,6 +703,18 @@ errors adds `path_errors` (a capped sample of `{path, error}`);
 `scan_reached_nothing` is the missing-Full-Disk-Access signature. When the
 indexing loop could not be started at all, `indexing` is
 `{"running": false, "reason": …}`.
+
+`scan_deleted` and `scan_pruned` are what the walk's reconcile has removed
+since the daemon started, split by why: files gone from disk, and files no
+longer in the configured paths. `scan_unverified` and `scan_ignored` are the
+ones to read when everything else looks healthy — catalog rows the last
+reconcile declined to judge, because it could not vouch for their subtree and
+because a root would not resolve respectively, so deletions are not being
+noticed there ([ADR
+0016](docs/adr/0016-scan-side-deletion-reconciliation.md)). Unlike the two
+totals those are gauges: they describe an obstruction that exists right now
+and must clear when it does. `scan_unmounted` names the volumes responsible,
+which is the half a user can act on.
 
 `watch` is the near-real-time half of freshness, and it is reported separately
 for the same reason `indexing` is: it fails on its own. `running: false`
@@ -867,15 +881,32 @@ listener ships. Recorded so it isn't bolted on casually.
   searchable or retrievable.
   Storage-layer honesty: SQLite leaves deleted bytes in freelist/WAL pages
   until checkpoint/vacuum; accepted residue, covered by FileVault, not worth
-  `secure_delete` write-amplification. *Implementation status: the event path
-  ships (ADR 0013), and it purges only on positive evidence — an `ENOENT` on
-  a path an event named, whose parent is still there. The two cases that
-  guard rules out — a file deleted while the daemon was not running, and a
-  subtree that vanished without its own directory event — stay indexed until
-  the scan-side reconcile lands
-  ([#57](https://github.com/bcrisp4/bsearch/issues/57)). Being slow there is
-  deliberate: a naive "the walk didn't visit it, so it's gone" turns an
-  unmounted volume or a revoked TCC grant into a corpus wipe.*
+  `secure_delete` write-amplification.
+- **Deletions no event reported are caught by the walk.** Its second phase
+  enumerates the catalog and stats each row ([ADR
+  0016](docs/adr/0016-scan-side-deletion-reconciliation.md)), which closes the
+  cases the event path declines: a file deleted while the daemon was not
+  running, a deletion lost to an overflowing event stream, and a subtree that
+  vanished without its own directory event. A row is removed when its file is
+  gone — `ENOENT` — or when what is now at that path is something a walk would
+  never index, since nothing could then refresh it; never on `EACCES`, `EIO`,
+  `ESTALE` or `ELOOP`, which all mean "cannot tell". Rows are removed
+  individually rather than by prefix, because the catalog already enumerates
+  what a vanished subtree contained.
+  **A partial walk never reads as mass deletion.** Three things decline, and
+  all three are counted and named in `bsearch status` rather than passing
+  silently: a subtree the walk could not read (a revoked Full Disk Access
+  grant), a volume that is not mounted where it used to be (recognised from
+  the mount table, not inferred from its files being absent — so a drive
+  unplugged for a week costs nothing and re-indexes nothing when it returns),
+  and, for scope pruning only, a pass in which a configured root failed to
+  resolve. The cost of declining is a stale row; the cost of guessing is a
+  corpus that takes days of battery-gated local inference to rebuild.
+- **A file that leaves the configured paths is removed too**, and counted
+  apart from a deleted one: removing a root from `paths.include` or adding an
+  `exclude` rule takes effect at the next walk instead of stranding rows that
+  nothing could ever clear. One is the corpus changing, the other is the
+  configuration changing, and `status` says which.
 - **No history.** Only the current version of a file is indexed; edits replace
   prior chunks/embeddings.
 - **Backups:** the daemon sets a Time Machine exclusion on its data directory

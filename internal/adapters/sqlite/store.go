@@ -3,8 +3,10 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ func NewStore(db *DB) *Store { return &Store{db: db} }
 var (
 	_ domain.DocumentStore = (*Store)(nil)
 	_ domain.ContentStore  = (*Store)(nil)
+	_ domain.ScanState     = (*Store)(nil)
 )
 
 // withTx runs fn in one writer transaction (IMMEDIATE via the pool's
@@ -168,6 +171,149 @@ func (s *Store) DeleteByPathPrefix(ctx context.Context, dir string) (int, error)
 		return 0, err
 	}
 	return removed, nil
+}
+
+// pathBatch bounds one DeleteByPaths statement. Well under SQLite's variable
+// limit, and the same size as every other batched write here, so a large
+// purge is many short transactions rather than one long one.
+const pathBatch = 256
+
+// DeleteByPaths removes exactly the named documents, reporting how many rows
+// went. Nothing beneath them — that is DeleteByPathPrefix's job, and the two
+// are separate because their callers hold different evidence.
+//
+// A prefix delete answers an event, which names one path and cannot say
+// whether it was a file or a directory or what was under it. This answers a
+// catalog pass, which has already enumerated the children: a vanished subtree
+// reaches here as N paths that each independently failed to stat, so the
+// blast radius of a wrong answer stays at one row instead of scaling with
+// whatever happened to sort beneath it (ADR 0016).
+//
+// Empty input is a no-op. An empty path is refused and nothing is deleted —
+// it is not a legal document path, and the caller that produced one is
+// confused about something worth failing loudly over.
+func (s *Store) DeleteByPaths(ctx context.Context, paths []string) (int, error) {
+	if len(paths) == 0 {
+		return 0, nil
+	}
+	for _, path := range paths {
+		if path == "" {
+			return 0, errors.New("delete by paths: refusing a batch containing an empty path")
+		}
+	}
+
+	// One transaction per chunk, not one around all of them: the point of
+	// pathBatch is that each write stays short under the busy-timeout
+	// discipline, and wrapping every chunk in a single transaction would
+	// reinstate exactly the long write it exists to avoid. A caller passing
+	// thousands of paths therefore gets several short transactions and a
+	// partial delete if one fails — which is safe here, since every path
+	// removed was independently judged gone and the next pass re-derives the
+	// rest.
+	var removed int
+	for chunk := range slices.Chunk(paths, pathBatch) {
+		// Counted after the commit, never inside the closure: a chunk whose
+		// DELETE ran but whose commit failed removed nothing, and callers
+		// treat this number as "rows that actually went".
+		var n int
+		err := s.withTx(ctx, func(tx *sql.Tx) error {
+			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
+			args := make([]any, len(chunk))
+			for i, p := range chunk {
+				args[i] = p
+			}
+			//nolint:gosec // G202: the spliced text is ?-placeholders, not input
+			res, err := tx.ExecContext(ctx,
+				"DELETE FROM documents WHERE path IN ("+placeholders+")", args...)
+			if err != nil {
+				return fmt.Errorf("delete %d documents: %w", len(chunk), err)
+			}
+			affected, err := res.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("delete %d documents: %w", len(chunk), err)
+			}
+			n = int(affected)
+			return nil
+		})
+		if err != nil {
+			return removed, err
+		}
+		removed += n
+	}
+	return removed, nil
+}
+
+// ListPaths returns up to limit document paths in ascending path order,
+// starting strictly after `after` — the cursor discovery walks the catalog
+// with when the question is which rows the filesystem no longer has.
+//
+// On the reader pool and outside any transaction: the caller stats every path
+// it gets back, so holding a read transaction across the loop would pin the
+// WAL for the length of a corpus-wide walk and hide the caller's own deletes
+// from later pages.
+//
+// Paginating while the caller deletes is safe because the cursor is a value
+// rather than a row reference, and every path the caller deletes sorts at or
+// before it — a property that holds only because those deletes are per-path.
+//
+// Every row, INCLUDING unread rows whose content_hash is NULL. A denied or
+// dataless file is still a file with a catalog row, and filtering them out
+// here would make them unpurgeable forever with nothing to signal it.
+func (s *Store) ListPaths(ctx context.Context, after string, limit int) ([]string, error) {
+	rows, err := s.db.Reader().QueryContext(ctx,
+		"SELECT path FROM documents WHERE path > ? ORDER BY path LIMIT ?", after, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list paths after %q: %w", after, err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only; rows.Err below reports failures
+	var paths []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, fmt.Errorf("list paths after %q: %w", after, err)
+		}
+		paths = append(paths, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list paths after %q: %w", after, err)
+	}
+	return paths, nil
+}
+
+// metaKnownMounts holds discovery's remembered mount points, a JSON array.
+const metaKnownMounts = "discovery.mounts"
+
+// KnownMounts returns the mount points discovery has observed inside the
+// include roots, and whether anything has ever been written. An absent key
+// means no volume evidence exists yet, which is a different situation from a
+// set that is legitimately empty.
+func (s *Store) KnownMounts(ctx context.Context) ([]string, bool, error) {
+	raw, ok, err := getMeta(ctx, s.db.Reader(), metaKnownMounts)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	var mounts []string
+	if err := json.Unmarshal([]byte(raw), &mounts); err != nil {
+		// Wrapped as corrupt rather than as a plain failure: the caller has to
+		// tell "this value will never parse, overwrite it" from "the database
+		// would not answer, leave it alone".
+		return nil, false, fmt.Errorf("%w: %w", domain.ErrScanStateCorrupt, err)
+	}
+	return mounts, true, nil
+}
+
+// SetKnownMounts replaces the remembered set.
+func (s *Store) SetKnownMounts(ctx context.Context, mounts []string) error {
+	if mounts == nil {
+		mounts = []string{}
+	}
+	raw, err := json.Marshal(mounts)
+	if err != nil {
+		return fmt.Errorf("encode remembered mounts: %w", err)
+	}
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		return setMeta(ctx, tx, metaKnownMounts, string(raw))
+	})
 }
 
 // StoreChunks replaces c.Hash's chunks and records its state and stage

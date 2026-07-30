@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -29,8 +30,20 @@ type fakeStore struct {
 	upserts       []domain.Document   // the batches, flattened
 	pathLookups   []string            // paths passed to GetByPath
 	prefixDeletes []string            // paths passed to DeleteByPathPrefix
-	ops           []string            // write calls in order: "upsert", "delete"
-	failWith      error               // returned by every method when set
+	pathDeletes   [][]string          // every DeleteByPaths call, as batched
+	knownMounts   []string            // the ScanState half
+	// mountsRemembered is whether anything has ever been written. False is
+	// the fresh-database state, in which the deletion pass declines
+	// everything for one pass rather than deleting with no volume evidence.
+	mountsRemembered bool
+	// knownMountsErr fails only the memory read — the seam for a corrupt
+	// meta value, which must decline rather than fail the scan.
+	knownMountsErr error
+	// listPathsErr fails the catalog enumeration — the seam for a store
+	// failure inside the reconcile, which must decline rather than fail Scan.
+	listPathsErr error
+	ops          []string // write calls in order: "upsert", "delete", "delete_paths"
+	failWith     error    // returned by every method when set
 
 	// onGetByPath, when set, runs at the top of every lookup — the seam for
 	// injecting mid-scan cancellation or filesystem races at the exact point
@@ -42,10 +55,14 @@ type fakeStore struct {
 	failUpsert func(call int) error
 }
 
+// newFakeStore starts in the steady state: mounts have been observed at least
+// once, which is true of every daemon past its first scan. The first-run
+// state (nothing ever written, so no volume evidence at all) is its own test.
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		docs:    map[string]domain.Document{},
-		content: map[string]bool{},
+		docs:             map[string]domain.Document{},
+		content:          map[string]bool{},
+		mountsRemembered: true,
 	}
 }
 
@@ -100,7 +117,70 @@ func (f *fakeStore) DeleteByPathPrefix(_ context.Context, dir string) (int, erro
 	return removed, nil
 }
 
-var _ domain.DocumentStore = (*fakeStore)(nil)
+func (f *fakeStore) DeleteByPaths(_ context.Context, paths []string) (int, error) {
+	if f.failWith != nil {
+		return 0, f.failWith
+	}
+	if len(paths) == 0 {
+		return 0, nil
+	}
+	f.pathDeletes = append(f.pathDeletes, slices.Clone(paths))
+	f.ops = append(f.ops, "delete_paths")
+	var removed int
+	for _, path := range paths {
+		if _, ok := f.docs[path]; ok {
+			delete(f.docs, path)
+			removed++
+		}
+	}
+	return removed, nil
+}
+
+// ListPaths pages the catalog in path order with an exclusive cursor, the
+// contract the real store's index range scan gives.
+func (f *fakeStore) ListPaths(_ context.Context, after string, limit int) ([]string, error) {
+	if f.failWith != nil {
+		return nil, f.failWith
+	}
+	if f.listPathsErr != nil {
+		return nil, f.listPathsErr
+	}
+	paths := slices.Sorted(maps.Keys(f.docs))
+	var out []string
+	for _, path := range paths {
+		if path > after {
+			out = append(out, path)
+		}
+		if len(out) == limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) KnownMounts(context.Context) ([]string, bool, error) {
+	if f.failWith != nil {
+		return nil, false, f.failWith
+	}
+	if f.knownMountsErr != nil {
+		return nil, false, f.knownMountsErr
+	}
+	return slices.Clone(f.knownMounts), f.mountsRemembered, nil
+}
+
+func (f *fakeStore) SetKnownMounts(_ context.Context, mounts []string) error {
+	if f.failWith != nil {
+		return f.failWith
+	}
+	f.knownMounts = slices.Clone(mounts)
+	f.mountsRemembered = true
+	return nil
+}
+
+var (
+	_ domain.DocumentStore = (*fakeStore)(nil)
+	_ domain.ScanState     = (*fakeStore)(nil)
+)
 
 // tmpDir is t.TempDir resolved to its canonical path: Scan canonicalizes
 // include roots (macOS temp dirs live behind the /var → /private/var
@@ -124,9 +204,20 @@ func write(t *testing.T, path, content string) {
 	}
 }
 
+// newScanner builds a Scanner with a fixed mount table. Tests must not read
+// the machine's real one: the deletion pass declines everything beneath a
+// remembered-but-absent mount, so a scan's behaviour would otherwise depend
+// on what happens to be plugged in. "/" is what every temp-dir root sits
+// under, and the volume tests override this with their own table.
+func newScanner(store *fakeStore, opts Options) *Scanner {
+	sc := New(store, store, opts)
+	sc.mounts = func() ([]string, bool, error) { return []string{"/"}, true, nil }
+	return sc
+}
+
 func scan(t *testing.T, store *fakeStore, opts Options) Result {
 	t.Helper()
-	res, err := New(store, opts).Scan(t.Context())
+	res, err := newScanner(store, opts).Scan(t.Context())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -606,7 +697,7 @@ func TestScanUnreadCountsExcludeDataless(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(denied, 0o644) })
 	store := newFakeStore()
 
-	s := New(store, Options{Include: []string{dir}})
+	s := newScanner(store, Options{Include: []string{dir}})
 	s.dataless = func(info os.FileInfo) bool { return info.Name() == "cloud.md" }
 	res, err := s.Scan(t.Context())
 	if err != nil {
@@ -666,7 +757,7 @@ func TestScanCountsMatchCommittedRowsOnCancel(t *testing.T) {
 		}
 	}
 
-	res, err := New(store, Options{Include: []string{dir}}).Scan(ctx)
+	res, err := newScanner(store, Options{Include: []string{dir}}).Scan(ctx)
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Scan = %v, want context.Canceled", err)
@@ -695,7 +786,7 @@ func TestScanCountsMatchCommittedRowsOnFlushFailure(t *testing.T) {
 		return nil
 	}
 
-	res, err := New(store, Options{Include: []string{dir}}).Scan(t.Context())
+	res, err := newScanner(store, Options{Include: []string{dir}}).Scan(t.Context())
 
 	if err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Fatalf("Scan = %v, want the second flush's failure", err)
@@ -817,7 +908,7 @@ func TestScanDatalessPersistsUnreadRow(t *testing.T) {
 	store := newFakeStore()
 	opts := Options{Include: []string{dir}}
 
-	s := New(store, opts)
+	s := newScanner(store, opts)
 	s.dataless = func(info os.FileInfo) bool { return info.Name() == "cloud.md" }
 	res, err := s.Scan(t.Context())
 	if err != nil {
@@ -868,7 +959,7 @@ func TestScanDatalessEvictedAfterIndexingKeepsHash(t *testing.T) {
 
 	scan(t, store, opts) // indexed while local
 
-	s := New(store, opts)
+	s := newScanner(store, opts)
 	s.dataless = func(info os.FileInfo) bool { return true } // now evicted
 	res, err := s.Scan(t.Context())
 	if err != nil {
@@ -903,7 +994,7 @@ func TestScanDatalessEvictedThenRemoteEditDropsHash(t *testing.T) {
 	// Evicted, then edited on another device: the placeholder's stat moves
 	// while the file stays dataless.
 	write(t, path, "hello, edited remotely")
-	s := New(store, opts)
+	s := newScanner(store, opts)
 	s.dataless = func(info os.FileInfo) bool { return true }
 	res, err := s.Scan(t.Context())
 	if err != nil {
@@ -929,7 +1020,7 @@ func TestScanStoreFailureIsFatal(t *testing.T) {
 	store := newFakeStore()
 	store.failWith = errors.New("disk full")
 
-	_, err := New(store, Options{Include: []string{dir}}).Scan(t.Context())
+	_, err := newScanner(store, Options{Include: []string{dir}}).Scan(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Errorf("Scan = %v, want fatal store error", err)
 	}
@@ -941,7 +1032,7 @@ func TestScanContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	_, err := New(newFakeStore(), Options{Include: []string{dir}}).Scan(ctx)
+	_, err := newScanner(newFakeStore(), Options{Include: []string{dir}}).Scan(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Scan = %v, want context.Canceled", err)
 	}
