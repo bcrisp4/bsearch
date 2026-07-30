@@ -129,7 +129,13 @@ func (s *Scanner) reconcileDeleted(ctx context.Context, cov coverage, res *Resul
 			"the list of mounted volumes could not be read, so an unplugged drive cannot be told from a deletion")
 		live = nil
 	}
-	if mountsReadable {
+	// Only a real mount table can mark a volume absent. Off macOS `live` is
+	// empty because the platform cannot answer, not because nothing is
+	// mounted, and reading that as "every remembered volume was ejected"
+	// would decline the whole catalog for ever on any database that carried
+	// mounts over — the opposite of what mounts_other.go documents ("declines
+	// nothing on volume grounds; every other guard still applies").
+	if mountsReadable && supported {
 		for _, mount := range known {
 			if !slices.Contains(live, mount) {
 				// Remembered, and not mounted now. Everything beneath it is a

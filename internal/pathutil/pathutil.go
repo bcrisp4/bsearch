@@ -5,6 +5,7 @@ package pathutil
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -77,7 +78,16 @@ func CanonicalCase(path string) string {
 	return out
 }
 
-// onDiskName finds how dir spells want, ignoring case. An exact match wins.
+// onDiskName finds how dir spells want. An exact match wins outright.
+//
+// A case-folded match is accepted only when the filesystem itself resolves
+// the spelling it was given, which is the practical test for "this directory
+// is case-insensitive". Without that check, a case-SENSITIVE volume holding
+// `Notes` would answer `NOTES` with `Notes` — quietly rewriting an include
+// root to a different directory that happens to exist, where the honest
+// outcome is that the configured one does not. Two spellings really are two
+// directories there, and correcting one into the other is the exact mistake
+// this whole function exists to avoid making at comparison time.
 func onDiskName(dir, want string) (string, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -93,7 +103,15 @@ func onDiskName(dir, want string) (string, bool) {
 			folded = name
 		}
 	}
-	return folded, folded != ""
+	if folded == "" {
+		return "", false
+	}
+	if _, err := os.Lstat(filepath.Join(dir, want)); err != nil {
+		// The typed spelling does not resolve, so this filesystem is case
+		// -sensitive and `want` genuinely is not there. Leave it as written.
+		return "", false
+	}
+	return folded, true
 }
 
 // DataVolumeRoot is the firmlink mount of the writable volume on macOS

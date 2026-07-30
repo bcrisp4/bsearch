@@ -1033,3 +1033,28 @@ func TestScanProtectsAVolumeUnderAMiscasedRoot(t *testing.T) {
 		t.Errorf("Unverified = %d, want both rows declined", res.Unverified)
 	}
 }
+
+// Off macOS the mount table is empty because the platform cannot answer, not
+// because nothing is mounted. Reading that as "every remembered volume was
+// ejected" would decline the whole catalog for ever on any database carrying
+// mounts over — the opposite of mounts_other.go's documented behaviour.
+func TestScanDoesNotEjectRememberedVolumesWhereMountsAreUnsupported(t *testing.T) {
+	dir := tmpDir(t)
+	write(t, filepath.Join(dir, "keep.md"), "keep")
+	volume := filepath.Join(dir, "volume")
+	store := newFakeStore()
+	store.knownMounts = []string{"/", volume}
+	seedDoc(store, filepath.Join(dir, "gone.md"))
+
+	sc := newScanner(store, Options{Include: []string{dir}})
+	sc.mounts = func() ([]string, bool, error) { return nil, false, nil }
+	res := scanWith(t, sc)
+
+	if len(res.Unmounted) != 0 {
+		t.Errorf("Unmounted = %v, want nothing claimed ejected — the platform cannot answer", res.Unmounted)
+	}
+	// Every other guard still applies, so a genuinely vanished file still goes.
+	if res.Deleted != 1 || res.Unverified != 0 {
+		t.Errorf("Result = %+v, want the deletion still noticed", res)
+	}
+}

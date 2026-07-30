@@ -124,6 +124,18 @@ func TestCanonicalCasePrefersAnExactMatch(t *testing.T) {
 	if got := pathutil.CanonicalCase(exact); got != exact {
 		t.Errorf("pathutil.CanonicalCase(%q) = %q, want the exact spelling kept", exact, got)
 	}
+
+	// And a spelling that exists in neither case comes back untouched. Folding
+	// it onto whichever entry looks similar would rewrite a configured root to
+	// a different directory — the mistake this function exists to avoid, made
+	// at resolution time instead of comparison time.
+	//
+	// (Verified manually against a case-sensitive APFS image: before the
+	// resolve-check in onDiskName, "…/NOTES" came back as "…/Notes".)
+	absent := filepath.Join(resolved, "NOTES")
+	if got := pathutil.CanonicalCase(absent); got != absent {
+		t.Errorf("pathutil.CanonicalCase(%q) = %q, want it unchanged — a different directory here", absent, got)
+	}
 }
 
 func TestCanonicalCaseLeavesRelativePathsAlone(t *testing.T) {
