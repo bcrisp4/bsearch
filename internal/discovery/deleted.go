@@ -241,6 +241,13 @@ func (s *Scanner) reconcileDeleted(ctx context.Context, cov coverage, res *Resul
 
 		for _, path := range batch {
 			if err := ctx.Err(); err != nil {
+				// A cancelled pass enumerated only part of the catalog, so the
+				// decline counters describe a fraction of it. Left true, a
+				// partial — usually zero — Unverified would overwrite a
+				// standing "deletions are not being noticed" gauge with a
+				// measurement that was never taken, which is the same
+				// silent-skip shape the flag exists to prevent.
+				res.Reconciled = false
 				return err
 			}
 			for _, mount := range known {

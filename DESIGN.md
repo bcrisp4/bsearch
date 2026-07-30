@@ -674,6 +674,7 @@ even when there is no database at all.
               "scan_errors": 0, "scan_reached_nothing": false,
               "scan_deleted": 12, "scan_pruned": 0,
               "scan_unverified": 0, "scan_ignored": 0, "scan_unmounted": [],
+              "scan_decline_reasons": [],
               "watch": {"running": true, "roots": 1,
                         "last_event": "2026-07-25T11:56:00Z",
                         "reconciled": 42, "deleted": 3, "rescans": 0},

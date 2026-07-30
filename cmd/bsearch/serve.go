@@ -240,7 +240,15 @@ func indexingStatus(sched *scheduler.Scheduler, offReason string) server.Indexin
 		if offReason == "" {
 			offReason = "indexing is not running"
 		}
-		return server.IndexingStatus{Running: false, Reason: offReason}
+		// The always-present slices are still always present: a consumer
+		// measuring `.indexing.scan_unmounted | length` must not meet null
+		// just because the indexing loop never started.
+		return server.IndexingStatus{
+			Running:            false,
+			Reason:             offReason,
+			ScanUnmounted:      []string{},
+			ScanDeclineReasons: []string{},
+		}
 	}
 	snap := sched.Snapshot()
 	status := server.IndexingStatus{

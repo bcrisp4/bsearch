@@ -664,3 +664,24 @@ func TestStatusReportsRowsTheScanDeclinedToReconcile(t *testing.T) {
 		t.Errorf("report carries the declined line with nothing declined:\n%s", got)
 	}
 }
+
+// The always-present slices must be present on every path, including the one
+// where indexing never started. Their doc in internal/server/status.go names
+// serve.go as the guarantor, and DESIGN.md's status example shows []. An
+// agent doing `.indexing.scan_unmounted | length` must not meet null just
+// because no embedding model is configured.
+func TestIndexingStatusNeverEmitsNullSlices(t *testing.T) {
+	for name, status := range map[string]server.IndexingStatus{
+		"no scheduler": indexingStatus(nil, "no embedding model is configured"),
+	} {
+		body, err := json.Marshal(status)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, field := range []string{"scan_unmounted", "scan_decline_reasons"} {
+			if strings.Contains(string(body), `"`+field+`":null`) {
+				t.Errorf("%s: %s is null:\n%s", name, field, body)
+			}
+		}
+	}
+}
