@@ -995,6 +995,10 @@ func TestScanReachingNoFilesIsRecorded(t *testing.T) {
 		q := newFakeQueue()
 		ix := newFakeIndexer()
 		sc := &fakeScanner{result: discovery.Result{
+			// WalkErrors as well as the slice: the alarm asks whether the
+			// *walk* hit trouble, and the deletion reconcile appends to the
+			// same PathErrors. These two came from the walk.
+			WalkErrors: 2,
 			PathErrors: []discovery.PathError{
 				{Path: "/Users/ben/Documents", Err: errors.New("operation not permitted")},
 				{Path: "/Users/ben/Desktop", Err: errors.New("operation not permitted")},
@@ -1633,14 +1637,26 @@ func TestOrphanSweepRunsOnceAtStartThenNotOnQuietCycles(t *testing.T) {
 	})
 }
 
-// Deletions and edits are the two orphan producers, so a scan reporting
-// either arms a sweep — at queue scope, so a terminal orphan keeps its
-// derived data for the free-restore window (an undo must not cost a
-// re-embed).
+// Removals and edits are the orphan producers, so a scan reporting any of
+// them arms a sweep — at queue scope, so a terminal orphan keeps its derived
+// data for the free-restore window (an undo must not cost a re-embed).
+//
+// Scope prunes count as removals: a row dropped because the file left the
+// configured paths orphans its content exactly as a deleted file does, and
+// leaving it out would let a config edit strand chunks and vectors with
+// nothing to collect them.
 func TestDeletionsAndEditsArmTheOrphanSweep(t *testing.T) {
-	for name, res := range map[string]discovery.Result{
-		"deletions": {Deleted: 1},
-		"edits":     {Changed: 1},
+	for name, tc := range map[string]struct {
+		res   discovery.Result
+		scope domain.SweepScope
+	}{
+		"deletions": {discovery.Result{Deleted: 1}, domain.SweepScopeQueue},
+		"edits":     {discovery.Result{Changed: 1}, domain.SweepScopeQueue},
+		// Queue scope for a prune too. Escalating on it was tried and
+		// reverted: the scope is a property of the pass, so one pruned row in
+		// a cycle that also saw deletions collected those as well, destroying
+		// the free-restore window this branch exists to hold open.
+		"scope prunes": {discovery.Result{Pruned: 1}, domain.SweepScopeQueue},
 	} {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -1654,15 +1670,15 @@ func TestDeletionsAndEditsArmTheOrphanSweep(t *testing.T) {
 				}
 
 				sc.mu.Lock()
-				sc.result = res
+				sc.result = tc.res
 				sc.mu.Unlock()
 				s.requestScan()
 				s.cycle(t.Context())
 				if got := q.orphanSweepCount(); got != 2 {
 					t.Errorf("orphan sweeps = %d, want 2 — a scan with orphan producers must arm the sweep", got)
 				}
-				if scopes := q.scopes(); len(scopes) == 2 && scopes[1] != domain.SweepScopeQueue {
-					t.Errorf("armed sweep scope = %v, want SweepScopeQueue — eager collection of terminal orphans turns every undo into a re-embed", scopes[1])
+				if scopes := q.scopes(); len(scopes) == 2 && scopes[1] != tc.scope {
+					t.Errorf("armed sweep scope = %v, want %v", scopes[1], tc.scope)
 				}
 
 				s.cycle(t.Context())
@@ -1672,6 +1688,56 @@ func TestDeletionsAndEditsArmTheOrphanSweep(t *testing.T) {
 			})
 		})
 	}
+}
+
+// The reconcile's numbers reach status: two cumulative totals for what was
+// removed, split by why, and two gauges for what was declined.
+//
+// The gauges are gauges on purpose. Unverified describes a subtree that is
+// blocked right now — a directory that cannot be read, a volume that is not
+// mounted — so it must clear when the next scan finds the obstruction gone.
+// Accumulated instead, a long-running daemon would report a permanent alarm
+// for a drive plugged back in an hour ago.
+func TestScanReconcileCountsReachTheSnapshot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, nil)
+
+		sc.mu.Lock()
+		sc.result = discovery.Result{
+			Deleted: 3, Pruned: 2, Unverified: 7, Reconciled: true,
+			Unmounted: []string{"/Volumes/Archive"},
+		}
+		sc.mu.Unlock()
+		s.requestScan()
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.ScanDeleted != 3 || snap.ScanPruned != 2 {
+			t.Errorf("ScanDeleted/ScanPruned = %d/%d, want 3/2 kept apart — one is the corpus changing, the other the config",
+				snap.ScanDeleted, snap.ScanPruned)
+		}
+		if snap.ScanUnverified != 7 || !slices.Equal(snap.ScanUnmounted, []string{"/Volumes/Archive"}) {
+			t.Errorf("ScanUnverified/ScanUnmounted = %d/%v, want 7 and the volume named",
+				snap.ScanUnverified, snap.ScanUnmounted)
+		}
+
+		// A clean scan: the totals keep climbing, the gauges clear.
+		sc.mu.Lock()
+		sc.result = discovery.Result{Deleted: 1, Reconciled: true}
+		sc.mu.Unlock()
+		s.requestScan()
+		s.cycle(t.Context())
+
+		snap = s.Snapshot()
+		if snap.ScanDeleted != 4 || snap.ScanPruned != 2 {
+			t.Errorf("ScanDeleted/ScanPruned = %d/%d, want 4/2 — totals accumulate", snap.ScanDeleted, snap.ScanPruned)
+		}
+		if snap.ScanUnverified != 0 || len(snap.ScanUnmounted) != 0 {
+			t.Errorf("ScanUnverified/ScanUnmounted = %d/%v, want cleared — the obstruction is gone",
+				snap.ScanUnverified, snap.ScanUnmounted)
+		}
+	})
 }
 
 // A scan that only found new and unchanged files arms nothing: neither
@@ -1904,6 +1970,102 @@ func TestCollectedOrphansReachTheSnapshot(t *testing.T) {
 
 		if got := s.Snapshot().Collected; got != 2 {
 			t.Errorf("Collected = %d, want 2 — every content the sweep removed", got)
+		}
+	})
+}
+
+// The Full Disk Access alarm keys on the walk's own errors, not on the whole
+// PathErrors slice. The deletion reconcile appends to that slice too, so a
+// scan that legitimately reached no files while the reconcile declined a few
+// rows would otherwise be diagnosed as a permissions problem on a machine
+// that has none.
+func TestReconcileErrorsDoNotTriggerTheFullDiskAccessAlarm(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		sc.result = discovery.Result{
+			// The walk was clean and the corpus is genuinely empty; the
+			// reconcile could not stat three rows (a symlink loop).
+			WalkErrors: 0,
+			Unverified: 3,
+			Reconciled: true,
+			PathErrors: []discovery.PathError{{Path: "/root/loop", Err: errors.New("too many levels of symbolic links")}},
+		}
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, nil)
+		s.requestScan()
+		s.cycle(t.Context())
+
+		if snap := s.Snapshot(); snap.ScanReachedNothing {
+			t.Error("ScanReachedNothing = true — a reconcile stat failure was read as a missing Full Disk Access grant")
+		}
+	})
+}
+
+// Removals are committed batch by batch, so a reconcile that fails part-way
+// still leaves rows genuinely gone. Those counts must be recorded before the
+// error return, or status reports nothing removed while the catalog shrank.
+func TestScanRecordsCommittedRemovalsWhenTheReconcileFails(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		sc.result = discovery.Result{Deleted: 256, Pruned: 4}
+		sc.err = errors.New("database is locked")
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, nil)
+		s.requestScan()
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.ScanDeleted != 256 || snap.ScanPruned != 4 {
+			t.Errorf("ScanDeleted/ScanPruned = %d/%d, want 256/4 — the rows are gone whether or not the pass finished",
+				snap.ScanDeleted, snap.ScanPruned)
+		}
+	})
+}
+
+// Snapshot copies every slice it hands out. ScanUnmounted is overwritten
+// wholesale by the next scan, so sharing the backing array would race with a
+// caller still reading it.
+func TestSnapshotCopiesTheUnmountedVolumeList(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		sc.result = discovery.Result{Unverified: 1, Reconciled: true, Unmounted: []string{"/Volumes/Archive"}}
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, nil)
+		s.requestScan()
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		snap.ScanUnmounted[0] = "mutated"
+		if again := s.Snapshot(); again.ScanUnmounted[0] != "/Volumes/Archive" {
+			t.Errorf("ScanUnmounted = %v, want the scheduler's copy untouched", again.ScanUnmounted)
+		}
+	})
+}
+
+// The gauges describe an obstruction that exists right now, so they must be
+// assigned on every scan — including one that failed part-way. Left in the
+// success-only mark, a reattached drive kept being reported as unmounted for
+// as long as scans kept failing.
+func TestScanGaugesClearAfterAFailedScan(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sc := watchedScanner("/root")
+		sc.result = discovery.Result{Unverified: 412000, Reconciled: true, Unmounted: []string{"/Volumes/Archive"}}
+		s := newScheduler(t, newFakeQueue(), newFakeIndexer(), sc, nil)
+		s.requestScan()
+		s.cycle(t.Context())
+		if snap := s.Snapshot(); snap.ScanUnverified != 412000 {
+			t.Fatalf("ScanUnverified = %d, want the obstruction reported", snap.ScanUnverified)
+		}
+
+		// Drive reattached; this scan fails on something else entirely.
+		sc.mu.Lock()
+		sc.result = discovery.Result{Reconciled: true}
+		sc.err = errors.New("database is locked")
+		sc.mu.Unlock()
+		s.requestScan()
+		s.cycle(t.Context())
+
+		snap := s.Snapshot()
+		if snap.ScanUnverified != 0 || len(snap.ScanUnmounted) != 0 {
+			t.Errorf("ScanUnverified/ScanUnmounted = %d/%v, want cleared — the volume is back",
+				snap.ScanUnverified, snap.ScanUnmounted)
 		}
 	})
 }

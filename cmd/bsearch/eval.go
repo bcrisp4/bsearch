@@ -179,7 +179,7 @@ func runEvalRun(args []string, out io.Writer) error {
 	defer stop()
 
 	indexStart := time.Now()
-	scanner := discovery.New(store, discovery.Options{
+	scanner := discovery.New(store, store, discovery.Options{
 		Include: []string{filepath.Join(absCorpusDir, "corpus")},
 		// The golden corpus is curated by corpusgen; production's deny
 		// rules exist to keep noise (caches, VCS internals) out of a
@@ -196,6 +196,22 @@ func runEvalRun(args []string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "scanned: %d new/changed, %d unchanged, %d skipped (iCloud placeholder), %d unread\n",
 		scanRes.Discovered, scanRes.Unchanged, scanRes.Dataless, scanRes.Unread)
+	// The work database is keyed on corpus name + document set + embedding
+	// fingerprint, deliberately not on where the corpus sits — so the same
+	// corpus scanned from a different absolute path (a moved checkout, CI
+	// versus local, /var versus /private/var) reaches a reused database whose
+	// rows are all out of scope, and the reconcile prunes them. Their content
+	// is then orphaned, and orphaned vectors still occupy the k nearest slots
+	// that recall is measured from, so leaving them would regress the numbers
+	// silently. Nothing else in eval ever sweeps.
+	if scanRes.Deleted+scanRes.Pruned > 0 {
+		collected, err := store.SweepOrphans(ctx, domain.SweepScopeAll)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "reconciled: %d removed, %d contents collected\n",
+			scanRes.Deleted+scanRes.Pruned, collected)
+	}
 	// Unlike index.go's equivalent guard (which only fires alongside
 	// PathErrors, since a live filesystem scan legitimately turning up zero
 	// files elsewhere is not by itself suspicious), a golden corpus must

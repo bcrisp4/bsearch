@@ -111,7 +111,7 @@ func writeStatusHuman(out io.Writer, resp server.StatusResponse, home string, no
 
 	writeIndexSection(out, resp.Index)
 	writeQueueSection(out, resp.Index)
-	writeIndexingSection(out, resp.Indexing, now)
+	writeIndexingSection(out, resp.Indexing, now, home)
 	writeUnreadableSection(out, resp.Indexing, home)
 	writeFailuresSection(out, resp.Index, home)
 }
@@ -202,7 +202,7 @@ func writeQueueSection(out io.Writer, index server.IndexStatus) {
 	writeFields(out, fields)
 }
 
-func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now time.Time) {
+func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now time.Time, home string) {
 	if indexing == nil {
 		return
 	}
@@ -226,6 +226,12 @@ func writeIndexingSection(out io.Writer, indexing *server.IndexingStatus, now ti
 	}
 	if indexing.LastScan != nil {
 		fields = append(fields, field{"last scan", ago(*indexing.LastScan, now) + scanTrouble(indexing)})
+	}
+	if line := scanRemovedLine(indexing); line != "" {
+		fields = append(fields, field{"removed", line})
+	}
+	if line := notReconciledLine(indexing, home); line != "" {
+		fields = append(fields, field{"not reconciled", line})
 	}
 	if indexing.LastProgress != nil {
 		fields = append(fields, field{"last progress", ago(*indexing.LastProgress, now)})
@@ -359,6 +365,85 @@ func scanTrouble(indexing *server.IndexingStatus) string {
 		trouble += ", reached no files"
 	}
 	return trouble
+}
+
+// scanRemovedLine reports what the walk's reconcile took out of the catalog,
+// splitting the two reasons. "Gone from disk" and "no longer in the
+// configured paths" are removals with different causes — one is the corpus
+// changing, the other is a config edit doing exactly what it was told — and a
+// user looking at a number that dropped needs to know which.
+func scanRemovedLine(indexing *server.IndexingStatus) string {
+	switch {
+	case indexing.ScanDeleted == 0 && indexing.ScanPruned == 0:
+		return ""
+	case indexing.ScanPruned == 0:
+		return fmt.Sprintf("%s deleted from disk", count(indexing.ScanDeleted))
+	case indexing.ScanDeleted == 0:
+		return fmt.Sprintf("%s no longer in the configured paths", count(indexing.ScanPruned))
+	}
+	return fmt.Sprintf("%s deleted from disk · %s no longer in the configured paths",
+		count(indexing.ScanDeleted), count(indexing.ScanPruned))
+}
+
+// maxNamedMounts caps how many unmounted volumes are named on one line.
+const maxNamedMounts = 3
+
+// notReconciledLine reports catalog rows the last scan deliberately declined
+// to judge. It exists because this is the one outcome that reads as health
+// everywhere else: the scan succeeded, no errors need be present, nothing was
+// deleted — and deletions are quietly not being noticed under some subtree.
+//
+// An unmounted volume is named, because that is a state the user put the
+// machine in and can undo. Anything else points at the unreadable-paths
+// section, which on macOS usually means Full Disk Access.
+func notReconciledLine(indexing *server.IndexingStatus, home string) string {
+	total := indexing.ScanUnverified + indexing.ScanIgnored
+	if total == 0 {
+		return ""
+	}
+	noun := "files"
+	if total == 1 {
+		noun = "file"
+	}
+	line := fmt.Sprintf("%s %s — deletions are not being noticed there", count(total), noun)
+
+	// Both reasons can hold at once — a denied directory on the internal disk
+	// and an unplugged drive — so they accumulate rather than compete. Naming
+	// only the first would send the user looking in one place for half a
+	// problem.
+	var why []string
+	if len(indexing.ScanUnmounted) > 0 {
+		named, suffix := indexing.ScanUnmounted, ""
+		if len(named) > maxNamedMounts {
+			named, suffix = named[:maxNamedMounts], fmt.Sprintf(" and %s more", count(len(indexing.ScanUnmounted)-maxNamedMounts))
+		}
+		shown := make([]string, len(named))
+		for i, mount := range named {
+			shown[i] = stripControl(tildePath(home, mount))
+		}
+		why = append(why, fmt.Sprintf("not mounted: %s%s", strings.Join(shown, ", "), suffix))
+	}
+	if indexing.ScanErrors > 0 {
+		why = append(why, "see unreadable paths below")
+	}
+	if indexing.ScanIgnored > 0 {
+		// Its own clause: this one is a configuration problem, not a
+		// filesystem one, and the fix is in the config file rather than in
+		// System Settings or a USB port.
+		why = append(why, "an include root could not be resolved, so paths.include changes are not being applied")
+	}
+	// The daemon's own explanations last, and always — they are the only thing
+	// that speaks for the states nothing else can name (no volume evidence
+	// yet, nothing in scope, a mount table that would not read), which are
+	// exactly the states a fresh install meets first. Without them this line
+	// fires with no reason attached at all.
+	for _, reason := range indexing.ScanDeclineReasons {
+		why = append(why, search.Preview(stripControl(reason), maxProseRunes))
+	}
+	if len(why) > 0 {
+		line += "; " + strings.Join(why, "; ")
+	}
+	return line
 }
 
 // writeFailuresSection lists why contents were given up on. Grouped, because

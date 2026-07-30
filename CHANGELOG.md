@@ -75,6 +75,44 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- **Files deleted while the daemon wasn't running now leave the index.** The
+  periodic walk checks the index against the filesystem as well as the other
+  way round, so a file removed while bsearch was stopped — or in a burst of
+  changes too large for the watcher to report — stops turning up in search at
+  the next scan instead of lingering forever. Deleting a whole folder works
+  the same way.
+  ([ADR 0016](docs/adr/0016-scan-side-deletion-reconciliation.md),
+  [#57](https://github.com/bcrisp4/bsearch/issues/57))
+
+- **Editing `paths.include` or `paths.exclude` now takes effect on files
+  already indexed.** Removing a directory from your configured paths, or
+  adding an exclude rule that covers it, removes those files from the index —
+  after you restart the daemon, since config is read at startup. Previously
+  they stayed searchable with no way to clear them short of rebuilding the
+  index.
+
+- **Include paths are matched against the casing your filesystem actually
+  uses.** Writing `~/Notes` in `paths.include` when the folder on disk is
+  `~/notes` used to index fine while quietly breaking two things that compare
+  paths: changes were watched but never noticed, and the protection that stops
+  an unplugged drive being treated as deleted was disabled outright. Both now
+  work whichever case you type.
+  ([#64](https://github.com/bcrisp4/bsearch/issues/64))
+
+- **Unplugging a drive no longer costs you its index.** bsearch remembers
+  which volumes your indexed files live on, so an external or network drive
+  that is disconnected is recognised as absent rather than deleted. Nothing
+  under it is removed, however long it stays unplugged, and reconnecting it
+  costs no re-indexing. The same care applies to a folder bsearch cannot read:
+  a missing Full Disk Access grant is never mistaken for a mass deletion.
+
+  When bsearch is holding back like this it says so — `bsearch status` reports
+  how many files are affected and names any volume that is not mounted, since
+  otherwise a scan that is quietly missing deletions looks exactly like a
+  healthy one. `bsearch status` also now reports how many files have been
+  removed since the daemon started, split by whether they were deleted from
+  disk or fell outside your configured paths.
+
 - **Save a file, and it is searchable in seconds.** The daemon now watches
   your configured paths instead of waiting for its next walk, so a note you
   just wrote turns up in search about fifteen seconds later rather than up to
@@ -92,14 +130,10 @@ that section is renamed to the new version and becomes the GitHub Release notes.
   Full Disk Access grant. On a machine without FSEvents the daemon falls back
   to the walk and says so, rather than failing to start.
 
-  Deletion has deliberate gaps, all with the same shape: when the daemon
-  cannot be sure a file is really gone, it leaves the index alone rather than
-  risk destroying it. A file deleted while the daemon was *not* running stays
-  indexed; so does one deleted in a burst large enough to overflow the event
-  stream, or one whose whole folder vanished at once (which is what an
-  unmounting disk looks like from here). In every case, deleting the file
-  again with the daemon running clears it. Closing the gaps properly is
-  [#57](https://github.com/bcrisp4/bsearch/issues/57).
+  Deletion still declines wherever the daemon cannot be sure a file is really
+  gone — it leaves the index alone rather than risk destroying it — but the
+  cases the event stream cannot answer are now picked up by the periodic walk
+  (see the entry above).
 
 - **New `bsearch status` command: what the daemon is doing, and why it isn't.**
   It reports the index — ready or not and why, the embedding model, the

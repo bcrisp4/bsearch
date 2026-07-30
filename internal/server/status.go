@@ -130,6 +130,29 @@ type IndexingStatus struct {
 	ScanErrors         int         `json:"scan_errors"`
 	ScanReachedNothing bool        `json:"scan_reached_nothing"`
 	PathErrors         []PathError `json:"path_errors,omitempty"`
+	// ScanDeleted and ScanPruned count catalog rows the walk's reconcile
+	// removed since the daemon started: files that vanished from disk, and
+	// files that fell outside the configured paths. Separate because one is
+	// the corpus changing and the other is the config changing.
+	ScanDeleted int `json:"scan_deleted"`
+	ScanPruned  int `json:"scan_pruned"`
+	// ScanUnverified is how many catalog rows the last reconcile declined to
+	// judge, because it could not vouch for the subtree they are in —
+	// an unreadable directory, or a volume that is not mounted (named in
+	// ScanUnmounted). Non-zero means deletions are not being noticed
+	// somewhere, which every other number here reports as health.
+	ScanUnverified int `json:"scan_unverified"`
+	// ScanIgnored is the reconcile's third decline: rows outside every root
+	// that were left alone because a configured root would not resolve, so
+	// scope pruning stood down for the pass.
+	ScanIgnored int `json:"scan_ignored"`
+	// Always present, never null: DESIGN.md documents the shape as [], and a
+	// consumer doing `.scan_unmounted | length` on the overwhelmingly common
+	// healthy response must not get null. serve.go guarantees non-nil.
+	ScanUnmounted []string `json:"scan_unmounted"`
+	// ScanDeclineReasons explains a decline nothing else names — no volume
+	// evidence yet, nothing in scope, a mount table that would not read.
+	ScanDeclineReasons []string `json:"scan_decline_reasons"`
 	// Watch is the filesystem watcher's half of freshness. Absent when the
 	// daemon has no indexing loop to report on at all; present and not
 	// running when the loop is scan-only, which is a working mode rather

@@ -52,8 +52,10 @@ var ErrRootExcluded = errors.New("include root matches the exclude rules")
 // its parent directory had vanished too. One file disappearing is a
 // deletion; a whole subtree disappearing at once is a volume unmounting or
 // a permission grant being revoked, and treating that as a thousand
-// deletions would destroy the corpus over a blip. The periodic scan's own
-// reconciliation (issue #57) is the slower, safer path for those.
+// deletions would destroy the corpus over a blip. The walk's own catalog-side
+// reconcile is the slower, safer path for those: it stats each row rather than
+// trusting one event, and recognises an unmounted volume from the mount table
+// (ADR 0016).
 var ErrParentUnreachable = errors.New("parent directory is unreachable; not treating this as a deletion")
 
 // Options configures a Scanner.
@@ -64,6 +66,13 @@ type Options struct {
 	// Excluded reports whether a path is deny-listed; exclusions win over
 	// includes. Callers wire config.ExcludeRules().Match. Nil excludes
 	// nothing.
+	//
+	// It must answer for descendants, not just for the directory a rule
+	// names: the walk prunes at the directory and never asks about what is
+	// inside, but the deletion pass asks about catalog rows, which are files.
+	// A predicate that matched only the named directory would leave every row
+	// already indexed beneath a newly-excluded path in the index forever.
+	// config.ExcludeSet.Match is prefix-based and satisfies this.
 	Excluded func(path string) bool
 }
 
@@ -100,14 +109,32 @@ type Result struct {
 	// only in PathErrors: unread_reason is for bytes never obtained
 	// (ADR 0015).
 	Unread int
-	// Deleted counts catalog rows purged because their file is gone. Only
-	// ScanPaths sets it: a walk sees what exists, so noticing an absence
-	// needs either an event that named the path (here) or a catalog-side
-	// reconcile (issue #57).
+	// Deleted counts catalog rows purged because their file is gone. Set by
+	// ScanPaths, from an event that named the path, and by Scan's
+	// catalog-side reconcile, which enumerates rows and stats them — a walk
+	// alone only ever sees what exists (ADR 0016).
 	Deleted int
+	// Pruned counts catalog rows removed because they are no longer in
+	// scope: outside every include root, or newly deny-listed. Counted apart
+	// from Deleted because the two are licensed by different evidence — the
+	// filesystem for one, the config file for the other — and a config edit
+	// that removes a thousand rows must be able to say so.
+	Pruned int
+	// Unverified counts catalog rows the reconcile deliberately left alone
+	// because the walk could not vouch for their subtree: an unreadable
+	// directory, a root that would not resolve, or a remembered mount point
+	// that is not mounted right now.
+	//
+	// It is the number that tells "nothing was deleted because nothing was
+	// deleted" apart from "nothing was deleted because the daemon is blind",
+	// which is the difference between a healthy corpus and a missing Full
+	// Disk Access grant.
+	Unverified int
 	// Ignored counts named paths that were out of scope — outside every
-	// include root, or matched by the deny-list. Only ScanPaths sets it: a
-	// walk only ever visits paths that are in scope by construction.
+	// include root, or matched by the deny-list. Set by ScanPaths, and by
+	// Scan's reconcile for out-of-scope rows in a pass where scope pruning
+	// was suspended (a root failed to resolve): a walk itself only ever
+	// visits paths that are in scope by construction.
 	//
 	// A count rather than a silent skip because the all-ignored case is the
 	// one failure that looks exactly like success. A watch root spelled
@@ -116,9 +143,44 @@ type Result struct {
 	// every path it delivers lands here — a daemon that is watching
 	// attentively and indexing nothing.
 	Ignored int
+	// Unmounted names the volumes that are not mounted where they were *and*
+	// still hold catalog rows. It is the legible half of Unverified — "the
+	// drive is unplugged" is something a user can act on, where "some
+	// directory was unreadable" needs the PathErrors sample to mean anything.
+	//
+	// Restricted to volumes holding rows because status renders this as the
+	// reason for Unverified: an absent volume with nothing beneath it explains
+	// none of the count, and naming it would point at a USB port for a
+	// permissions problem somewhere else entirely.
+	Unmounted []string
+	// Reconciled says the catalog-side deletion pass ran to completion. A pass
+	// that never started (a fatal walk error returns first) or that stopped on
+	// a store failure leaves the decline counters at zero, which is
+	// indistinguishable from "nothing was declined" — so a consumer must not
+	// treat those zeros as a measurement. Without it, an unrelated walk error
+	// silently clears a standing "deletions are not being noticed" alarm.
+	Reconciled bool
+	// DeclineReasons are the reconcile's own explanations for standing down,
+	// in the user's terms — a volume that is not mounted is already named in
+	// Unmounted, so these are the ones nothing else can express: no volume
+	// evidence yet, nothing in scope, a memory or a mount table that could not
+	// be read.
+	//
+	// Deliberately not PathErrors. Those are per-path filesystem problems and
+	// are rendered under "Unreadable paths", whose documented meaning is a
+	// missing Full Disk Access grant; filing a corrupt SQLite value there
+	// sends the reader to System Settings for a database problem.
+	DeclineReasons []string
 	// PathErrors holds every per-path failure: permission errors,
 	// unreadable files, missing include roots.
 	PathErrors []PathError
+	// WalkErrors is how many of PathErrors the walk itself produced, before
+	// the deletion reconcile appended any of its own. The Full Disk Access
+	// alarm ("errors, and reached no files") keys on this rather than on the
+	// slice length: a reconcile-side stat failure says nothing about whether
+	// the walk could see the corpus, and folding it in would report a
+	// permissions diagnosis for, say, a symlink loop.
+	WalkErrors int
 }
 
 // Reached reports how many paths the scan actually got an answer about —
@@ -166,13 +228,21 @@ type Scanner struct {
 	// and re-finding them next scan must not count them twice.
 	pendingRes Result
 
-	// dataless is a seam for tests; production is the platform check.
+	// state persists the small facts a single walk cannot observe on its own
+	// — currently which mount points have been seen inside the roots, which
+	// is what lets an unmounted volume be told apart from a deletion.
+	state domain.ScanState
+
+	// dataless and mounts are seams for tests; production is the platform
+	// check in each case.
 	dataless func(fs.FileInfo) bool
+	mounts   func() ([]string, bool, error)
 }
 
-// New returns a Scanner persisting through store.
-func New(store domain.DocumentStore, opts Options) *Scanner {
-	return &Scanner{store: store, opts: opts, dataless: isDataless}
+// New returns a Scanner persisting through store, remembering across scans
+// through state.
+func New(store domain.DocumentStore, state domain.ScanState, opts Options) *Scanner {
+	return &Scanner{store: store, state: state, opts: opts, dataless: isDataless, mounts: mountPoints}
 }
 
 // buffer queues one document write, flushing into res when the batch is
@@ -227,15 +297,37 @@ func (s *Scanner) abandon() {
 func (s *Scanner) Scan(ctx context.Context) (Result, error) {
 	defer s.abandon()
 	var res Result
-	for _, root := range s.roots(&res) {
-		if err := s.walkTree(ctx, root, &res); err != nil {
+
+	// Coverage is built as the walk goes, never reverse-engineered from
+	// PathErrors afterwards. That slice mixes three different things — a
+	// directory the walk was refused, a file it could stat but not open, and
+	// a root deliberately excluded by config — and only the first is a prefix
+	// the walk cannot vouch for. Reading them all as decline-prefixes made an
+	// excluded root unprunable and a single unreadable file permanently
+	// unreconcilable.
+	cov := coverage{unknown: map[string]bool{}}
+	roots, allVerified := s.resolveRoots(&res)
+	cov.roots, cov.unresolved = roots, !allVerified
+
+	for _, root := range cov.roots {
+		if err := s.walkTree(ctx, root, &res, cov.unknown); err != nil {
 			return res, err
 		}
 		if err := s.flush(ctx, &res); err != nil {
 			return res, err
 		}
 	}
-	return res, nil
+	// Snapshotted before the reconcile, which appends to the same slice: the
+	// Full Disk Access alarm asks whether the *walk* hit trouble and reached
+	// nothing, and a reconcile-side stat failure is not evidence of that.
+	res.WalkErrors = len(res.PathErrors)
+
+	// Sequenced rather than returned inline: `return res, s.reconcile(…, &res)`
+	// reads res in the same statement as a call that mutates it through the
+	// pointer, and Go leaves that ordering unspecified. It happens to work on
+	// gc today; every reconcile count would silently return zero if it stopped.
+	err := s.reconcileDeleted(ctx, cov, &res)
+	return res, err
 }
 
 // ScanPaths reconciles the catalog for a named set of paths — what the
@@ -328,11 +420,14 @@ func (s *Scanner) ScanPaths(ctx context.Context, paths []string) (Result, error)
 			// FSEvents reports a directory being moved or created as one
 			// event for the directory, not one per file inside it, so the
 			// contents are only seen by descending.
-			if err := s.walkTree(ctx, path, &res); err != nil {
+			// No coverage set: ScanPaths reconciles named paths and never
+			// runs the catalog-side deletion pass, so it has nothing to
+			// vouch for.
+			if err := s.walkTree(ctx, path, &res, nil); err != nil {
 				return res, err
 			}
 			walked = append(walked, path)
-		case !info.Mode().IsRegular() || !isTextFile(info.Name()):
+		case !admissible(info.Name(), info.Mode()):
 		case s.dataless(info):
 			if err := s.noteDataless(ctx, path, info, &res); err != nil {
 				return res, err
@@ -393,10 +488,9 @@ func (s *Scanner) ScanPaths(ctx context.Context, paths []string) (Result, error)
 // recreated inside the window. And the parent must still be there: an
 // unmounted volume or a revoked Full Disk Access grant makes a whole subtree
 // return ENOENT at once, which is a mount event wearing a deletion's
-// clothes. Declining there costs freshness — the file stays indexed until
-// the catalog-side reconcile of issue #57 lands to notice it, which today
-// means until the user deletes it again with the daemon up — and that is the
-// direction to be wrong in.
+// clothes. Declining there costs freshness — the file stays indexed until the
+// walk's catalog-side reconcile notices it, up to a scan interval later — and
+// that is the direction to be wrong in.
 func (s *Scanner) purge(ctx context.Context, path string, res *Result) (settled bool, err error) {
 	switch _, err := os.Lstat(path); {
 	case err == nil:
@@ -428,7 +522,7 @@ func (s *Scanner) purge(ctx context.Context, path string, res *Result) (settled 
 
 // walkTree walks one directory tree, reconciling every file it is allowed to
 // look at. Errors returned are fatal; per-path problems land in res.
-func (s *Scanner) walkTree(ctx context.Context, root string, res *Result) error {
+func (s *Scanner) walkTree(ctx context.Context, root string, res *Result, unknown map[string]bool) error {
 	excluded := s.excluded()
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
@@ -439,11 +533,38 @@ func (s *Scanner) walkTree(ctx context.Context, root string, res *Result) error 
 			// root: record and keep walking. WalkDir already skips
 			// descent into a dir it could not read.
 			res.PathErrors = append(res.PathErrors, PathError{Path: path, Err: walkErr})
+			if unknown != nil && (d == nil || d.IsDir()) {
+				// A directory whose contents were refused, or an entry that
+				// could not be stat'ed at all (d is nil for the root itself).
+				// Nothing beneath it is evidence of anything.
+				unknown[path] = true
+			}
 			return nil //nolint:nilerr // recorded in PathErrors; keep walking
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
 			// Never follow or index symlinks: cycle-safe, and a link
 			// cannot smuggle content past the deny-list.
+			//
+			// But a link the walk skipped is a prefix it did not look at, and
+			// os.Lstat only declines to follow the *final* component — so a
+			// directory replaced by a symlink leaves rows beneath it that
+			// stat perfectly well through the link. Left out of coverage,
+			// those rows are deleted the moment the link's target goes away,
+			// which for a link to an external volume is every unplug.
+			//
+			// Recorded whatever the link points at, and without resolving it.
+			// Asking whether it is a directory needs os.Stat, which fails
+			// precisely when the target is missing — the case this exists for.
+			// A link to a file costs one path in the set that no row should
+			// occupy anyway, since the walk never indexes a symlink.
+			//
+			// Deny-listed links are skipped: an excluded tree holds no rows to
+			// protect, and a $HOME with venvs, a Homebrew Cellar or a dotfiles
+			// farm would otherwise put tens of thousands of paths in a set
+			// that is held for the whole walk and consulted per catalog row.
+			if unknown != nil && !excluded(path) {
+				unknown[path] = true
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -452,7 +573,7 @@ func (s *Scanner) walkTree(ctx context.Context, root string, res *Result) error 
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() || !isTextFile(d.Name()) || excluded(path) {
+		if !admissible(d.Name(), d.Type()) || excluded(path) {
 			return nil
 		}
 		info, err := d.Info()
@@ -483,15 +604,40 @@ func (s *Scanner) Roots() ([]string, []PathError) {
 
 // roots resolves the include roots, recording problems in res.
 func (s *Scanner) roots(res *Result) []string {
-	excluded := s.excluded()
+	roots, _ := s.resolveRoots(res)
+	return roots
+}
 
-	// Canonicalize roots first, then normalize again: a resolved root
-	// may land on or under another include root (symlinked root, or an
-	// aliased ancestor like macOS /var → /private/var), and only the
-	// second pass can see that overlap.
-	resolved := make([]string, 0, len(s.opts.Include))
-	for _, root := range normalizeRoots(s.opts.Include) {
-		if root, ok := canonicalRoot(root, res); ok {
+// resolveRoots is roots plus the fact the deletion pass needs: whether every
+// configured root resolved. An unresolved root is not merely absent from the
+// returned set — catalog rows beneath it may be spelled in a way nothing in
+// this pass can recognise, so scope pruning has to stand down (ADR 0016).
+func (s *Scanner) resolveRoots(res *Result) (roots []string, allVerified bool) {
+	excluded := s.excluded()
+	allVerified = true
+
+	// Every configured root is resolved, then the resolved set is normalized.
+	// Deliberately not normalized first: dropping a root nested under another
+	// *by its configured spelling* would skip resolving it, and a nested
+	// entry that is a symlink can resolve somewhere else entirely
+	// (~/vault/Sync → /Volumes/Ext/Sync). Dropped unresolved it never enters
+	// the root set and never marks the pass unverified, so catalog rows under
+	// its real location read as out of scope and are pruned — a root spelled
+	// verbatim in paths.include reported as "no longer in the configured
+	// paths". Cleaning and deduplicating identical spellings first is safe;
+	// only the nesting rule has to wait.
+	cleaned := make([]string, len(s.opts.Include))
+	for i, root := range s.opts.Include {
+		cleaned[i] = filepath.Clean(root)
+	}
+	slices.Sort(cleaned)
+	resolved := make([]string, 0, len(cleaned))
+	for _, root := range slices.Compact(cleaned) {
+		root, keep, verified := canonicalRoot(root, res)
+		if !verified {
+			allVerified = false
+		}
+		if keep {
 			resolved = append(resolved, root)
 		}
 	}
@@ -504,7 +650,39 @@ func (s *Scanner) roots(res *Result) []string {
 		}
 		out = append(out, root)
 	}
-	return out
+	return out, allVerified
+}
+
+// hasSymlinkAncestor reports whether path, or any directory above it, is a
+// symlink. It is what separates "this root is simply not there" from "this
+// root points somewhere that is not there" when EvalSymlinks answers ENOENT
+// for both — and only the second can leave catalog rows spelled under a
+// location this pass cannot name.
+//
+// A handful of lstats per unresolved root, and only on the ENOENT path.
+func hasSymlinkAncestor(path string) bool {
+	for p := path; ; {
+		if info, err := os.Lstat(p); err == nil && info.Mode()&fs.ModeSymlink != 0 {
+			return true
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return false
+		}
+		p = parent
+	}
+}
+
+// admissible reports whether a directory entry is the kind of thing the
+// catalog holds: a regular file whose name says it carries text. One
+// definition, called by the walk, by ScanPaths and by the deletion pass —
+// three spellings of the same rule would drift, and the drift is silent in
+// the worst direction. When M6 widens this for PDFs and office documents
+// (issue #21), a reconcile that still believed the old rule would delete
+// every newly-indexed binary document on its next pass as "replaced by
+// something unindexable".
+func admissible(name string, mode fs.FileMode) bool {
+	return mode.IsRegular() && isTextFile(name)
 }
 
 // excluded returns the deny-list predicate, defaulting to "excludes
@@ -728,18 +906,45 @@ func normalizeRoots(include []string) []string {
 // otherwise defeat duplicate-root detection. A root that fails to
 // resolve is recorded and skipped; a missing root passes through so
 // WalkDir reports it like any other unreadable root.
-func canonicalRoot(root string, res *Result) (string, bool) {
+//
+// verified reports whether the resolution actually happened. It is false for
+// both failure modes, and the distinction matters only to the deletion pass:
+// a root that did not resolve may hold catalog rows spelled under its
+// *resolved* path, which the returned spelling does not cover. A dangling
+// symlinked root is the dangerous shape — WalkDir lstats it, the symlink
+// guard skips it, and nothing else in a scan would ever notice (ADR 0016).
+func canonicalRoot(root string, res *Result) (resolved string, keep, verified bool) {
 	resolved, err := filepath.EvalSymlinks(root)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return pathutil.FoldDataVolume(root), true
+		// A missing root passes through so WalkDir reports it, and is
+		// "verified" as long as no symlink is involved: the spelling returned
+		// here is the one catalog rows under it already carry, so withinAny
+		// covers them and scope pruning has nothing to get wrong.
+		//
+		// This matters because a missing root is routine, not exceptional —
+		// ADR 0016's own remedy for the removable-volume risks is to give a
+		// drive its own include root, which then ENOENTs on every scan while
+		// it is unplugged. Suspending scope pruning for that would switch off
+		// the "editing paths.include takes effect" behaviour permanently, and
+		// config never requires an include root to exist.
+		//
+		// A dangling *symlinked* root is the dangerous shape, and the only
+		// one: its rows are spelled under the resolved target, which nothing
+		// in this pass can name.
+		return pathutil.FoldDataVolume(pathutil.CanonicalCase(root)), true, !hasSymlinkAncestor(root)
 	case err != nil:
 		res.PathErrors = append(res.PathErrors, PathError{Path: root, Err: err})
-		return "", false
+		return "", false, false
 	}
 	// The data-volume firmlink is not a symlink, so EvalSymlinks leaves that
 	// spelling of a root exactly as configured while the FSEvents adapter
 	// folds it out of every event path. Folded here too, or the two would
 	// never meet and every event under such a root would be ignored.
-	return pathutil.FoldDataVolume(resolved), true
+	//
+	// Case is canonicalised too, and for the same reason: EvalSymlinks builds
+	// its answer from the components it was given, so a root typed in the
+	// wrong case resolves to the wrong case. Every comparison downstream is
+	// byte-wise, so the spelling has to be right here or nowhere.
+	return pathutil.FoldDataVolume(pathutil.CanonicalCase(resolved)), true, true
 }

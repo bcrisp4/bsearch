@@ -94,6 +94,55 @@ type DocumentStore interface {
 	// the orphan sweep, and search's inner join stops serving it the moment
 	// the documents row goes — deletion never waits on the sweep.
 	DeleteByPathPrefix(ctx context.Context, dir string) (int, error)
+	// DeleteByPaths removes exactly the named documents — unlike
+	// DeleteByPathPrefix, nothing beneath them — returning how many went.
+	//
+	// The two exist for two kinds of evidence. An event names a path without
+	// saying whether it was a file or a directory and without enumerating
+	// its children, so it has to delete by prefix. A catalog pass *is* that
+	// enumeration: a vanished subtree arrives here as N paths that each
+	// independently returned ENOENT, so deleting exactly those keeps the
+	// blast radius of a wrong answer at one row.
+	DeleteByPaths(ctx context.Context, paths []string) (int, error)
+	// ListPaths returns up to limit document paths in ascending path order,
+	// starting strictly after `after` ("" starts at the beginning) — the
+	// cursor for walking the catalog when the question is which rows the
+	// filesystem no longer has.
+	//
+	// Every row, *including unread rows whose content_hash is NULL*. Adding
+	// a `content_hash IS NOT NULL` filter here would make denied and
+	// dataless rows unpurgeable forever, with nothing to signal it.
+	ListPaths(ctx context.Context, after string, limit int) ([]string, error)
+}
+
+// ErrScanStateCorrupt marks a persisted value that will never parse, as
+// distinct from a store that would not answer. The difference decides whether
+// it is safe to overwrite: a value that cannot be read can only be repaired by
+// replacing it, while a transient read failure must leave it alone — writing
+// over it would replace the record of an unplugged volume with a record that
+// it does not exist.
+var ErrScanStateCorrupt = errors.New("the persisted scan state cannot be decoded")
+
+// ScanState is discovery's small persisted memory: facts a single walk
+// cannot observe on its own because they are about what used to be true.
+//
+// Only mount points so far. A walk can see that a path is gone; it cannot
+// see that the path is gone *because the filesystem holding it was
+// unmounted* — that needs to have been recorded while the volume was still
+// there (ADR 0016).
+type ScanState interface {
+	// KnownMounts returns the mount points previously observed inside the
+	// include roots. The set accumulates: an entry is dropped only when no
+	// catalog row remains beneath it, so a volume that is merely unplugged
+	// keeps protecting its documents across restarts.
+	//
+	// remembered distinguishes "nothing has ever been written" from "the
+	// remembered set is empty". Only the first means there is no volume
+	// evidence at all, which is the one state where deleting would be
+	// deleting blind — an empty set is a fact, an absent one is ignorance.
+	KnownMounts(ctx context.Context) (mounts []string, remembered bool, err error)
+	// SetKnownMounts replaces the remembered set.
+	SetKnownMounts(ctx context.Context, mounts []string) error
 }
 
 // ContentStore is the pipeline's port: everything keyed by content hash.

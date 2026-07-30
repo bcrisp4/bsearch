@@ -213,23 +213,37 @@ a watcher running with no changes ever seen is the signature to look for.
 Turning all of that into onboarding — detecting the missing grant and saying
 what to click — is issue #14.
 
-## What it does not notice yet
+## How deletions are noticed
 
-A file deleted while the daemon is **running** normally disappears from
-search within about fifteen seconds. Three cases still do not, all of them
-the same trade: the daemon only deletes on positive evidence, and where it
-cannot get any it leaves the index alone.
+A file deleted while the daemon is **running** disappears from search within
+about fifteen seconds, from the event stream. Everything else — a file deleted
+while the daemon was stopped, a deletion lost in a burst too big for the event
+stream, a folder that vanished whole — is caught by the periodic walk, which
+also checks the index against the filesystem and removes rows whose file is
+gone ([ADR 0016](adr/0016-scan-side-deletion-reconciliation.md)). Editing
+`paths.include` or `paths.exclude` takes effect the same way, on the first
+walk after you restart the daemon — config is read once at startup, so an edit
+alone changes nothing until then.
 
-- A file deleted while the daemon was **not** running. The periodic walk sees
-  what exists, so nothing looks for catalog rows whose file is gone.
-- A deletion in a burst big enough to overflow the event stream. The daemon
-  falls back to a walk, and the walk cannot see absences either.
-- A whole folder that vanishes at once, when the daemon cannot confirm the
-  folder's own parent is still there. That is what an unmounting disk and a
-  revoked permission both look like from here.
+The daemon only ever deletes on positive evidence, and where it cannot get any
+it leaves the index alone and says so. Three things make it hold back:
 
-In every case, deleting the file again with the daemon running clears it, and
-issue [#57](https://github.com/bcrisp4/bsearch/issues/57) closes all three by
-reconciling from the catalog side. It is being taken slowly on purpose — "the
-walk didn't visit it, so it must be deleted" would turn an unmounted external
-disk into a wiped index.
+- **A directory it could not read.** Usually a missing Full Disk Access grant.
+- **A volume that is not mounted.** bsearch remembers which volumes hold
+  indexed files, so an external or network drive that is unplugged is
+  recognised as absent rather than deleted — however long it stays away, and
+  reconnecting it costs no re-indexing.
+- **An include root that would not resolve.** Scope pruning stands down for
+  that scan, because a root that cannot be resolved is indistinguishable from
+  one that was removed from the config.
+
+`bsearch status` reports all three on a `not reconciled` line, naming any
+unmounted volume. That line is worth reading: every other number reports a
+healthy scan, so without it a corpus whose deletions are quietly being missed
+looks exactly like one with nothing to delete.
+
+One gap remains, and it is narrow: a volume mounted **inside** an include root
+that was already unplugged the first time this version ran has never been
+observed, so bsearch cannot know a mount belongs there. Giving an external
+volume its own entry in `paths.include` closes it — a root that will not
+resolve declines without needing the mount table at all.

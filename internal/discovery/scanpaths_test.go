@@ -17,7 +17,7 @@ import (
 // helper the walk tests use.
 func scanPaths(t *testing.T, store *fakeStore, opts Options, paths ...string) Result {
 	t.Helper()
-	res, err := New(store, opts).ScanPaths(t.Context(), paths)
+	res, err := newScanner(store, opts).ScanPaths(t.Context(), paths)
 	if err != nil {
 		t.Fatalf("ScanPaths(%v): %v", paths, err)
 	}
@@ -456,7 +456,7 @@ func TestScanPathsDatalessPersistsUnreadRow(t *testing.T) {
 	write(t, path, "placeholder")
 	store := newFakeStore()
 
-	s := New(store, Options{Include: []string{dir}})
+	s := newScanner(store, Options{Include: []string{dir}})
 	s.dataless = func(info os.FileInfo) bool { return true }
 	res, err := s.ScanPaths(t.Context(), []string{path})
 	if err != nil {
@@ -566,7 +566,7 @@ func TestScanPathsStoreFailureIsFatal(t *testing.T) {
 	store := newFakeStore()
 	store.failWith = errors.New("disk on fire")
 
-	if _, err := New(store, Options{Include: []string{dir}}).ScanPaths(t.Context(), []string{path}); err == nil {
+	if _, err := newScanner(store, Options{Include: []string{dir}}).ScanPaths(t.Context(), []string{path}); err == nil {
 		t.Fatal("ScanPaths returned nil, want the store failure")
 	}
 }
@@ -584,7 +584,7 @@ func TestRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	roots, errs := New(newFakeStore(), Options{
+	roots, errs := newScanner(newFakeStore(), Options{
 		Include:  []string{dir, nested, denied, dir},
 		Excluded: func(p string) bool { return p == denied },
 	}).Roots()
@@ -602,7 +602,7 @@ func TestRoots(t *testing.T) {
 
 func TestRootsExcludedRootRecorded(t *testing.T) {
 	dir := tmpDir(t)
-	roots, errs := New(newFakeStore(), Options{
+	roots, errs := newScanner(newFakeStore(), Options{
 		Include:  []string{dir},
 		Excluded: func(p string) bool { return p == dir },
 	}).Roots()
@@ -629,10 +629,39 @@ func TestRootsFoldTheDataVolumeFirmlink(t *testing.T) {
 	// A path under the firmlink that does not exist on this machine: the
 	// fold is a spelling rule, applied whether or not the root resolves.
 	root := pathutil.DataVolumeRoot + "/Users/nobody/bsearch-not-here"
-	roots, _ := New(newFakeStore(), Options{Include: []string{root}}).Roots()
+	roots, _ := newScanner(newFakeStore(), Options{Include: []string{root}}).Roots()
 
 	want := "/Users/nobody/bsearch-not-here"
 	if !slices.Contains(roots, want) {
 		t.Errorf("Roots() = %v, want the firmlink spelling folded to %q", roots, want)
+	}
+}
+
+// Roots is what the watcher subscribes to, and FSEvents reports paths in the
+// filesystem's own casing. A root typed in a different case therefore
+// subscribes fine and matches no event — issue #64. Canonicalising at
+// resolution is what makes the two sides meet.
+func TestRootsReportTheOnDiskCasing(t *testing.T) {
+	base := tmpDir(t)
+	probe := filepath.Join(base, "CaseProbe")
+	if err := os.Mkdir(probe, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(base, "caseprobe")); err != nil {
+		t.Skip("filesystem is case-sensitive; the two spellings are two directories")
+	}
+	onDisk := filepath.Join(base, "notes")
+	if err := os.Mkdir(onDisk, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	typed := filepath.Join(base, "NOTES")
+	roots, errs := newScanner(newFakeStore(), Options{Include: []string{typed}}).Roots()
+
+	if len(errs) != 0 {
+		t.Fatalf("Roots errors = %v", errs)
+	}
+	if len(roots) != 1 || roots[0] != onDisk {
+		t.Fatalf("Roots() = %v, want [%s] — an event path would not match the typed spelling", roots, onDisk)
 	}
 }
