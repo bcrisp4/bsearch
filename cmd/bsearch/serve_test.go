@@ -16,6 +16,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/bcrisp4/bsearch/internal/config"
+	"github.com/bcrisp4/bsearch/internal/timemachine"
 )
 
 // shortSocketPath returns a socket path in a very short temp directory.
@@ -267,6 +270,64 @@ func TestServeSocketPermissions(t *testing.T) {
 	}
 	if got := fi.Mode().Perm(); got != 0o600 {
 		t.Errorf("socket mode = %o, want 600", got)
+	}
+}
+
+// The daemon keeps its index out of Time Machine (DESIGN.md: Data retention;
+// ADR 0017). $HOME is redirected so the assertion is about a directory this
+// test owns, and so that running the suite never touches the real one.
+func TestServeExcludesItsDataDirFromBackups(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dataDir := config.DataDir()
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatalf("make data dir: %v", err)
+	}
+
+	dir := t.TempDir()
+	corpus := writeTestCorpus(t, dir, map[string]string{"alpha.md": "# Alpha\n\nbody\n"})
+	srv := fakeEmbeddingsServer(t, contentVec)
+	// The database inside the data directory is what arms the exclusion: the
+	// daemon marks the directory it is actually using, never an arbitrary one.
+	f := startDaemonWith(t, writeTestConfig(t, dir, corpus, srv.URL), filepath.Join(dataDir, "bsearch.db"))
+	f.waitForReady(t)
+
+	excluded, err := timemachine.Excluded(dataDir)
+	if err != nil {
+		t.Fatalf("Excluded(%s): %v", dataDir, err)
+	}
+	if !excluded {
+		t.Errorf("data directory %s is not excluded from Time Machine backups", dataDir)
+	}
+}
+
+// A database somewhere other than the data directory leaves backups alone. The
+// alternative — excluding the default directory anyway — marks one the daemon
+// is not using while the index it *is* using stays in the backup, and
+// excluding the database's own parent would turn `--db ~/notes.db` into
+// dropping the whole home directory from Time Machine.
+func TestServeDoesNotExcludeAnythingForADatabaseElsewhere(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dataDir := config.DataDir()
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatalf("make data dir: %v", err)
+	}
+
+	dir := t.TempDir()
+	corpus := writeTestCorpus(t, dir, map[string]string{"alpha.md": "# Alpha\n\nbody\n"})
+	srv := fakeEmbeddingsServer(t, contentVec)
+	f := startDaemonWith(t, writeTestConfig(t, dir, corpus, srv.URL), filepath.Join(dir, "elsewhere", "bsearch.db"))
+	f.waitForReady(t)
+
+	for _, path := range []string{dataDir, filepath.Join(dir, "elsewhere"), dir, home} {
+		excluded, err := timemachine.Excluded(path)
+		if err != nil {
+			t.Fatalf("Excluded(%s): %v", path, err)
+		}
+		if excluded {
+			t.Errorf("%s was excluded from Time Machine backups; nothing should have been", path)
+		}
 	}
 }
 

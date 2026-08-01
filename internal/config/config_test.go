@@ -466,6 +466,26 @@ func TestDefaultLockPath(t *testing.T) {
 	}
 }
 
+func TestDataDir(t *testing.T) {
+	home := setHome(t)
+	want := filepath.Join(home, "Library", "Application Support", "bsearch")
+	if got := config.DataDir(); got != want {
+		t.Errorf("DataDir() = %q, want %q", got, want)
+	}
+}
+
+// DataDir is what the daemon excludes from Time Machine (ADR 0017), so it has
+// to be the directory the index is actually in. If these ever drift, the
+// exclusion is set on a directory holding nothing and the index is quietly
+// backed up — the failure is invisible, which is why it is asserted rather
+// than assumed from the two functions sharing a helper.
+func TestDataDirHoldsTheDatabase(t *testing.T) {
+	setHome(t)
+	if got, want := filepath.Dir(config.DefaultDBPath()), config.DataDir(); got != want {
+		t.Errorf("database directory %q != DataDir() %q", got, want)
+	}
+}
+
 // The daemon's lock must sit beside its socket: the lock guards removal of a
 // stale socket, which is only sound if both are in the same directory the
 // daemon owns and creates at 0700.

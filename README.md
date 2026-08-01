@@ -22,7 +22,7 @@ Early. Markdown indexing and semantic search work end to end, served by a
 daemon that indexes in the background over a unix socket:
 
 ```sh
-bsearch serve &                      # start the daemon; it indexes your configured paths
+make install-agent                   # start the daemon at login, and keep it running
 bsearch search "heat pump quote"     # search is a client of the daemon
 ```
 

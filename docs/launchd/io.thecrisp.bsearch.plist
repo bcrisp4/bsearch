@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  bsearch LaunchAgent (issue #15, ADR 0017).
+
+  A template, not an installable file: @BINARY@ and @HOME@ are substituted by
+  `make install-agent`, because launchd expands neither ~ nor environment
+  variables in these values. Install it with that target rather than by hand.
+
+  These values are the source of truth for the service. A future Homebrew
+  formula expresses the same ones through `service do` (keep_alive,
+  throttle_interval, stop_timeout, error_log_path); if you change one here,
+  change it there too.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>io.thecrisp.bsearch</string>
+  <key>ProgramArguments</key> <array>
+    <string>@BINARY@</string>
+    <string>serve</string>
+  </array>
+
+  <!-- Start at login, and put it back if it dies. -->
+  <key>RunAtLoad</key>        <true/>
+  <key>KeepAlive</key>        <true/>
+
+  <!-- Back off rather than spin if the daemon exits immediately. The
+       immediate-exit case is a second daemon losing the single-instance lock
+       (internal/socket/listen.go), and 30s keeps a crash-loop legible in the
+       log instead of drowning it. launchd's default is 10. -->
+  <key>ThrottleInterval</key> <integer>30</integer>
+
+  <!-- Shutdown is serial: up to 10s draining HTTP, then the indexing cycle
+       unwinding, then up to 5s reconciling the last window of filesystem
+       events (ADR 0014). Only that last step purges deleted files, and a
+       deletion dropped there is lost rather than deferred — so this is set
+       well clear of the sum rather than snugly above it. launchd's default of
+       20s would SIGKILL straight through it. -->
+  <key>ExitTimeOut</key>      <integer>60</integer>
+
+  <!-- ProcessType is deliberately absent, leaving launchd's Standard default.
+       Background would throttle CPU and I/O beneath a process that also
+       answers interactive searches under a p95 < 500ms SLO; more importantly
+       bsearch owns power policy itself and reports it through
+       `bsearch status`, and a second invisible throttle would make that
+       report wrong about why nothing is indexing (ADR 0017). -->
+
+  <!-- Logs are operational events only — never query text, never document
+       content, at any level (DESIGN.md: Privacy). The daemon writes to
+       stderr by design; stdout is captured too, so a panic has somewhere to
+       land. ~/Library/Logs is the macOS convention and shows up in
+       Console.app. -->
+  <key>StandardErrorPath</key><string>@HOME@/Library/Logs/bsearch.log</string>
+  <key>StandardOutPath</key>  <string>@HOME@/Library/Logs/bsearch.log</string>
+</dict>
+</plist>

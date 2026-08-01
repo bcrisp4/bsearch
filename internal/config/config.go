@@ -203,6 +203,15 @@ func DefaultLockPath() string {
 	return dataPath("bsearch.lock")
 }
 
+// DataDir returns the directory the paths above live in:
+// ~/Library/Application Support/bsearch, or "" when the home directory can't
+// be resolved. It is the unit the daemon excludes from Time Machine (ADR
+// 0017) — a directory rather than the database file, because the -wal and
+// -shm files do not exist yet when the exclusion is set.
+func DataDir() string {
+	return dataPath("")
+}
+
 // dataPath joins name onto the data directory, or returns "" when the home
 // directory can't be resolved — callers treat an empty path as "no default,
 // pass the flag".

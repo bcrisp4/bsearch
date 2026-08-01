@@ -37,10 +37,14 @@ const (
 	writeTimeout      = 45 * time.Second
 	idleTimeout       = 120 * time.Second
 
-	// drainTimeout is how long shutdown waits for in-flight requests. Kept
-	// under launchd's default 20s ExitTimeOut so a restart is never killed
-	// mid-drain, and under requestTimeout so a stuck search cannot hold the
-	// daemon open for its full deadline.
+	// drainTimeout is how long shutdown waits for in-flight requests. It is
+	// the first of three serial shutdown steps, and the LaunchAgent's
+	// ExitTimeOut of 60s (docs/launchd/io.thecrisp.bsearch.plist; ADR 0017)
+	// is the budget for all three — the drain, the indexing cycle unwinding,
+	// and the final deletion reconcile, whose work is lost rather than
+	// deferred if it is killed. Raising this eats into that. It is also kept
+	// under requestTimeout so a stuck search cannot hold the daemon open for
+	// its full deadline.
 	drainTimeout = 10 * time.Second
 
 	// defaultMaxInFlight bounds concurrent searches. Brute-force KNN is

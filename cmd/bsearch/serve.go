@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/bcrisp4/bsearch/internal/scheduler"
 	"github.com/bcrisp4/bsearch/internal/server"
 	"github.com/bcrisp4/bsearch/internal/socket"
+	"github.com/bcrisp4/bsearch/internal/timemachine"
 )
 
 // runServe runs the daemon: an HTTP+JSON API over a unix socket, plus the
@@ -101,6 +103,10 @@ func runServe(args []string, out io.Writer) error {
 	}
 	defer ln.Close() //nolint:errcheck // Serve's shutdown closes it; this is the failure path
 
+	// Done here, holding the single-instance lock, because Listen has just
+	// created the data directory and no second daemon can be racing us for it.
+	excludeDataDirFromBackups(*dbPath, log)
+
 	// The indexing side, built only once the single-instance lock is held:
 	// opening the writer creates and migrates the index (ADR 0012), and a
 	// second `bsearch serve` must not take the write lock on a running
@@ -152,6 +158,41 @@ func runServe(args []string, out io.Writer) error {
 	stopIndexing()
 	wg.Wait()
 	return serveErr
+}
+
+// excludeDataDirFromBackups keeps the index out of Time Machine (DESIGN.md:
+// Data retention — Backups; ADR 0017). The index is derived data with nothing
+// to preserve, and it concentrates the text of everything indexed into one
+// file, so a backup of it is Security threat 1 with a copy made.
+//
+// Never fatal, for the reason newScheduler below is never fatal: a LaunchAgent
+// that exits non-zero is a crash-loop with nothing able to explain why. A
+// missed exclusion costs backup space and leaks an index into a backup the
+// user already has; refusing to start costs them search entirely.
+//
+// It excludes the data directory, and only when the database is in it. Never
+// filepath.Dir(dbPath): --db is an arbitrary path, and excluding its parent
+// would take `--db ~/notes.db` and quietly drop the user's whole home
+// directory from their backups. Excluding the *default* directory regardless
+// would be the mirror-image mistake — marking a directory the daemon is not
+// using while the index it is using stays in the backup. So a database
+// somewhere else is reported and nothing is touched.
+func excludeDataDirFromBackups(dbPath string, log *slog.Logger) {
+	dir := config.DataDir()
+	if dir == "" {
+		// No home directory, so no default data directory to speak of. The
+		// caller has already rejected the paths that matter.
+		return
+	}
+	if filepath.Dir(dbPath) != dir {
+		log.Info("index is outside the data directory, so it is not excluded from Time Machine backups",
+			"db", dbPath, "data_dir", dir)
+		return
+	}
+	if err := timemachine.Exclude(dir); err != nil {
+		log.Warn("could not exclude the data directory from Time Machine backups",
+			"dir", dir, "error", err)
+	}
 }
 
 // newScheduler builds the indexing loop, returning nil when it cannot be
