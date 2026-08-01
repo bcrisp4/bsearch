@@ -103,8 +103,8 @@ func runServe(args []string, out io.Writer) error {
 	}
 	defer ln.Close() //nolint:errcheck // Serve's shutdown closes it; this is the failure path
 
-	// Done here, holding the single-instance lock, because Listen has just
-	// created the data directory and no second daemon can be racing us for it.
+	// Done here because the single-instance lock is held, so no second daemon
+	// can be racing us for the directory.
 	excludeDataDirFromBackups(*dbPath, log)
 
 	// The indexing side, built only once the single-instance lock is held:
@@ -187,6 +187,17 @@ func excludeDataDirFromBackups(dbPath string, log *slog.Logger) {
 	if filepath.Dir(dbPath) != dir {
 		log.Info("index is outside the data directory, so it is not excluded from Time Machine backups",
 			"db", dbPath, "data_dir", dir)
+		return
+	}
+	// The directory has to exist before it can be marked, and on a first run
+	// nothing has necessarily made it yet: socket.Listen creates the *socket's*
+	// parent, which is this directory only while --socket is left alone, and
+	// sqlite.Open creates it later — after this point, and not at all when
+	// indexing is disabled. Creating it here means the exclusion is in place
+	// before the first byte of index is written, rather than one restart later.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		log.Warn("could not create the data directory to exclude it from Time Machine backups",
+			"dir", dir, "error", err)
 		return
 	}
 	if err := timemachine.Exclude(dir); err != nil {

@@ -174,13 +174,20 @@ A LaunchAgent starts the daemon at login and restarts it if it dies
 ([ADR 0017](adr/0017-launchd-agent-packaging.md)). Install it from a checkout:
 
 ```bash
-make install-agent INSTALL_BIN=/usr/local/bin/bsearch
+make install-agent
 ```
 
-`INSTALL_BIN` is the binary the agent runs. It defaults to the one `make`
-builds in the working tree, which is convenient and wrong for daily use: see
-the Full Disk Access caveat below. Copy the binary somewhere stable and point
-at that.
+That builds bsearch, copies it to `~/.local/bin/bsearch`, and points the agent
+at the copy. `INSTALL_BIN=<path>` overrides where the copy goes. The agent
+never runs the binary in your working tree: launchd would re-exec a path that
+`make clean` or a moved checkout deletes, and every rebuild would cost the
+Full Disk Access grant (see below).
+
+If you set `XDG_CONFIG_HOME`, add `--config <path>` to `ProgramArguments` in
+the template before installing. launchd does not inherit your shell
+environment, so the agent would otherwise look in `~/.config/bsearch/`, find
+nothing, and start with indexing disabled — `bsearch status` says so, but it
+is a confusing way to find out.
 
 | | |
 |---|---|
@@ -226,10 +233,11 @@ excluded and the log says so at startup.
 
 Two caveats worth knowing before you rely on it. The first is **Full Disk
 Access, and rebuilds**: the grant is tied to the binary's path *and* its code
-signature, and every `make build` produces a freshly ad-hoc-signed binary. An
-agent pointed into the working tree therefore loses its grant every time you
-rebuild, and the daemon goes quiet without saying why. Point `INSTALL_BIN` at a
-location you copy to deliberately.
+signature, and every `make build` produces a freshly ad-hoc-signed binary. So
+re-running `make install-agent` after a code change replaces the installed
+binary and costs the grant — the daemon comes back up, indexes only what it
+can still reach, and does not say why until you look at `bsearch status`.
+Expect to re-grant after upgrading.
 
 The second is the grant itself: a LaunchAgent gets no consent
 dialog for TCC-gated directories (`~/Documents`, `~/Desktop`, `~/Downloads`,

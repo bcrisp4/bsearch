@@ -21,6 +21,15 @@
     <string>serve</string>
   </array>
 
+  <!-- No EnvironmentVariables: launchd does not inherit your shell's
+       environment, and the daemon needs nothing from it — $HOME, which
+       launchd does set, resolves the config, database and socket paths. The
+       one exception is XDG_CONFIG_HOME, which the config path honours: if you
+       set it, add `--config <path>` to ProgramArguments above, or the agent
+       looks in ~/.config/bsearch/config.toml, finds nothing (a missing config
+       is not an error), and starts with no embedding model configured —
+       indexing disabled, with the reason in `bsearch status`. -->
+
   <!-- Start at login, and put it back if it dies. -->
   <key>RunAtLoad</key>        <true/>
   <key>KeepAlive</key>        <true/>

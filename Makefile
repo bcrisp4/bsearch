@@ -25,17 +25,18 @@ MISE        := mise exec --
 GOLANGCI    := $(MISE) golangci-lint
 GOVULNCHECK := $(MISE) govulncheck
 
-# The LaunchAgent (ADR 0017). INSTALL_BIN defaults to the binary this Makefile
-# builds, which is honest about what you just built but moves with the working
-# tree; point it at a stable location for daily use, since every rebuild
-# changes the binary's ad-hoc code signature and costs its Full Disk Access
-# grant.
+# The LaunchAgent (ADR 0017). install-agent copies the binary it just built to
+# INSTALL_BIN and points the agent at that copy, deliberately not at the
+# working tree: launchd would re-exec a path that `make clean` or a moved
+# checkout deletes, silently, every ThrottleInterval. The copy is also what
+# makes the Full Disk Access grant survive a rebuild — the grant keys on the
+# binary's path and code signature, and every `make build` re-signs.
 LAUNCH_LABEL := io.thecrisp.bsearch
 LAUNCH_SRC   := docs/launchd/$(LAUNCH_LABEL).plist
 LAUNCH_PLIST := $(HOME)/Library/LaunchAgents/$(LAUNCH_LABEL).plist
 LAUNCH_LOG   := $(HOME)/Library/Logs/bsearch.log
 GUI_DOMAIN   := gui/$(shell id -u)
-INSTALL_BIN  ?= $(abspath $(BINARY))
+INSTALL_BIN  ?= $(HOME)/.local/bin/$(BINARY)
 
 .PHONY: all build test test-race lint fmt vet tidy vulncheck tools clean \
         install-agent uninstall-agent
@@ -67,14 +68,39 @@ vulncheck: ## govulncheck (CI parity)
 	$(GOVULNCHECK) ./...
 
 install-agent: build ## Install the LaunchAgent so the daemon starts at login
-	@test -x "$(INSTALL_BIN)" || { echo "no binary at $(INSTALL_BIN) — build it, or pass INSTALL_BIN=<path>"; exit 1; }
-	@mkdir -p "$(dir $(LAUNCH_PLIST))" "$(dir $(LAUNCH_LOG))"
-	@sed -e 's|@BINARY@|$(INSTALL_BIN)|g' -e 's|@HOME@|$(HOME)|g' $(LAUNCH_SRC) > "$(LAUNCH_PLIST).new"
+	@mkdir -p "$(dir $(INSTALL_BIN))" "$(dir $(LAUNCH_PLIST))" "$(dir $(LAUNCH_LOG))"
+	@if [ "$(abspath $(BINARY))" != "$(abspath $(INSTALL_BIN))" ]; then \
+	   install -m 0755 "$(BINARY)" "$(INSTALL_BIN)" || \
+	     { echo "could not install the binary to $(INSTALL_BIN) — pass INSTALL_BIN=<path you can write to>"; exit 1; }; \
+	 fi
+	@# Rendered before anything is torn down, so a malformed template cannot
+	@# leave the machine with no agent. Substituted values are escaped twice
+	@# over: once for XML, since a bare & or < in a path is not well-formed and
+	@# plutil rejects the whole file, and once for sed, which reads & in a
+	@# replacement as "the whole match" and | as its own delimiter.
+	@esc() { printf '%s' "$$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' | sed -e 's/[\\&|]/\\&/g'; }; \
+	 sed -e "s|@BINARY@|$$(esc '$(INSTALL_BIN)')|g" \
+	     -e "s|@HOME@|$$(esc '$(HOME)')|g" \
+	     $(LAUNCH_SRC) > "$(LAUNCH_PLIST).new"
 	@plutil -lint "$(LAUNCH_PLIST).new" >/dev/null || { rm -f "$(LAUNCH_PLIST).new"; echo "rendered plist is malformed; nothing installed"; exit 1; }
+	@# Stop any loaded agent *before* replacing the plist, and wait for it to
+	@# actually go. bootout returns while a shutdown is still in progress, and
+	@# this daemon is allowed 60s to drain (ExitTimeOut) — bootstrapping into
+	@# that window fails, and doing it after the plist had been swapped would
+	@# leave the old daemon running against a plist describing the new one.
+	@if launchctl print $(GUI_DOMAIN)/$(LAUNCH_LABEL) >/dev/null 2>&1; then \
+	   launchctl bootout $(GUI_DOMAIN)/$(LAUNCH_LABEL) >/dev/null 2>&1 || true; \
+	   n=0; \
+	   while launchctl print $(GUI_DOMAIN)/$(LAUNCH_LABEL) >/dev/null 2>&1; do \
+	     n=$$((n+1)); \
+	     if [ $$n -ge 70 ]; then \
+	       rm -f "$(LAUNCH_PLIST).new"; \
+	       echo "the running agent did not stop within 70s; nothing installed"; exit 1; \
+	     fi; \
+	     sleep 1; \
+	   done; \
+	 fi
 	@mv "$(LAUNCH_PLIST).new" "$(LAUNCH_PLIST)"
-	@# bootout first so reinstalling over a loaded agent is idempotent; it
-	@# fails when nothing is loaded, which is the common case and not an error.
-	@launchctl bootout $(GUI_DOMAIN)/$(LAUNCH_LABEL) 2>/dev/null || true
 	@launchctl bootstrap $(GUI_DOMAIN) "$(LAUNCH_PLIST)"
 	@echo "installed $(LAUNCH_LABEL)"
 	@echo "  binary  $(INSTALL_BIN)"

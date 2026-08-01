@@ -276,13 +276,16 @@ func TestServeSocketPermissions(t *testing.T) {
 // The daemon keeps its index out of Time Machine (DESIGN.md: Data retention;
 // ADR 0017). $HOME is redirected so the assertion is about a directory this
 // test owns, and so that running the suite never touches the real one.
+//
+// The data directory is deliberately *not* created first. On a first run
+// nothing has necessarily made it — the socket lives elsewhere here, exactly
+// as it does whenever --socket is overridden, and sqlite.Open would not reach
+// it until later. Pre-creating it would test a machine that has already run
+// the daemon once, which is the one case that was never in doubt.
 func TestServeExcludesItsDataDirFromBackups(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dataDir := config.DataDir()
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		t.Fatalf("make data dir: %v", err)
-	}
 
 	dir := t.TempDir()
 	corpus := writeTestCorpus(t, dir, map[string]string{"alpha.md": "# Alpha\n\nbody\n"})
@@ -310,9 +313,6 @@ func TestServeDoesNotExcludeAnythingForADatabaseElsewhere(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dataDir := config.DataDir()
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		t.Fatalf("make data dir: %v", err)
-	}
 
 	dir := t.TempDir()
 	corpus := writeTestCorpus(t, dir, map[string]string{"alpha.md": "# Alpha\n\nbody\n"})
@@ -320,7 +320,14 @@ func TestServeDoesNotExcludeAnythingForADatabaseElsewhere(t *testing.T) {
 	f := startDaemonWith(t, writeTestConfig(t, dir, corpus, srv.URL), filepath.Join(dir, "elsewhere", "bsearch.db"))
 	f.waitForReady(t)
 
-	for _, path := range []string{dataDir, filepath.Join(dir, "elsewhere"), dir, home} {
+	// Not even created: the daemon has no business making a directory it has
+	// decided not to use, and its absence is the cleanest evidence that the
+	// exclusion path returned before doing anything.
+	if _, err := os.Stat(dataDir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Stat(%s) = %v, want the directory not to have been created", dataDir, err)
+	}
+
+	for _, path := range []string{filepath.Join(dir, "elsewhere"), dir, home} {
 		excluded, err := timemachine.Excluded(path)
 		if err != nil {
 			t.Fatalf("Excluded(%s): %v", path, err)
