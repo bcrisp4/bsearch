@@ -16,6 +16,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/bcrisp4/bsearch/internal/config"
+	"github.com/bcrisp4/bsearch/internal/timemachine"
 )
 
 // shortSocketPath returns a socket path in a very short temp directory.
@@ -267,6 +270,71 @@ func TestServeSocketPermissions(t *testing.T) {
 	}
 	if got := fi.Mode().Perm(); got != 0o600 {
 		t.Errorf("socket mode = %o, want 600", got)
+	}
+}
+
+// The daemon keeps its index out of Time Machine (DESIGN.md: Data retention;
+// ADR 0017). $HOME is redirected so the assertion is about a directory this
+// test owns, and so that running the suite never touches the real one.
+//
+// The data directory is deliberately *not* created first. On a first run
+// nothing has necessarily made it — the socket lives elsewhere here, exactly
+// as it does whenever --socket is overridden, and sqlite.Open would not reach
+// it until later. Pre-creating it would test a machine that has already run
+// the daemon once, which is the one case that was never in doubt.
+func TestServeExcludesItsDataDirFromBackups(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dataDir := config.DataDir()
+
+	dir := t.TempDir()
+	corpus := writeTestCorpus(t, dir, map[string]string{"alpha.md": "# Alpha\n\nbody\n"})
+	srv := fakeEmbeddingsServer(t, contentVec)
+	// The database inside the data directory is what arms the exclusion: the
+	// daemon marks the directory it is actually using, never an arbitrary one.
+	f := startDaemonWith(t, writeTestConfig(t, dir, corpus, srv.URL), filepath.Join(dataDir, "bsearch.db"))
+	f.waitForReady(t)
+
+	excluded, err := timemachine.Excluded(dataDir)
+	if err != nil {
+		t.Fatalf("Excluded(%s): %v", dataDir, err)
+	}
+	if !excluded {
+		t.Errorf("data directory %s is not excluded from Time Machine backups", dataDir)
+	}
+}
+
+// A database somewhere other than the data directory leaves backups alone. The
+// alternative — excluding the default directory anyway — marks one the daemon
+// is not using while the index it *is* using stays in the backup, and
+// excluding the database's own parent would turn `--db ~/notes.db` into
+// dropping the whole home directory from Time Machine.
+func TestServeDoesNotExcludeAnythingForADatabaseElsewhere(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dataDir := config.DataDir()
+
+	dir := t.TempDir()
+	corpus := writeTestCorpus(t, dir, map[string]string{"alpha.md": "# Alpha\n\nbody\n"})
+	srv := fakeEmbeddingsServer(t, contentVec)
+	f := startDaemonWith(t, writeTestConfig(t, dir, corpus, srv.URL), filepath.Join(dir, "elsewhere", "bsearch.db"))
+	f.waitForReady(t)
+
+	// Not even created: the daemon has no business making a directory it has
+	// decided not to use, and its absence is the cleanest evidence that the
+	// exclusion path returned before doing anything.
+	if _, err := os.Stat(dataDir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Stat(%s) = %v, want the directory not to have been created", dataDir, err)
+	}
+
+	for _, path := range []string{filepath.Join(dir, "elsewhere"), dir, home} {
+		excluded, err := timemachine.Excluded(path)
+		if err != nil {
+			t.Fatalf("Excluded(%s): %v", path, err)
+		}
+		if excluded {
+			t.Errorf("%s was excluded from Time Machine backups; nothing should have been", path)
+		}
 	}
 }
 

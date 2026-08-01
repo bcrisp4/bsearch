@@ -170,38 +170,76 @@ Endpoints, payloads and the error envelope are specified in DESIGN.md
 
 ## Running it at login
 
-launchd packaging (install/uninstall helpers, Time Machine exclusion) lands
-with issue #15. Until then, this plist works if you write it to
-`~/Library/LaunchAgents/io.thecrisp.bsearch.plist` and load it with
-`launchctl load ~/Library/LaunchAgents/io.thecrisp.bsearch.plist`:
+A LaunchAgent starts the daemon at login and restarts it if it dies
+([ADR 0017](adr/0017-launchd-agent-packaging.md)). Install it from a checkout:
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>            <string>io.thecrisp.bsearch</string>
-  <key>ProgramArguments</key> <array>
-    <string>/usr/local/bin/bsearch</string>
-    <string>serve</string>
-  </array>
-  <key>RunAtLoad</key>        <true/>
-  <key>KeepAlive</key>        <true/>
-  <!-- Back off rather than spin if the daemon exits immediately. -->
-  <key>ThrottleInterval</key> <integer>30</integer>
-  <!-- Shutdown is serial: up to 10s draining HTTP, then the indexing cycle
-       unwinding, then up to 5s reconciling the last window of filesystem
-       events (ADR 0014). Only that last step purges deleted files, and a
-       deletion dropped there is lost rather than deferred — so this is set
-       well clear of the sum rather than snugly above it. -->
-  <key>ExitTimeOut</key>      <integer>60</integer>
-  <key>StandardErrorPath</key><string>/tmp/bsearch.log</string>
-</dict>
-</plist>
+```bash
+make install-agent
 ```
 
-One caveat worth knowing before you rely on it: a LaunchAgent gets no consent
+That builds bsearch, copies it to `~/.local/bin/bsearch`, and points the agent
+at the copy. `INSTALL_BIN=<path>` overrides where the copy goes. The agent
+never runs the binary in your working tree: launchd would re-exec a path that
+`make clean` or a moved checkout deletes, and every rebuild would cost the
+Full Disk Access grant (see below).
+
+If you set `XDG_CONFIG_HOME`, add `--config <path>` to `ProgramArguments` in
+the template before installing. launchd does not inherit your shell
+environment, so the agent would otherwise look in `~/.config/bsearch/`, find
+nothing, and start with indexing disabled — `bsearch status` says so, but it
+is a confusing way to find out.
+
+| | |
+|---|---|
+| Label | `io.thecrisp.bsearch` |
+| Plist | `~/Library/LaunchAgents/io.thecrisp.bsearch.plist` |
+| Template | `docs/launchd/io.thecrisp.bsearch.plist` |
+| Log | `~/Library/Logs/bsearch.log` |
+
+Reinstalling over a loaded agent is fine — the target unloads it first — so
+this is also how you point it at a new binary. To remove it:
+
+```bash
+make uninstall-agent      # leaves the index, config and log in place
+```
+
+Checking on the agent itself, as opposed to the daemon it runs:
+
+```bash
+launchctl print gui/$(id -u)/io.thecrisp.bsearch   # state, pid, last exit status
+tail -f ~/Library/Logs/bsearch.log
+launchctl kickstart -k gui/$(id -u)/io.thecrisp.bsearch   # restart it now
+```
+
+A daemon that keeps restarting shows up as a `last exit code` in `launchctl
+print` and a repeating startup line in the log, 30 seconds apart — that
+interval is `ThrottleInterval`, deliberately slow enough to stay readable.
+
+The other thing the daemon does at startup is exclude
+`~/Library/Application Support/bsearch` from Time Machine, so the index is
+never in a backup:
+
+```bash
+tmutil isexcluded ~/Library/Application\ Support/bsearch   # → [Excluded]
+```
+
+That is a mechanism, not a recommendation. The index is derived data —
+everything in it can be rebuilt from your files — and it concentrates the text
+of everything indexed into one file, which is not a thing to have loose in a
+backup (DESIGN.md: Security, threat 1). It costs a re-index if you restore a
+machine from Time Machine, which is exactly the trade the design makes. If you
+run the daemon with `--db` somewhere outside that directory, nothing is
+excluded and the log says so at startup.
+
+Two caveats worth knowing before you rely on it. The first is **Full Disk
+Access, and rebuilds**: the grant is tied to the binary's path *and* its code
+signature, and every `make build` produces a freshly ad-hoc-signed binary. So
+re-running `make install-agent` after a code change replaces the installed
+binary and costs the grant — the daemon comes back up, indexes only what it
+can still reach, and does not say why until you look at `bsearch status`.
+Expect to re-grant after upgrading.
+
+The second is the grant itself: a LaunchAgent gets no consent
 dialog for TCC-gated directories (`~/Documents`, `~/Desktop`, `~/Downloads`,
 iCloud Drive, most of `~/Library`) — it gets silent `EPERM`, so the binary
 needs a Full Disk Access grant in System Settings. Without it the daemon

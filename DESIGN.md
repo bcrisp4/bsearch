@@ -173,7 +173,7 @@ storage and vector-search rows first.
 |---|---|---|---|
 | Language | Go | Self-contained single-file binary (cgo links only system libraries — no third-party dylibs; fully static isn't possible on macOS); strong daemon/concurrency story; near-zero background CPU when idle and small RSS (avoids memory-pressure churn); a language I know | Rewrite — mitigated by hexagonal boundaries |
 | Structure | Hexagonal (ports & adapters), ports as Go interfaces | Maintainability goal; makes the swap costs in this table real | n/a — this IS the swap mechanism |
-| Process model | One `bsearch` binary: daemon (`bsearch serve`, run as launchd LaunchAgent) + CLI subcommands as clients | launchd gives native supervision, start-at-login, restart | Low |
+| Process model | One `bsearch` binary: daemon (`bsearch serve`, run as launchd LaunchAgent) + CLI subcommands as clients. The agent is a checked-in plist template installed by `make install-agent`, deliberately not an `install` subcommand — a future Homebrew tap's `service do` block supersedes an installer but restates the plist values ([ADR 0017](docs/adr/0017-launchd-agent-packaging.md)) | launchd gives native supervision, start-at-login, restart | Low |
 | Storage | SQLite, one database file: catalog + queue + summaries in plain tables, FTS5 for keyword, sqlite-vec for vectors. **Identity is split: `documents` keys on path, `content` keys on the content hash and carries the queue and everything derived** ([ADR 0015](docs/adr/0015-content-addressed-chunks-and-summaries.md)). Production pragmas from day one (WAL, `synchronous=NORMAL`, `busy_timeout=5000`, `foreign_keys=ON`, `temp_store=MEMORY`, tuned `mmap_size`/`cache_size`); writers use `BEGIN IMMEDIATE`; indexing writes in small batches so no write transaction outlives the busy timeout. Schema carries a version; migrations preferred, drop-and-reindex is the fallback of last resort (its true cost is battery-gated local inference over the whole corpus — potentially days) | One file, one engine, transactional consistency across catalog/queue/vectors/FTS; single-writer model fits (indexer writes, queries read; WAL keeps readers unblocked) | Storage behind ports; the index is wholly derived data |
 | SQLite driver | cgo-based driver (mattn/go-sqlite3-class) with sqlite-vec statically compiled in via its Go bindings | Pure-Go drivers can't load C extensions; static linking keeps self-contained distribution, no runtime extension loading | Locked to native builds (cross-compiling cgo is painful — a future Linux port builds on Linux CI). Escape hatch: ncruces/go-sqlite3 (wasm) — sqlite-vec ships officially documented bindings for it (`asg017/sqlite-vec-go-bindings/ncruces`); that pure-Go route would also ease cross-compilation |
 | Vector search | sqlite-vec `vec0`. Float32 brute-force KNN up to a few hundred thousand chunks; **binary quantization + rescore is the planned configuration at full corpus scale (~1M chunks)**, not an emergency lever. No ANN | Exact (or near-exact with rescore), zero index maintenance, delete-friendly. Scan cost is ~linear in vectors × dims: published 100k×768 runs well under 100 ms warm, but extrapolating the same numbers puts 1M×768 ≈ ~700 ms — over the SLO; the author's own ceiling for float vectors is "the hundreds of thousands". Quantized scan (32× smaller, XOR+popcount distance) + full-precision rescore of top-k×8 retains ~95% recall at ~1.03× total storage. ANN (DiskANN/IVF) immature in sqlite-vec and unneeded at this scale | Further levers: raise mmap/cache (make scan RAM-bound), partition keys. **Acknowledged bet:** sqlite-vec is pre-1.0 (no stable on-disk format guarantee) — version pinned; a format break is covered by drop-and-reindex |
@@ -911,9 +911,14 @@ listener ships. Recorded so it isn't bolted on casually.
 - **No history.** Only the current version of a file is indexed; edits replace
   prior chunks/embeddings.
 - **Backups:** the daemon sets a Time Machine exclusion on its data directory
-  at startup (`tmutil`/`CSBackupd` API) — a mechanism, not a recommendation.
-  The index is derived (minus id continuity, accepted); excluding it keeps a
-  content-concentrating file out of backups (Security threat 1).
+  at startup — `CSBackupSetItemExcluded`, the sticky per-item form that needs
+  no privileges ([ADR
+  0017](docs/adr/0017-launchd-agent-packaging.md)) — a mechanism, not a
+  recommendation. The index is derived data with nothing to preserve; excluding
+  it keeps a content-concentrating file out of backups (Security threat 1). It
+  is best-effort: a failure warns and the daemon starts anyway, and a `--db`
+  outside the data directory excludes nothing rather than guessing at a
+  directory to mark.
 
 ## Licensing
 

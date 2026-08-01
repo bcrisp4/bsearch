@@ -75,6 +75,24 @@ that section is renamed to the new version and becomes the GitHub Release notes.
 
 ### Added
 
+- **The daemon can start at login and restart itself if it dies.**
+  `make install-agent` installs a launchd LaunchAgent, `make uninstall-agent`
+  removes it; reinstalling over a running one is how you point it at a new
+  binary. Its log is at `~/Library/Logs/bsearch.log`. Until now the only way to
+  run the daemon across a logout was to hand-write a plist from the docs.
+  Note that Full Disk Access is tied to the binary you install, and rebuilding
+  it costs the grant — `docs/daemon.md` covers what to do about that.
+  ([ADR 0017](docs/adr/0017-launchd-agent-packaging.md),
+  [#15](https://github.com/bcrisp4/bsearch/issues/15))
+
+- **The index is kept out of Time Machine backups.** The daemon marks
+  `~/Library/Application Support/bsearch` excluded at startup. The index is
+  derived data — it rebuilds from your files — and it holds the text of
+  everything indexed in one place, which is not something to have sitting in a
+  backup. Restoring a machine means re-indexing, which is the intended trade.
+  ([ADR 0017](docs/adr/0017-launchd-agent-packaging.md),
+  [#15](https://github.com/bcrisp4/bsearch/issues/15))
+
 - **Files deleted while the daemon wasn't running now leave the index.** The
   periodic walk checks the index against the filesystem as well as the other
   way round, so a file removed while bsearch was stopped — or in a burst of
