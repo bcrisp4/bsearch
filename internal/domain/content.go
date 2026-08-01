@@ -13,6 +13,30 @@ import (
 //
 // There is no deleted state: a deleted file is a removed documents row, and
 // content nothing references is collected by the orphan sweep.
+//
+// The v1 ladder is discovered → chunked → indexed, with failed reachable from
+// any non-terminal state. Terminal states re-enter only at discovered and
+// only via the stale sweep (ResetStale), never by a direct hop to a
+// mid-pipeline state. ContentStateConverted and ContentStateEmbedded are
+// declared and accepted by the schema's CHECK, but unreachable: conversion
+// needs the bscribe adapter (#21), and there is no point writing an embedded
+// row between the vector write and the indexed flip while summaries are a
+// fill-later field rather than a gate. They are named now so the ladder is
+// legible when those stages land.
+//
+// Nothing checks a transition. Discovery creates rows at discovered
+// (UpsertDocuments), and four writers move them afterwards — StoreChunks,
+// UpdateContentState, MarkFailed and ResetStale. Only ResetStale constrains
+// where it moves from (WHERE state IN ('indexed','failed')). What keeps the
+// ladder legal is that the pipeline has one code path per step, not a guard.
+//
+// A domain.ValidTransition predicate and an edge map used to live here; #74
+// deleted them, unused. ADR 0013 and ADR 0014 name them as the deferred
+// remedy for #62 and #63, so this is what those records point at. #69 is why
+// nothing replaced them: state is a lifecycle marker, not a version token,
+// and the writer such a guard would defend against rewrites state to the same
+// value while replacing everything under it. The hazard is a legal-looking
+// chunked → chunked, which no transition check can catch.
 type ContentState string
 
 const (
@@ -55,44 +79,6 @@ var TerminalContentStates = []ContentState{
 // Terminal reports whether s is a state the scheduler skips.
 func (s ContentState) Terminal() bool {
 	return slices.Contains(TerminalContentStates, s)
-}
-
-// contentTransitions is the state machine: which states a content may move
-// to from each state.
-//
-// It documents and asserts the pipeline's shape; it does not enforce it. No
-// writer consults ValidTransition — StoreChunks, UpdateContentState and
-// MarkFailed will each persist any state from any state — so this is a
-// specification the tests hold the code to, not a runtime guard. Making it a
-// real invariant means checking it in every writer, which is worth doing when
-// there are enough writers to lose track of; today there are three.
-//
-// The v1 pipeline walks discovered → chunked → indexed. ContentStateConverted
-// and ContentStateEmbedded are declared, accepted by the schema's CHECK
-// constraint, and unreachable: conversion needs the bscribe adapter (#21) and
-// there is no point writing an embedded row between the vector write and the
-// indexed flip while summaries are a fill-later field rather than a gate.
-// Their edges are recorded now so the ladder is legible when those stages
-// land.
-var contentTransitions = map[ContentState][]ContentState{
-	ContentStateDiscovered: {ContentStateConverted, ContentStateChunked, ContentStateFailed},
-	ContentStateConverted:  {ContentStateChunked, ContentStateFailed},
-	ContentStateChunked:    {ContentStateEmbedded, ContentStateIndexed, ContentStateFailed},
-	ContentStateEmbedded:   {ContentStateIndexed, ContentStateFailed},
-	// Terminal states re-enter the pipeline only at discovered, and only via
-	// the stale sweep — never a direct hop to a mid-pipeline state.
-	ContentStateIndexed: {ContentStateDiscovered, ContentStateFailed},
-	ContentStateFailed:  {ContentStateDiscovered},
-}
-
-// ValidTransition reports whether from → to is an edge of the pipeline state
-// machine. A self-transition is always valid: every stage is an idempotent
-// upsert, so redoing one after a crash must not look like an illegal move.
-func ValidTransition(from, to ContentState) bool {
-	if from == to {
-		return true
-	}
-	return slices.Contains(contentTransitions[from], to)
 }
 
 // StageVersions keys. These are persisted schema (the stage_versions

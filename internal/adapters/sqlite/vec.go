@@ -252,8 +252,14 @@ func (s *Store) CurrentVecSpec(ctx context.Context) (domain.EmbeddingSpec, int, 
 // Every chunk ID must still exist in chunks: vec0 has no foreign keys, and a
 // vector committed for a chunk that was replaced mid-embed would be a
 // permanent orphan eating KNN k-slots (AUTOINCREMENT never reuses the ID, so
-// no later write can ever clean it). Stale IDs are a loud error — the caller
-// re-reads the document's current chunks and retries.
+// no later write can ever clean it). Stale IDs are a loud error, wrapped as
+// domain.ErrContentSuperseded so the caller can tell them from a broken store.
+//
+// The caller stands down rather than retrying: pipeline.movedOn abandons the
+// pass and reports OutcomeSuperseded, and the scheduler puts the content back
+// on the retry schedule. Nothing here is re-read and nothing is retried in
+// place. Chunks key on the content hash, never on a document or a path
+// (ADR 0015).
 func (s *Store) UpsertVectors(ctx context.Context, chunkIDs []int64, vectors [][]float32) error {
 	if len(chunkIDs) != len(vectors) {
 		return fmt.Errorf("chunk ids (%d) and vectors (%d) mismatch", len(chunkIDs), len(vectors))
