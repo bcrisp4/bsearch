@@ -1316,9 +1316,14 @@ func (s *Scheduler) contentGone(ref string, err error) bool {
 	if !errors.Is(err, domain.ErrContentGone) {
 		return false
 	}
-	// Counted nowhere, for the same reason OutcomeSuperseded is: Skipped
-	// means "could not be read", which `bsearch status` reports as a
-	// permissions problem. A deleted file is not one.
+	// Counted nowhere: the nearest counter is Skipped, and Skipped means
+	// "could not be read", which `bsearch status` reports as a permissions
+	// problem. A deleted file is not one.
+	//
+	// Only this case goes uncounted. OutcomeSuperseded proper does count
+	// (snap.Superseded, in process) — a deletion in flight shares that
+	// outcome but is the routine arm of it, split there before it can be
+	// reported as an invariant break.
 	s.log.Debug("content was deleted while it was being indexed", "ref", ref)
 	return true
 }
