@@ -105,13 +105,16 @@ const (
 	OutcomeChanged
 	// OutcomeSuperseded: the content moved on while it was being worked on
 	// — its row was swept (every referencing path deleted mid-flight), or
-	// its chunk rows were replaced under an in-flight vector write. Nothing
-	// is owed: whatever superseded this pass already left the catalog in
-	// the right state, and the next pass sees it.
+	// its chunk rows were replaced under an in-flight vector write. This
+	// pass wrote nothing and abandons what it had.
 	//
-	// The two arms mean different things to the caller (see movedOn): a
-	// sweep is routine, a mid-flight rewrite means the single-writer
-	// invariant broke (ADR 0014).
+	// The two arms mean different things to the caller (see movedOn), and
+	// the caller owes them different things. A sweep is routine: whatever
+	// superseded this pass already left the catalog in the right state, and
+	// nothing is owed. A mid-flight rewrite means the single-writer
+	// invariant broke (ADR 0014), and that row is owed a reschedule — its
+	// state and its unset next_retry_at survive the abandoned pass, so left
+	// alone it is re-claimed and superseded every cycle forever.
 	OutcomeSuperseded
 )
 

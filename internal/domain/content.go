@@ -24,14 +24,19 @@ import (
 // fill-later field rather than a gate. They are named now so the ladder is
 // legible when those stages land.
 //
-// Nothing checks a transition. Four writers set state — StoreChunks,
-// UpdateContentState, MarkFailed and ResetStale — and only ResetStale
-// constrains where it moves from (WHERE state IN ('indexed','failed')). What
-// keeps the ladder legal is that the pipeline has one code path per step, not
-// a guard. #69 is why there is no guard: state is a lifecycle marker, not a
-// version token, and the writer such a guard would defend against rewrites
-// state to the same value while replacing everything under it. The hazard is
-// a legal-looking chunked → chunked, which no transition check can catch.
+// Nothing checks a transition. Discovery creates rows at discovered
+// (UpsertDocuments), and four writers move them afterwards — StoreChunks,
+// UpdateContentState, MarkFailed and ResetStale. Only ResetStale constrains
+// where it moves from (WHERE state IN ('indexed','failed')). What keeps the
+// ladder legal is that the pipeline has one code path per step, not a guard.
+//
+// A domain.ValidTransition predicate and an edge map used to live here; #74
+// deleted them, unused. ADR 0013 and ADR 0014 name them as the deferred
+// remedy for #62 and #63, so this is what those records point at. #69 is why
+// nothing replaced them: state is a lifecycle marker, not a version token,
+// and the writer such a guard would defend against rewrites state to the same
+// value while replacing everything under it. The hazard is a legal-looking
+// chunked → chunked, which no transition check can catch.
 type ContentState string
 
 const (
