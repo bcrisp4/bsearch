@@ -1,6 +1,6 @@
 # 0017 — launchd agent packaging: a plist template, not an install subcommand
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-07-31
 - **Confidence:** medium
 
